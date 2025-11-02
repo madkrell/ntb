@@ -7,7 +7,8 @@ async fn main() {
     use leptos::prelude::*;
     use leptos_axum::{generate_route_list, LeptosRoutes};
     use ntv::app::*;
-    use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use std::str::FromStr;
 
     // Initialize logging
     tracing_subscriber::fmt()
@@ -24,9 +25,14 @@ async fn main() {
 
     log!("Connecting to database: {}", database_url);
 
+    // Create connection options with create_if_missing enabled
+    let connect_options = SqliteConnectOptions::from_str(&database_url)
+        .expect("Invalid database URL")
+        .create_if_missing(true);
+
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
-        .connect(&database_url)
+        .connect_with(connect_options)
         .await
         .expect("Failed to create database pool");
 
