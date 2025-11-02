@@ -153,71 +153,20 @@ All editors should enable all Cargo features for rust-analyzer:
 }
 ```
 
-## ✅ PHASE 1 COMPLETE - What We Built
+## ✅ Phase 1 Complete - Foundation
 
-### Architecture
-- **Leptos 0.8** with Islands Architecture (NO additional JavaScript!)
-- **Islands** (`#[island]`) = Interactive WASM components with full reactivity
-- **Components** (`#[component]`) = Server-rendered static HTML
-- **Server Functions** (`#[server]`) = Backend API endpoints
-- **SQLite Database** with automatic migrations
-- **Git Repository** connected to https://github.com/madkrell/ntv.git
+**Stack:** Leptos 0.8 Islands + SQLite + Server Functions
+**Repo:** https://github.com/madkrell/ntv.git
 
-### Database Schema
-- `topologies` - Network topology metadata
-- `nodes` - Network devices with 3D positions (x, y, z)
-- `connections` - Links between nodes (bandwidth, latency, status)
-- `traffic_metrics` - Real-time monitoring data
+**Key Architecture:**
+- `#[island]` = Interactive WASM (Leptos reactivity works)
+- `#[component]` = Server-only HTML (no client JS)
+- `#[server]` = Backend API via leptos_axum::extract()
+- Database pool via Axum Extension layer
 
-### Working Features
-✅ Database connectivity with SqlitePool
-✅ Automatic migrations on server startup
-✅ Server functions for CRUD operations
-✅ Interactive Counter and SimpleButton islands
-✅ Async data loading with Suspense boundaries
-✅ No additional JavaScript required - pure Leptos reactivity
+**Database:** topologies, nodes (3D x/y/z), connections, traffic_metrics
 
-### Key Files
-- `src/main.rs` - Server setup with database pool
-- `src/models/` - Database models (Topology, Node, Connection, TrafficMetric)
-- `src/server/` - Server functions (get_topologies, create_topology, delete_topology)
-- `src/islands/` - Interactive WASM components
-- `migrations/` - Database schema migrations
-
-## IMPORTANT: Islands vs Components
-
-From Leptos documentation - with islands architecture enabled:
-
-**`#[component]`** = Server-rendered only (NO client-side JS)
-- Renders to static HTML
-- Signals and event handlers don't work in browser
-- Zero WASM payload
-
-**`#[island]`** = Interactive with full Leptos reactivity
-- Compiled to separate WASM bundle
-- Hydrated on client-side
-- Signals and event handlers work
-- This IS Leptos's reactive magic!
-
-Example:
-```rust
-// ❌ Button won't work (server-only)
-#[component]
-fn MyButton() -> impl IntoView {
-    let count = RwSignal::new(0);
-    view! { <button on:click=move |_| count.set(1)>"Click"</button> }
-}
-
-// ✅ Button works! (interactive island)
-#[island]
-fn MyButton() -> impl IntoView {
-    let count = RwSignal::new(0);
-    view! { <button on:click=move |_| count.set(1)>"Click"</button> }
-}
-```
-
-## Phase 2 - Next Steps
-1. Create TopologyViewport island (3D visualization with three-d or 2D canvas fallback)
-2. Create TopologyEditor island (node/connection management)
-3. Implement CRUD server functions for nodes and connections
-4. Add real-time traffic monitoring (optional streaming via server functions)
+## Phase 2 - Core Features
+1. Complete server functions (nodes, connections CRUD)
+2. TopologyViewport island (3D/2D visualization)
+3. TopologyEditor island (node/connection management)

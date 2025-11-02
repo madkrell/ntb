@@ -1,6 +1,15 @@
-use crate::models::{Topology, CreateTopology};
+use crate::models::{Topology, CreateTopology, Node, Connection};
 use leptos::prelude::*;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+
+/// Complete topology data with nodes and connections
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopologyFull {
+    pub topology: Topology,
+    pub nodes: Vec<Node>,
+    pub connections: Vec<Connection>,
+}
 
 /// Get all topologies from the database
 #[server(GetTopologies, "/api")]
@@ -72,4 +81,50 @@ pub async fn delete_topology(id: i64) -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
 
     Ok(())
+}
+
+/// Get complete topology with all nodes and connections
+#[server(GetTopologyFull, "/api")]
+pub async fn get_topology_full(id: i64) -> Result<TopologyFull, ServerFnError> {
+    use axum::Extension;
+    use leptos_axum::extract;
+
+    let Extension(pool) = extract::<Extension<SqlitePool>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+    // Fetch topology
+    let topology = sqlx::query_as::<_, Topology>(
+        "SELECT id, name, description, created_at, updated_at FROM topologies WHERE id = ?"
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Topology not found: {}", e)))?;
+
+    // Fetch all nodes for this topology
+    let nodes = sqlx::query_as::<_, Node>(
+        "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, metadata, created_at, updated_at
+         FROM nodes WHERE topology_id = ? ORDER BY created_at"
+    )
+    .bind(id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+    // Fetch all connections for this topology
+    let connections = sqlx::query_as::<_, Connection>(
+        "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, metadata, created_at, updated_at
+         FROM connections WHERE topology_id = ? ORDER BY created_at"
+    )
+    .bind(id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+    Ok(TopologyFull {
+        topology,
+        nodes,
+        connections,
+    })
 }
