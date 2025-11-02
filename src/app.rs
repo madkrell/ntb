@@ -52,13 +52,55 @@ pub fn App() -> impl IntoView {
 fn HomePage() -> impl IntoView {
     use crate::islands::Counter;
 
+    #[cfg(feature = "ssr")]
+    use crate::server::get_topologies;
+
     // Creates a reactive value to update the button
     let count = RwSignal::new(0);
     let on_click = move |_| *count.write() += 1;
 
+    // Test database connectivity
+    let topologies = Resource::new(|| (), |_| async move {
+        #[cfg(feature = "ssr")]
+        {
+            get_topologies().await
+        }
+        #[cfg(not(feature = "ssr"))]
+        {
+            Ok(vec![])
+        }
+    });
+
     view! {
         <h1>"Welcome to Network Topology Visualizer!"</h1>
-        <p>"Testing Leptos 0.8 Islands Architecture"</p>
+        <p>"Testing Leptos 0.8 Islands Architecture + Database"</p>
+
+        <h3>"Database Status"</h3>
+        <Suspense fallback=move || view! { <p>"Loading topologies..."</p> }>
+            {move || {
+                topologies.get().map(|result: Result<Vec<crate::models::Topology>, ServerFnError>| match result {
+                    Ok(topos) => view! {
+                        <div>
+                            <p>"✅ Database connected! Found " {topos.len()} " topologies."</p>
+                            {if topos.is_empty() {
+                                view! { <p>"No topologies yet. Database is ready!"</p> }.into_any()
+                            } else {
+                                view! {
+                                    <ul>
+                                        {topos.into_iter().map(|t: crate::models::Topology| view! {
+                                            <li>{t.name}</li>
+                                        }).collect_view()}
+                                    </ul>
+                                }.into_any()
+                            }}
+                        </div>
+                    }.into_any(),
+                    Err(e) => view! {
+                        <p>"❌ Database error: " {e.to_string()}</p>
+                    }.into_any(),
+                })
+            }}
+        </Suspense>
 
         <h3>"Server-Rendered Component (No WASM)"</h3>
         <button on:click=on_click>"Click Me: " {count}</button>

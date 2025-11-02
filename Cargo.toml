@@ -22,7 +22,8 @@ tower-http = { version = "0.5", features = ["fs"], optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
 
 # Database
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite"], optional = true }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "macros", "migrate"], optional = true }
+dotenvy = { version = "0.15", optional = true }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -54,6 +55,7 @@ ssr = [
     "dep:tokio",
     "dep:leptos_axum",
     "dep:sqlx",
+    "dep:dotenvy",
     "dep:tracing-subscriber",
     "leptos/ssr",
     "leptos/islands",
