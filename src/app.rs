@@ -13,7 +13,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <meta charset="utf-8"/>
                 <meta name="viewport" content="width=device-width, initial-scale=1"/>
                 <AutoReload options=options.clone() />
-                <HydrationScripts options/>
+                <HydrationScripts options islands=true/>
                 <MetaTags/>
             </head>
             <body>
@@ -50,12 +50,20 @@ pub fn App() -> impl IntoView {
 /// Renders the home page of your application.
 #[component]
 fn HomePage() -> impl IntoView {
+    use crate::islands::Counter;
+
     // Creates a reactive value to update the button
     let count = RwSignal::new(0);
     let on_click = move |_| *count.write() += 1;
 
     view! {
-        <h1>"Welcome to Leptos!"</h1>
+        <h1>"Welcome to Network Topology Visualizer!"</h1>
+        <p>"Testing Leptos 0.8 Islands Architecture"</p>
+
+        <h3>"Server-Rendered Component (No WASM)"</h3>
         <button on:click=on_click>"Click Me: " {count}</button>
+
+        <h3>"Island Component (Separate WASM)"</h3>
+        <Counter initial_value=0 />
     }
 }

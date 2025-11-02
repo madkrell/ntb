@@ -8,6 +8,12 @@ async fn main() {
     use leptos_axum::{generate_route_list, LeptosRoutes};
     use ntv::app::*;
 
+    // Initialize logging
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .compact()
+        .init();
+
     let conf = get_configuration(None).unwrap();
     let addr = conf.leptos_options.site_addr;
     let leptos_options = conf.leptos_options;
