@@ -6,9 +6,11 @@ use sqlx::SqlitePool;
 #[server(GetTopologies, "/api")]
 pub async fn get_topologies() -> Result<Vec<Topology>, ServerFnError> {
     use axum::Extension;
+    use leptos_axum::extract;
 
-    let Extension(pool) = use_context::<Extension<SqlitePool>>()
-        .ok_or_else(|| ServerFnError::new("Database pool not found"))?;
+    let Extension(pool) = extract::<Extension<SqlitePool>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
     let topologies = sqlx::query_as::<_, Topology>(
         "SELECT id, name, description, created_at, updated_at FROM topologies ORDER BY created_at DESC"
@@ -24,9 +26,11 @@ pub async fn get_topologies() -> Result<Vec<Topology>, ServerFnError> {
 #[server(CreateTopologyFn, "/api")]
 pub async fn create_topology(data: CreateTopology) -> Result<Topology, ServerFnError> {
     use axum::Extension;
+    use leptos_axum::extract;
 
-    let Extension(pool) = use_context::<Extension<SqlitePool>>()
-        .ok_or_else(|| ServerFnError::new("Database pool not found"))?;
+    let Extension(pool) = extract::<Extension<SqlitePool>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
     let result = sqlx::query(
         "INSERT INTO topologies (name, description) VALUES (?, ?)"
@@ -55,9 +59,11 @@ pub async fn create_topology(data: CreateTopology) -> Result<Topology, ServerFnE
 #[server(DeleteTopology, "/api")]
 pub async fn delete_topology(id: i64) -> Result<(), ServerFnError> {
     use axum::Extension;
+    use leptos_axum::extract;
 
-    let Extension(pool) = use_context::<Extension<SqlitePool>>()
-        .ok_or_else(|| ServerFnError::new("Database pool not found"))?;
+    let Extension(pool) = extract::<Extension<SqlitePool>>()
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
     sqlx::query("DELETE FROM topologies WHERE id = ?")
         .bind(id)

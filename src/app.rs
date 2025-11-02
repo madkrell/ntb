@@ -50,14 +50,10 @@ pub fn App() -> impl IntoView {
 /// Renders the home page of your application.
 #[component]
 fn HomePage() -> impl IntoView {
-    use crate::islands::Counter;
+    use crate::islands::{Counter, SimpleButton};
 
     #[cfg(feature = "ssr")]
     use crate::server::get_topologies;
-
-    // Creates a reactive value to update the button
-    let count = RwSignal::new(0);
-    let on_click = move |_| *count.write() += 1;
 
     // Test database connectivity
     let topologies = Resource::new(|| (), |_| async move {
@@ -102,10 +98,11 @@ fn HomePage() -> impl IntoView {
             }}
         </Suspense>
 
-        <h3>"Server-Rendered Component (No WASM)"</h3>
-        <button on:click=on_click>"Click Me: " {count}</button>
+        <h3>"Interactive Islands (Loaded as WASM)"</h3>
+        <p>"Simple button island:"</p>
+        <SimpleButton />
 
-        <h3>"Island Component (Separate WASM)"</h3>
+        <p style="margin-top: 20px;">"Counter island with controls:"</p>
         <Counter initial_value=0 />
     }
 }
