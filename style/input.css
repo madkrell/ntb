@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+/* Tailwind CSS v4 - CSS-first configuration */
+
+@theme {
+  /* Custom theme variables can be added here */
+  /* Example: --color-brand: #3b82f6; */
+}
+
+/* Custom global styles */
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}

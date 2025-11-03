@@ -59,10 +59,11 @@ fn HomePage() -> impl IntoView {
     });
 
     view! {
-        <h1>"Welcome to Network Topology Visualizer!"</h1>
-        <p>"Testing Leptos 0.8 Islands Architecture + Database"</p>
+        <div class="container mx-auto px-4 py-8">
+            <h1 class="text-4xl font-bold text-blue-600 mb-4">"Welcome to Network Topology Visualizer!"</h1>
+            <p class="text-lg text-gray-700 mb-6">"Testing Leptos 0.8 Islands Architecture + Database"</p>
 
-        <h3>"Database Status"</h3>
+            <h3 class="text-2xl font-semibold mb-3">"Database Status"</h3>
         <Suspense fallback=move || view! { <p>"Loading topologies..."</p> }>
             {move || {
                 topologies.get().map(|result: Result<Vec<crate::models::Topology>, ServerFnError>| match result {
@@ -96,8 +97,9 @@ fn HomePage() -> impl IntoView {
         <p style="margin-top: 20px;">"Counter island with controls:"</p>
         <Counter initial_value=0 />
 
-        <h3>"3D Network Topology Viewport"</h3>
-        <p>"WebGL-powered 3D visualization:"</p>
+        <h3 class="text-2xl font-semibold mt-6 mb-3">"3D Network Topology Viewport"</h3>
+        <p class="text-gray-700 mb-4">"WebGL-powered 3D visualization:"</p>
         <TopologyViewport topology_id=1 />
+        </div>
     }
 }

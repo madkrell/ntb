@@ -17,7 +17,10 @@
       "WebFetch(domain:github.com)",
       "Bash(lsof:*)",
       "Bash(xargs kill:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(echo:*)",
+      "Bash(public/models/README.md)",
+      "Bash(./tailwindcss:*)"
     ],
     "deny": [],
     "ask": []

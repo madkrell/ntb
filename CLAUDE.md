@@ -215,16 +215,35 @@ cargo new --lib my-project
 - **three-d = "0.17.1" ✅ VERIFIED** - Works with custom WebGL2 context
 
 ## Build Commands (VERIFIED)
-```bash
-# Development with hot reload
-cargo leptos watch
 
-# Production build
+### Development Mode
+Run **both** commands in separate terminals:
+```bash
+# Terminal 1: Tailwind CSS watch mode (v4.1.16)
+./tailwindcss -i style/input.css -o style/output.css --watch
+
+# Terminal 2: Leptos development server with hot reload
+cargo leptos watch
+```
+
+### Production Build
+```bash
+# Build optimized CSS first
+./tailwindcss -i style/input.css -o style/output.css --minify
+
+# Then build Leptos application
 cargo leptos build --release
 
 # Verify code splitting (look for multiple .wasm files)
 ls -lh target/site/pkg/*.wasm
 ```
+
+## Styling with Tailwind CSS v4
+- **No Node.js required** - Using standalone Tailwind CLI
+- **CSS-first configuration** - No `tailwind.config.js` file needed
+- **Auto content detection** - Scans `src/**/*.rs` for classes
+- **Apply classes directly** in Leptos `view!` macros: `<div class="text-blue-600 font-bold">`
+- **See [TAILWIND.md](TAILWIND.md)** for complete setup guide
 
 ## Bundle Sizes (Actual)
 - **Current WASM bundle:** 2.3MB (dev build, includes three-d + all islands)
