@@ -293,7 +293,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
 
                                 <div class="grid grid-cols-3 gap-2">
                                     <div>
-                                        <label class="block text-xs font-medium text-gray-400 mb-1">"Position X"</label>
+                                        <label class="block text-xs font-medium text-red-400 mb-1">"Position X"</label>
                                         <input
                                             type="number"
                                             class="w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
@@ -307,7 +307,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                         />
                                     </div>
                                     <div>
-                                        <label class="block text-xs font-medium text-gray-400 mb-1">"Position Y"</label>
+                                        <label class="block text-xs font-medium text-blue-400 mb-1">"Position Y"</label>
                                         <input
                                             type="number"
                                             class="w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
@@ -321,7 +321,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                         />
                                     </div>
                                     <div>
-                                        <label class="block text-xs font-medium text-gray-400 mb-1">"Position Z"</label>
+                                        <label class="block text-xs font-medium text-green-400 mb-1">"Position Z"</label>
                                         <input
                                             type="number"
                                             class="w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"

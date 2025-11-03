@@ -25,9 +25,9 @@ struct CameraState {
 impl Default for CameraState {
     fn default() -> Self {
         Self {
-            distance: 18.0,    // Increased from 8.0 to show full topology
-            azimuth: 0.785,    // ~45 degrees
-            elevation: 0.785,  // ~45 degrees
+            distance: 18.0,        // Zoomed out to show full topology
+            azimuth: -0.785,       // ~-45 degrees (Blender default: green Y axis lower-left to upper-right)
+            elevation: 1.047,      // ~60 degrees (looking down from above, Blender-style)
         }
     }
 }
@@ -238,10 +238,13 @@ fn initialize_threed_viewport(
     let sphere_cpu_mesh = CpuMesh::sphere(16);
 
     for node in &topology_data.nodes {
+        // Map database coordinates to Blender convention (XY floor, Z up)
+        // DB: position_y was "up" → now render as Z (up in Blender)
+        // DB: position_z was "depth" → now render as Y (front-back)
         let position = vec3(
-            node.position_x as f32,
-            node.position_y as f32,
-            node.position_z as f32,
+            node.position_x as f32,  // X stays X (left-right)
+            node.position_z as f32,  // Z becomes Y (front-back)
+            node.position_y as f32,  // Y becomes Z (up-down)
         );
         node_positions.insert(node.id, position);
 
@@ -273,6 +276,9 @@ fn initialize_threed_viewport(
         // Store (node_id, normal_mesh, selected_mesh) tuple
         node_meshes.push((node.id, normal_sphere, selected_sphere));
     }
+
+    // Create grid and axes for spatial reference
+    let grid_axes_meshes = create_grid_and_axes(&context);
 
     // Create connection meshes (lines between nodes)
     let mut connection_meshes = Vec::new();
@@ -338,6 +344,7 @@ fn initialize_threed_viewport(
     // Wrap meshes and data in Rc<RefCell> for render closure
     let node_meshes = Rc::new(RefCell::new(node_meshes));
     let connection_meshes = Rc::new(RefCell::new(connection_meshes));
+    let grid_axes_meshes = Rc::new(grid_axes_meshes);
     let nodes_data = Rc::new(nodes_data);
 
     // Get canvas dimensions
@@ -353,6 +360,7 @@ fn initialize_threed_viewport(
         let context = context.clone();
         let node_meshes = node_meshes.clone();
         let connection_meshes = connection_meshes.clone();
+        let grid_axes_meshes = grid_axes_meshes.clone();
         let ambient = ambient.clone();
         let directional = directional.clone();
         let canvas = canvas.clone();
@@ -373,8 +381,8 @@ fn initialize_threed_viewport(
             let camera = Camera::new_perspective(
                 viewport,
                 eye,
-                vec3(0.0, 0.0, 0.0),
-                vec3(0.0, 1.0, 0.0),
+                vec3(0.0, 0.0, 0.0),    // look at origin
+                vec3(0.0, 0.0, 1.0),    // up = +Z (Blender convention)
                 degrees(45.0),
                 0.1,
                 1000.0,
@@ -384,7 +392,12 @@ fn initialize_threed_viewport(
             let target = RenderTarget::screen(&context, width, height);
             target.clear(clear_state);
 
-            // Render connections first (so they appear behind nodes)
+            // Render grid and axes first (background reference)
+            for mesh in grid_axes_meshes.iter() {
+                target.render(&camera, mesh, &[]);
+            }
+
+            // Render connections (so they appear behind nodes)
             for conn in connection_meshes.borrow().iter() {
                 target.render(&camera, conn, &[&*ambient, &*directional]);
             }
@@ -617,7 +630,7 @@ fn setup_orbit_controls(
                         state.distance * state.elevation.cos() * state.azimuth.cos(),
                     );
                     let target = vec3(0.0, 0.0, 0.0);
-                    let up = vec3(0.0, 1.0, 0.0);
+                    let up = vec3(0.0, 0.0, 1.0);  // Z-up (Blender convention)
 
                     // Calculate camera basis vectors
                     let forward = (target - eye).normalize();
@@ -731,5 +744,136 @@ fn setup_orbit_controls(
     }
 
     Ok(())
+}
+
+/// Create grid floor and XYZ axes for spatial reference (Blender-style)
+#[cfg(feature = "hydrate")]
+fn create_grid_and_axes(context: &three_d::Context) -> Vec<three_d::Gm<three_d::Mesh, three_d::ColorMaterial>> {
+    use three_d::*;
+
+    let mut meshes = Vec::new();
+
+    // Grid parameters (Blender convention: XY plane floor, Z is up)
+    let grid_size = 10; // 10 units in each direction from origin
+    let grid_spacing = 1.0; // 1 unit between lines
+    let grid_z = 0.0; // Floor at Z=0 (Blender convention)
+    let grid_line_thickness = 0.006; // Very thin lines
+    let axis_line_thickness = 0.012; // Slightly thicker for axes
+
+    // Create grid lines as thin cylinders on XY plane (Z=0)
+    let grid_color = Srgba::new(50, 50, 50, 180); // Faint dark gray with transparency
+    let cylinder_cpu_mesh = CpuMesh::cylinder(8); // 8-sided cylinder for lines
+
+    // Lines parallel to X axis (varying Y) - these go left-right
+    for i in -grid_size..=grid_size {
+        let y = i as f32 * grid_spacing;
+        let start = vec3(-grid_size as f32 * grid_spacing, y, grid_z);
+        let end = vec3(grid_size as f32 * grid_spacing, y, grid_z);
+
+        if let Some(line_mesh) = create_line_cylinder(context, start, end, grid_line_thickness, grid_color, &cylinder_cpu_mesh) {
+            meshes.push(line_mesh);
+        }
+    }
+
+    // Lines parallel to Y axis (varying X) - these go front-back
+    for i in -grid_size..=grid_size {
+        let x = i as f32 * grid_spacing;
+        let start = vec3(x, -grid_size as f32 * grid_spacing, grid_z);
+        let end = vec3(x, grid_size as f32 * grid_spacing, grid_z);
+
+        if let Some(line_mesh) = create_line_cylinder(context, start, end, grid_line_thickness, grid_color, &cylinder_cpu_mesh) {
+            meshes.push(line_mesh);
+        }
+    }
+
+    // Create XYZ axis lines (span full grid extent in both directions)
+    let axis_length = 15.0;
+
+    // X axis (Red) - left to right on floor
+    if let Some(x_axis) = create_line_cylinder(
+        context,
+        vec3(-axis_length, 0.0, 0.0),
+        vec3(axis_length, 0.0, 0.0),
+        axis_line_thickness,
+        Srgba::new(200, 80, 80, 200), // Faint red with transparency
+        &cylinder_cpu_mesh,
+    ) {
+        meshes.push(x_axis);
+    }
+
+    // Y axis (Green) - front to back on floor
+    if let Some(y_axis) = create_line_cylinder(
+        context,
+        vec3(0.0, -axis_length, 0.0),
+        vec3(0.0, axis_length, 0.0),
+        axis_line_thickness,
+        Srgba::new(80, 200, 80, 200), // Faint green with transparency
+        &cylinder_cpu_mesh,
+    ) {
+        meshes.push(y_axis);
+    }
+
+    // Z axis (Blue) - vertical up/down
+    if let Some(z_axis) = create_line_cylinder(
+        context,
+        vec3(0.0, 0.0, -axis_length),
+        vec3(0.0, 0.0, axis_length),
+        axis_line_thickness,
+        Srgba::new(80, 160, 240, 200), // Faint light blue with transparency
+        &cylinder_cpu_mesh,
+    ) {
+        meshes.push(z_axis);
+    }
+
+    meshes
+}
+
+/// Helper function to create a thin cylinder between two points (for lines)
+#[cfg(feature = "hydrate")]
+fn create_line_cylinder(
+    context: &three_d::Context,
+    start: three_d::Vec3,
+    end: three_d::Vec3,
+    thickness: f32,
+    color: three_d::Srgba,
+    cylinder_cpu_mesh: &three_d::CpuMesh,
+) -> Option<three_d::Gm<three_d::Mesh, three_d::ColorMaterial>> {
+    use three_d::*;
+
+    let direction = end - start;
+    let length = direction.magnitude();
+
+    if length < 0.001 {
+        return None; // Skip zero-length lines
+    }
+
+    let midpoint = start + direction * 0.5;
+    let normalized_dir = direction.normalize();
+    let up = vec3(0.0, 1.0, 0.0);
+
+    // Calculate rotation to align cylinder with line direction
+    let rotation = if (normalized_dir - up).magnitude() < 0.001 {
+        Mat4::identity()
+    } else if (normalized_dir + up).magnitude() < 0.001 {
+        Mat4::from_angle_x(radians(std::f32::consts::PI))
+    } else {
+        let axis = up.cross(normalized_dir).normalize();
+        let angle = up.dot(normalized_dir).acos();
+        Mat4::from_axis_angle(axis, radians(angle))
+    };
+
+    let mut cylinder = Gm::new(
+        Mesh::new(context, cylinder_cpu_mesh),
+        ColorMaterial {
+            color,
+            ..Default::default()
+        },
+    );
+
+    // Transform: translate to midpoint, rotate to align, then scale
+    let scale = Mat4::from_nonuniform_scale(thickness, length * 0.5, thickness);
+    cylinder.set_transformation(Mat4::from_translation(midpoint) * rotation * scale);
+
+    Some(cylinder)
 }
 
