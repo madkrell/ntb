@@ -16,7 +16,8 @@
       "WebSearch",
       "WebFetch(domain:github.com)",
       "Bash(lsof:*)",
-      "Bash(xargs kill:*)"
+      "Bash(xargs kill:*)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []

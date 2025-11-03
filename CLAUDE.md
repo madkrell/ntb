@@ -3,7 +3,8 @@
 ## Project Status
 **Current Phase:** Phase 2 - 3D Viewport Implementation ✅ COMPLETE
 **Last Updated:** 2025-11-03
-**Current Task:** Phase 2 complete. Ready for Phase 3 (Editor) or Phase 4 (Traffic/Polish)
+**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete
+**Next Phase:** Phase 3 - UI Layout & 3D Editing Interface
 
 ## ✅ VERIFIED Configuration (from Leptos 0.7/0.8 docs)
 
@@ -470,21 +471,47 @@ Created test topology with 7 nodes and 7 connections:
 
 **Git Tag:** v0.1.0-phase2-complete (to be created)
 
-## Phase 3 - Topology Editor (NEXT)
+## Phase 3 - UI Layout & 3D Editing Interface (NEXT)
 
 ### Planned Features
-1. Canvas-based editor for device placement
-2. Drag-and-drop device palette
-3. Connection drawing between nodes
-4. Properties panel for editing node/connection details
-5. Save/update topology functionality
+**UI Layout:**
+1. Professional layout with 3D viewport in center
+2. Device palette/toolbar (left or top) for selecting device types
+3. Properties panel (right side) showing selected node/connection details
+4. Top toolbar with common actions (Add Node, Delete, Connect, Save)
 
-## Phase 4 - Traffic Monitoring & Polish (FUTURE)
+**3D Editing Capabilities:**
+1. Click on node in 3D viewport → select, show properties
+2. Click empty space → deselect or add node (depending on mode)
+3. Drag from node to node → create connection
+4. Delete key/button → remove selected node/connection
+5. All editing happens directly in the 3D viewport (no separate 2D editor)
+
+**Backend:**
+1. Server functions for CRUD operations (create/update/delete nodes and connections)
+2. Save/update topology functionality
+
+## Phase 4 - Visual Enhancements & 3D Models (FUTURE)
 
 ### Planned Features
-1. Real-time traffic data visualization (SSE/WebSocket)
-2. Node selection on click
-3. Node labels/tooltips
-4. Color-coded nodes by type
-5. Export functionality (PNG, JSON)
-6. UI polish and optimizations
+1. Node labels/tooltips on hover in 3D viewport
+2. Color-coded nodes by type (router=blue, switch=green, etc.)
+3. Load custom 3D models from Blender (glTF/GLB format from public/models/)
+4. Improved lighting and materials
+5. Better camera controls (presets, bookmarks)
+
+## Phase 5 - Traffic Monitoring (FUTURE)
+
+### Planned Features
+1. Real-time traffic data visualization using Leptos native streaming
+2. Use `#[server(protocol = Websocket<...>)]` for streaming data
+3. Display traffic throughput on connections
+4. Color/animate connections based on traffic load
+
+## Phase 6 - Export & Finalization (FUTURE)
+
+### Planned Features
+1. Export topology as PNG image
+2. Export topology as JSON data
+3. Import topology from JSON
+4. UI polish and optimizations

@@ -39,22 +39,23 @@ Next: [specify what you want to work on - see options below]
 
 ### 🔄 What to Work On Next
 
-**Option 1: Phase 3 - Topology Editor**
+**Option 1: Phase 3 - UI Layout & 3D Editing**
 ```
-Let's build the topology editor. I want to:
-- Create a canvas-based editor for placing devices
-- Add a device palette with drag-and-drop
-- Enable connection drawing between nodes
-- Build properties panel for editing node/connection details
+Let's build the editing UI and interface. I want to:
+- Create professional UI layout (3D viewport center, panels around edges)
+- Add device palette/toolbar for selecting device types
+- Enable node selection/editing directly in 3D viewport
+- Build properties panel for editing selected node/connection details
+- Add toolbar with common actions (Add, Delete, Connect, Save)
 ```
 
-**Option 2: Phase 4 - Enhancement & Polish**
+**Option 2: Phase 4 - Visual Enhancements**
 ```
-Let's enhance the viewer. I want to:
-- Add node selection on click
+Let's enhance the 3D visualization. I want to:
 - Show node labels/tooltips on hover
 - Color-code nodes by type (router=blue, switch=green, etc.)
-- Add node type icons or better models
+- Load custom 3D models from Blender (glTF/GLB files)
+- Improve lighting and materials
 ```
 
 **Option 3: Traffic Monitoring (Leptos Streaming)**
@@ -234,17 +235,18 @@ cargo leptos watch  # Should compile without errors
 
 ## 🎬 Example Session Start Prompts
 
-### Continue with Phase 3 (Editor)
+### Continue with Phase 3 (UI Layout & 3D Editing)
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
 Read CLAUDE.md for complete context. Phase 2 is complete (3D viewport working).
 
-Let's build Phase 3: Topology Editor
-- Canvas-based editor for device placement
-- Device palette with drag-and-drop
-- Connection drawing
-- Properties panel for editing
+Let's build Phase 3: UI Layout & 3D Editing Interface
+- Professional UI layout (3D viewport center, panels around edges)
+- Device palette/toolbar for selecting device types
+- Node selection and editing directly in 3D viewport
+- Properties panel for editing selected nodes/connections
+- Toolbar with common actions (Add, Delete, Connect, Save)
 
 Where should we start?
 ```

@@ -28,10 +28,10 @@
 
 ### Remaining Phases
 
-- ⏳ Phase 3 - Topology Editor (Canvas-based 2D editor)
-- ⏳ Phase 4 - Enhancement & Polish (Selection, labels, colors, icons)
+- ⏳ Phase 3 - UI Layout & 3D Editing Interface
+- ⏳ Phase 4 - Visual Enhancements & 3D Models (Blender glTF/GLB)
 - ⏳ Phase 5 - Traffic Monitoring (Real-time with Leptos streaming)
-- ⏳ Phase 6 - Export Functionality (PNG, JSON)
+- ⏳ Phase 6 - Export & Finalization (PNG, JSON)
 
 **See [SESSION-GUIDE.md](SESSION-GUIDE.md) for continuation guidance.**
 
@@ -1669,9 +1669,21 @@ This 2D approach is much simpler and still uses pure Rust!
 
 ---
 
-## Phase 3: Editor Island & Device Placement (Week 5-6)
+## Phase 3: UI Layout & 3D Editing Interface (Week 5-6)
 
-### 3.1 Canvas-Based Editor Island
+> ⚠️ **OUTDATED SECTION BELOW**
+> This section describes a 2D canvas-based editor approach which is NO LONGER USED.
+>
+> **Current Approach:** 3D viewport-based editing with UI panels
+> - Professional layout: 3D viewport (center), device palette (left/top), properties panel (right), toolbar (top)
+> - All editing happens directly in the 3D viewport (click to select, drag to connect, etc.)
+> - No separate 2D canvas editor needed
+>
+> **See [CLAUDE.md Phase 3](CLAUDE.md#phase-3---ui-layout--3d-editing-interface-next) for current requirements.**
+
+---
+
+### 3.1 Canvas-Based Editor Island (OUTDATED - 2D approach)
 
 **src/islands/topology_editor.rs**:
 ```rust
