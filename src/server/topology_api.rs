@@ -1,15 +1,6 @@
-use crate::models::{Topology, CreateTopology, Node, Connection};
+use crate::models::{Topology, CreateTopology, TopologyFull, Node, Connection};
 use leptos::prelude::*;
-use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-
-/// Complete topology data with nodes and connections
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TopologyFull {
-    pub topology: Topology,
-    pub nodes: Vec<Node>,
-    pub connections: Vec<Connection>,
-}
 
 /// Get all topologies from the database
 #[server(GetTopologies, "/api")]

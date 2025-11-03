@@ -50,21 +50,12 @@ pub fn App() -> impl IntoView {
 /// Renders the home page of your application.
 #[component]
 fn HomePage() -> impl IntoView {
-    use crate::islands::{Counter, SimpleButton};
-
-    #[cfg(feature = "ssr")]
-    use crate::server::get_topologies;
+    use crate::islands::{Counter, SimpleButton, TopologyViewport};
+    use crate::api::get_topologies;
 
     // Test database connectivity
     let topologies = Resource::new(|| (), |_| async move {
-        #[cfg(feature = "ssr")]
-        {
-            get_topologies().await
-        }
-        #[cfg(not(feature = "ssr"))]
-        {
-            Ok(vec![])
-        }
+        get_topologies().await
     });
 
     view! {
@@ -104,5 +95,9 @@ fn HomePage() -> impl IntoView {
 
         <p style="margin-top: 20px;">"Counter island with controls:"</p>
         <Counter initial_value=0 />
+
+        <h3>"3D Network Topology Viewport"</h3>
+        <p>"WebGL-powered 3D visualization:"</p>
+        <TopologyViewport topology_id=1 />
     }
 }

@@ -1,6 +1,7 @@
 pub mod app;
 pub mod islands;
 pub mod models;
+pub mod api;  // Server functions - available on both client and server
 
 #[cfg(feature = "ssr")]
 pub mod server;

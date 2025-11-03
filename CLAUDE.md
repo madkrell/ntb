@@ -1,9 +1,9 @@
 # Network Topology Visualizer - Claude Development Notes
 
 ## Project Status
-**Current Phase:** Phase 1 - Foundation ✅ COMPLETE
-**Last Updated:** 2025-01-02
-**Next Phase:** Phase 2 - Core Features (3D Viewport & Topology Editor)
+**Current Phase:** Phase 2 - 3D Viewport Implementation ✅ COMPLETE
+**Last Updated:** 2025-11-03
+**Current Task:** Phase 2 complete. Ready for Phase 3 (Editor) or Phase 4 (Traffic/Polish)
 
 ## ✅ VERIFIED Configuration (from Leptos 0.7/0.8 docs)
 
@@ -54,19 +54,114 @@ pub fn hydrate() {
 }
 ```
 
-## Islands vs Components
-- `#[island]` - Compiles to separate WASM, loads on-demand
-- `#[component]` - Server-rendered HTML only, no WASM
+## Islands vs Components vs Code Splitting (VERIFIED)
+
+**IMPORTANT:** Islands ≠ Automatic Code Splitting!
+
+- `#[component]` - Server-rendered HTML only, no client JS
+- `#[island]` - Interactive WASM component with full Leptos reactivity (hydrates on-demand)
+- `#[lazy]` - Code-splits island into separate WASM bundle (ONLY works with simple async functions)
+
+**Reality Check:**
+```rust
+// ❌ Does NOT work - complex reactive logic with Effects/signals
+#[island]
+#[lazy]
+async fn ComplexIsland() -> impl IntoView { /* Effects, Resources, etc. */ }
+
+// ✅ Works - simple async data fetching
+#[island]
+#[lazy]
+async fn SimpleIsland() -> impl IntoView {
+    let data = fetch_data().await;
+    view! { <div>{data}</div> }
+}
+```
+
+**Our Architecture:**
+- Islands provide on-demand hydration (not loaded until component renders)
+- All islands in single WASM bundle (~2.3MB with three-d)
+- `#[lazy]` only works for simple async components without reactive primitives
+
+## Server Functions Architecture (CRITICAL DISCOVERY)
+
+**Issue:** Server functions need to be accessible from both client and server, but `#[cfg(feature = "ssr")]` gates module visibility.
+
+**Solution:** Create a **non-feature-gated module** for server functions:
+
+```rust
+// src/lib.rs
+pub mod app;
+pub mod islands;
+pub mod models;
+pub mod api;  // ✅ NOT behind #[cfg(feature = "ssr")]
+
+#[cfg(feature = "ssr")]
+pub mod server;  // Old implementation-specific code
+```
+
+```rust
+// src/api.rs - Server functions accessible from client AND server
+use crate::models::{Topology, Node, Connection};
+use leptos::prelude::*;
+
+#[cfg(feature = "ssr")]
+use sqlx::SqlitePool;
+
+#[server(GetTopologyFull, "/api")]
+pub async fn get_topology_full(id: i64) -> Result<TopologyFull, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+
+        let Extension(pool) = extract::<Extension<SqlitePool>>()
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to extract: {}", e)))?;
+
+        // Database operations...
+        Ok(data)
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}
+```
+
+```rust
+// src/islands/my_island.rs - Now this works!
+use crate::api::get_topology_full;  // ✅ Can import!
+
+#[island]
+pub fn MyIsland() -> impl IntoView {
+    let data = Resource::new(
+        || (),
+        |_| async move {
+            get_topology_full(1).await  // ✅ Works!
+        }
+    );
+    // ...
+}
+```
+
+**Why this works:**
+- `#[server]` macro generates client-side stub when `ssr` feature is off
+- Non-feature-gated module makes function signature visible to client
+- SSR-specific implementation is conditionally compiled
+- Leptos handles the HTTP request/response serialization
 
 ## Server Functions & Streaming (VERIFIED)
-All backend logic uses `#[server]` macro. Leptos has NATIVE streaming support!
-
 ```rust
 // Regular server function
 #[server(FunctionName)]
 pub async fn function_name(...) -> Result<T, ServerFnError> {
-    let pool = use_context::<SqlitePool>()?;
-    // Database operations...
+    #[cfg(feature = "ssr")]
+    {
+        let pool = extract::<Extension<SqlitePool>>().await?.0;
+        // Database operations...
+    }
 }
 
 // ✅ NATIVE SSE/STREAMING (no Axum SSE needed!)
@@ -74,12 +169,26 @@ pub async fn function_name(...) -> Result<T, ServerFnError> {
 async fn stream_data(
     input: BoxedStream<Message, ServerFnError>
 ) -> Result<BoxedStream<Message, ServerFnError>, ServerFnError> {
-    // Leptos handles streaming natively
     Ok(input.into())
 }
 
 // Client side: create signal from stream
 let signal = Signal::from_stream(my_stream);
+```
+
+## Browser Console Logging from WASM
+
+**Issue:** `tracing` logs don't appear in browser console from WASM
+
+**Solution:** Use `web_sys::console` directly:
+```rust
+// Add to Cargo.toml web-sys features
+web-sys = { version = "0.3", features = ["console", "HtmlCanvasElement", ...] }
+
+// In your code
+web_sys::console::log_1(&"Hello from WASM!".into());
+web_sys::console::log_1(&format!("Value: {}", x).into());
+web_sys::console::error_1(&format!("Error: {}", e).into());
 ```
 
 ## Project Initialization (VERIFIED)
@@ -96,11 +205,13 @@ cargo new --lib my-project
 ```
 
 ## Verified Working Dependencies
-- leptos = "0.8" (with "ssr" and "islands" features)
-- leptos_axum = "0.8"
+- leptos = "0.8.0" (with "ssr" and "islands" features)
+- leptos_axum = "0.8.0"
 - cargo-leptos = latest
-- sqlx = "0.7"
-- three-d = "0.17" (WASM status: TBD - to verify in Phase 2)
+- sqlx = "0.7" (with sqlite, macros, migrate)
+- wasm-bindgen = "0.2.101" (matching installed CLI)
+- web-sys = "0.3" (WebGL2, console features)
+- **three-d = "0.17.1" ✅ VERIFIED** - Works with custom WebGL2 context
 
 ## Build Commands (VERIFIED)
 ```bash
@@ -114,19 +225,68 @@ cargo leptos build --release
 ls -lh target/site/pkg/*.wasm
 ```
 
-## Target Bundle Sizes
-- TopologyViewport: ~300KB (with three-d)
-- TopologyEditor: ~150KB
-- TrafficMonitor: ~80KB
-- Total: <640KB
+## Bundle Sizes (Actual)
+- **Current WASM bundle:** 2.3MB (dev build, includes three-d + all islands)
+- Release build with optimizations will be significantly smaller
+- Islands hydrate on-demand but share single WASM bundle (no #[lazy] splitting)
 
 ## Known Issues & Solutions
-(To be populated as we encounter them)
+
+### 1. Server Functions Database Access
+**Issue:** `use_context::<SqlitePool>()` returns None in server functions
+**Solution:** Use `leptos_axum::extract()` instead
+```rust
+use leptos_axum::extract;
+use axum::Extension;
+
+let Extension(pool) = extract::<Extension<SqlitePool>>()
+    .await
+    .map_err(|e| ServerFnError::new(format!("Failed to extract: {}", e)))?;
+```
+
+### 2. Server Functions Not Accessible from Islands
+**Issue:** `use crate::server::my_function` fails with "unresolved import" from client code
+**Solution:** Create non-feature-gated `api.rs` module (see "Server Functions Architecture" above)
+
+### 3. SQLite Database Creation
+**Issue:** "unable to open database file" on first run
+**Solution:** Use `SqliteConnectOptions` with `create_if_missing(true)`
+```rust
+use sqlx::sqlite::SqliteConnectOptions;
+use std::str::FromStr;
+
+let options = SqliteConnectOptions::from_str(&database_url)?
+    .create_if_missing(true);
+let pool = SqlitePoolOptions::new()
+    .connect_with(options)
+    .await?;
+```
+
+### 4. Islands Code Splitting with #[lazy]
+**Issue:** `#[lazy]` attribute fails with "trait bounds not satisfied" for reactive islands
+**Root Cause:** `#[lazy]` requires simple async functions; doesn't work with Effects, Resources, or complex reactive logic
+**Solution:** Accept single WASM bundle or simplify island to pure async data fetching
+
+### 5. wasm-bindgen Version Mismatch
+**Issue:** "Wasm file schema version: 0.2.105, binary schema version: 0.2.101"
+**Solution:** Pin wasm-bindgen to match installed CLI version in Cargo.toml:
+```toml
+wasm-bindgen = { version = "=0.2.101", optional = true }
+```
+
+### 6. JsCast Import Not Found
+**Issue:** `use leptos::wasm_bindgen::JsCast` fails or `unchecked_ref()` not available
+**Solution:** Import directly from wasm_bindgen crate:
+```rust
+#[cfg(feature = "hydrate")]
+use wasm_bindgen::JsCast;
+```
 
 ## Database
 - SQLite with sqlx
 - Migrations in /migrations/
-- Pool provided via Axum Extension and Leptos context
+- Pool provided via Axum Extension
+- Sample data: 7 nodes (Router, Switches, Servers, Firewall), 7 connections
 
 ## Key Corrections to Original Plan
 
@@ -135,6 +295,7 @@ ls -lh target/site/pkg/*.wasm
 2. **leptos::leptos_dom::HydrationCtx::stop_hydrating()** - Wrong! Use `hydrate_islands()`
 3. **Axum SSE endpoints** - NOT needed! Leptos has native streaming via server functions
 4. **Manual EventSource setup** - NOT needed! Use `Signal::from_stream()`
+5. **Server functions in `#[cfg(feature = "ssr")]` module** - Wrong! Create non-gated `api.rs`
 
 ### ✅ CORRECT approach:
 1. Use `cargo leptos new --git leptos-rs/start-axum` for project template
@@ -142,7 +303,8 @@ ls -lh target/site/pkg/*.wasm
 3. Use `leptos::mount::hydrate_islands()` in lib.rs
 4. Use `#[server(protocol = Websocket<>)]` for streaming
 5. Use `Signal::from_stream()` for reactive SSE/streaming data
-6. Be sure to use context7 mcp server if needing to check correct leptos configuration
+6. Put server functions in non-feature-gated module (api.rs)
+7. Use `web_sys::console` for browser console logging from WASM
 
 ## IDE Configuration
 All editors should enable all Cargo features for rust-analyzer:
@@ -153,7 +315,7 @@ All editors should enable all Cargo features for rust-analyzer:
 }
 ```
 
-## ✅ Phase 1 Complete - Foundation
+## ✅ Phase 1 COMPLETE - Foundation
 
 **Stack:** Leptos 0.8 Islands + SQLite + Server Functions
 **Repo:** https://github.com/madkrell/ntv.git
@@ -164,15 +326,165 @@ All editors should enable all Cargo features for rust-analyzer:
 - `#[server]` = Backend API via leptos_axum::extract()
 - Database pool via Axum Extension layer
 
-**Database:** topologies, nodes (3D x/y/z), connections, traffic_metrics
+**Database Schema:** topologies, nodes (3D x/y/z), connections, traffic_metrics
+**Git Tag:** v0.1.0-phase1-complete
 
-## Phase 2 - Core Features
+## ✅ Phase 2 COMPLETE - 3D Viewport & Rendering
 
-### ✅ Server Functions Complete (11 total)
-**Topologies:** get_topologies, create_topology, delete_topology, get_topology_full
-**Nodes:** get_nodes, create_node, update_node, delete_node
-**Connections:** get_connections, create_connection, update_connection, delete_connection
+### Server Functions (Moved to api.rs)
+Created `src/api.rs` module (NOT feature-gated) with all server functions:
+- `get_topologies()` - List all topologies
+- `create_topology()` - Create new topology
+- `delete_topology()` - Delete topology
+- `get_topology_full()` - Get topology with all nodes and connections
 
-### Next: UI Implementation
-1. TopologyViewport island (3D/2D visualization)
-2. TopologyEditor island (CRUD interface for topologies/nodes/connections)
+### 3D Viewport Implementation
+**Approach:** three-d with custom WebGL2 context (NOT three-d's Window module)
+
+**Key Discovery:** three-d can work WITHOUT event loop control!
+- three-d's Window module requires event loop (conflicts with Leptos islands)
+- **Solution:** Use `three_d::Context::from_gl_context()` with web-sys WebGL2 context
+- Leptos island controls DOM/canvas, three-d just renders to it
+
+**Implementation Pattern:**
+```rust
+#[island]
+pub fn TopologyViewport(#[prop(optional)] topology_id: Option<i64>) -> impl IntoView {
+    let canvas_ref = NodeRef::<Canvas>::new();
+    let camera_state = RwSignal::new(CameraState::default());
+
+    // Fetch topology data
+    let topology_data = Resource::new(
+        move || topology_id,
+        |id| async move {
+            match id {
+                Some(id) => get_topology_full(id).await.ok(),
+                None => None,
+            }
+        }
+    );
+
+    Effect::new(move || {
+        if let Some(canvas) = canvas_ref.get() {
+            #[cfg(feature = "hydrate")]
+            {
+                // Get WebGL2 context
+                let gl = canvas.get_context("webgl2")?.dyn_into::<WebGl2RenderingContext>()?;
+
+                // Wrap in glow (three-d uses glow internally)
+                let gl_context = three_d::context::Context::from_webgl2_context(gl);
+
+                // Create three-d Context
+                let context = Context::from_gl_context(Arc::new(gl_context))?;
+
+                // Render nodes and connections...
+            }
+        }
+    });
+
+    view! { <canvas node_ref=canvas_ref width="800" height="600" /> }
+}
+```
+
+### Camera Controls (Orbit Camera)
+**Implementation:** Spherical coordinate system
+- **Drag to rotate:** Updates azimuth (horizontal) and elevation (vertical) angles
+- **Scroll to zoom:** Adjusts camera distance
+- **Camera state:** RwSignal with distance, azimuth, elevation
+
+```rust
+#[derive(Clone, Copy)]
+struct CameraState {
+    distance: f32,     // 18.0 default (zoomed out to show all nodes)
+    azimuth: f32,      // horizontal rotation in radians
+    elevation: f32,    // vertical rotation in radians
+}
+
+// Camera position calculation
+let eye = vec3(
+    state.distance * state.elevation.cos() * state.azimuth.sin(),
+    state.distance * state.elevation.sin(),
+    state.distance * state.elevation.cos() * state.azimuth.cos(),
+);
+```
+
+### Node Rendering
+- **Nodes as spheres:** `CpuMesh::sphere(16)` with PhysicalMaterial
+- **Scale:** 0.3 (tested, prevents overlap)
+- **Color:** Blue (Srgba::new(50, 150, 255, 255))
+- **Positioning:** Uses node.position_x/y/z from database
+
+### Connection Rendering
+- **Connections as cylinders:** Rotated to align between nodes
+- **Challenge:** three-d's default cylinder is along Y-axis, needs rotation
+- **Solution:** Axis-angle rotation from direction vector
+
+```rust
+// Calculate rotation to align cylinder with connection direction
+let direction = end_pos - start_pos;
+let length = direction.magnitude();
+let normalized_dir = direction.normalize();
+let up = vec3(0.0, 1.0, 0.0);
+
+// Calculate rotation axis and angle
+if (normalized_dir - up).magnitude() < 0.001 {
+    // Already aligned
+    Mat4::identity()
+} else if (normalized_dir + up).magnitude() < 0.001 {
+    // Opposite direction (180 degrees)
+    Mat4::from_angle_x(radians(std::f32::consts::PI))
+} else {
+    // General case: axis-angle rotation
+    let axis = up.cross(normalized_dir).normalize();
+    let angle = up.dot(normalized_dir).acos();
+    Mat4::from_axis_angle(axis, radians(angle))
+}
+```
+
+### Sample Data
+Created test topology with 7 nodes and 7 connections:
+- Router-Core at origin (0,0,0)
+- Switch-A and Switch-B at (-3,2,0) and (3,2,0)
+- 3 Servers at y=4, z=-2
+- Firewall at (0,-3,0)
+- Connections between them (fiber, ethernet)
+
+### Achievements
+1. ✅ WebGL2 context initialized
+2. ✅ three-d Context created from WebGL2
+3. ✅ Test cube rendered and verified
+4. ✅ Interactive camera controls (drag + scroll)
+5. ✅ Topology data loaded from database via server function
+6. ✅ Nodes rendered as 3D spheres at correct positions
+7. ✅ Connections rendered as properly rotated cylinders
+8. ✅ Camera zoomed out to show full topology (distance 18.0)
+9. ✅ Browser console logging working
+
+### Current Status
+**Working features:**
+- Interactive 3D viewport with orbit controls
+- Topology data fetched from server and rendered
+- 7 nodes displayed as blue spheres
+- 7 connections displayed as gray cylinders
+- Proper camera positioning to view entire network
+
+**Git Tag:** v0.1.0-phase2-complete (to be created)
+
+## Phase 3 - Topology Editor (NEXT)
+
+### Planned Features
+1. Canvas-based editor for device placement
+2. Drag-and-drop device palette
+3. Connection drawing between nodes
+4. Properties panel for editing node/connection details
+5. Save/update topology functionality
+
+## Phase 4 - Traffic Monitoring & Polish (FUTURE)
+
+### Planned Features
+1. Real-time traffic data visualization (SSE/WebSocket)
+2. Node selection on click
+3. Node labels/tooltips
+4. Color-coded nodes by type
+5. Export functionality (PNG, JSON)
+6. UI polish and optimizations

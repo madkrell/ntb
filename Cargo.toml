@@ -32,12 +32,13 @@ serde_json = "1"
 # WASM
 wasm-bindgen = { version = "=0.2.101", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
+web-sys = { version = "0.3", features = ["HtmlCanvasElement", "WebGl2RenderingContext", "WebGlBuffer", "WebGlProgram", "WebGlShader", "WebGlUniformLocation", "console"], optional = true }
 
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
-# 3D rendering (to be verified in Phase 2)
+# 3D rendering with WebGL
 three-d = { version = "0.17", optional = true }
 
 [features]
@@ -47,6 +48,8 @@ hydrate = [
     "leptos/islands",
     "dep:console_error_panic_hook",
     "dep:wasm-bindgen",
+    "dep:web-sys",
+    "dep:three-d",
 ]
 ssr = [
     "dep:axum",
@@ -64,7 +67,7 @@ ssr = [
 ]
 
 # Optional feature for 3D rendering
-viewer-3d = ["three-d"]
+viewer-3d = ["dep:three-d"]
 
 # Defines a size-optimized profile for the WASM bundle in release mode
 [profile.wasm-release]

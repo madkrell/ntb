@@ -27,3 +27,11 @@ pub struct UpdateTopology {
     pub name: Option<String>,
     pub description: Option<String>,
 }
+
+/// Complete topology data with nodes and connections
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopologyFull {
+    pub topology: Topology,
+    pub nodes: Vec<super::Node>,
+    pub connections: Vec<super::Connection>,
+}
