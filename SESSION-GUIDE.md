@@ -181,11 +181,32 @@ let context = Context::from_gl_context(Arc::new(gl_context))?;
 
 ## ⚙️ Development Commands
 
+### First Time Setup
 ```bash
-# Development with hot reload
-cargo leptos watch
+# Download Tailwind CSS standalone CLI (macOS ARM64)
+curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-macos-arm64
+chmod +x tailwindcss-macos-arm64
+mv tailwindcss-macos-arm64 tailwindcss
 
-# Production build
+# Verify installation
+./tailwindcss --help
+```
+
+### Development (Dual Terminal)
+```bash
+# Terminal 1: Tailwind CSS watch mode
+./tailwindcss -i style/input.css -o style/output.css --watch
+
+# Terminal 2: Leptos development server with hot reload
+cargo leptos watch
+```
+
+### Production Build
+```bash
+# Build CSS first
+./tailwindcss -i style/input.css -o style/output.css --minify
+
+# Build application
 cargo leptos build --release
 
 # Check WASM output
@@ -193,9 +214,15 @@ ls -lh target/site/pkg/*.wasm
 
 # Run server manually
 ./target/site/server
+```
 
-# Database operations (if needed)
+### Database Operations
+```bash
+# Open database
 sqlite3 ntv.db
+
+# Run migrations
+sqlx migrate run
 ```
 
 ## 🐛 Common Issues & Solutions

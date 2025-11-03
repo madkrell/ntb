@@ -2,6 +2,43 @@
 
 This project uses **Tailwind CSS v4** with the standalone CLI (no Node.js required).
 
+## Initial Setup (First Time Only)
+
+Download the Tailwind CSS standalone CLI binary:
+
+```bash
+# macOS ARM64 (M1/M2/M3)
+curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-macos-arm64
+chmod +x tailwindcss-macos-arm64
+mv tailwindcss-macos-arm64 tailwindcss
+
+# macOS x64 (Intel)
+curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-macos-x64
+chmod +x tailwindcss-macos-x64
+mv tailwindcss-macos-x64 tailwindcss
+
+# Linux ARM64
+curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-arm64
+chmod +x tailwindcss-linux-arm64
+mv tailwindcss-linux-arm64 tailwindcss
+
+# Linux x64
+curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64
+chmod +x tailwindcss-linux-x64
+mv tailwindcss-linux-x64 tailwindcss
+
+# Windows x64 (PowerShell)
+# Download from: https://github.com/tailwindlabs/tailwindcss/releases/latest
+# Rename to tailwindcss.exe
+```
+
+Verify installation:
+```bash
+./tailwindcss --help
+```
+
+**Note:** The `tailwindcss` binary is not committed to the repository (it's in `.gitignore`). Each developer downloads it locally.
+
 ## Quick Start
 
 ### Development Mode
@@ -106,17 +143,21 @@ It scans:
 - `*.html`
 - And generates only the classes you actually use
 
-## Tailwind CLI Location
+## Updating Tailwind CLI
 
-The `tailwindcss` executable is in the project root. To update:
+The `tailwindcss` binary is stored locally (in `.gitignore`). To update to a newer version:
 
 ```bash
+# Download latest version (macOS ARM64 example)
 curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-macos-arm64
 chmod +x tailwindcss-macos-arm64
 mv tailwindcss-macos-arm64 tailwindcss
+
+# Check version
+./tailwindcss --help
 ```
 
-**Current version:** v4.1.16
+**Current version used:** v4.1.16 (or latest from releases)
 
 ## Workflow Tips
 
