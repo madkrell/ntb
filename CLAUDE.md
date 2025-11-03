@@ -1,10 +1,20 @@
 # Network Topology Visualizer - Claude Development Notes
 
 ## Project Status
-**Current Phase:** Phase 2 - 3D Viewport Implementation ✅ COMPLETE
+**Current Phase:** Phase 3 COMPLETE ✅ - Ready for Phase 4
 **Last Updated:** 2025-11-03
-**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete
-**Next Phase:** Phase 3 - UI Layout & 3D Editing Interface
+**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete (to be created)
+**Architecture:** Regular Leptos Components (Islands removed - see notes below)
+
+### Phase 3 - COMPLETE ✅
+- ✅ Professional 3-panel layout (device palette, viewport, properties)
+- ✅ Node selection via 3D raycasting with visual feedback (yellow highlight)
+- ✅ Click empty space to deselect
+- ✅ Properties panel loads and displays actual node/connection data
+- ✅ Full CRUD server functions for nodes and connections
+- ✅ Save changes from properties panel with real-time viewport updates
+- ✅ Suspense components for proper loading states (no hydration warnings)
+- ✅ Context-based state sharing across components
 
 ## ✅ VERIFIED Configuration (from Leptos 0.7/0.8 docs)
 
@@ -12,52 +22,62 @@
 Modern Leptos projects use `cargo-leptos` and configure everything in `Cargo.toml`.
 The original plan referenced Leptos.toml which is NOT standard.
 
-### Leptos Islands Architecture (Cargo.toml)
+### ⚠️ ARCHITECTURE CHANGE: Islands Removed (2025-11-03)
+
+**Decision:** Removed Leptos islands architecture in favor of regular components.
+
+**Reason:** Islands are designed for content-heavy sites with sparse interactivity. Our Network Topology Visualizer is a fully interactive application where most of the interface needs to respond to user input. Regular Leptos components with standard hydration provide better context sharing and are more appropriate for highly interactive apps.
+
+### Current Leptos Configuration (Cargo.toml)
 ```toml
 [dependencies]
-leptos = { version = "0.8", features = ["ssr", "islands"] }
-leptos_meta = { version = "0.8", features = ["ssr"] }
-leptos_router = { version = "0.8", features = ["ssr"] }
+leptos = { version = "0.8" }  # NO islands feature
+leptos_meta = { version = "0.8" }
+leptos_router = { version = "0.8" }
 leptos_axum = { version = "0.8", optional = true }
 
 [features]
-hydrate = ["leptos/hydrate", "leptos_meta/hydrate", "leptos_router/hydrate"]
+hydrate = [
+    "leptos/hydrate",
+    # NO "leptos/islands"
+    "dep:console_error_panic_hook",
+    "dep:wasm-bindgen",
+    "dep:web-sys",
+    "dep:three-d",
+]
 ssr = [
     "leptos/ssr",
+    # NO "leptos/islands"
     "leptos_meta/ssr",
     "leptos_router/ssr",
     "dep:axum",
-    "dep:leptos_axum"
+    "dep:leptos_axum",
+    # ... other deps
 ]
 
 [lib]
 crate-type = ["cdylib", "rlib"]  # cdylib required for WASM
-
-# Optional: WASM size optimization
-[profile.wasm-release]
-inherits = "release"
-opt-level = 'z'
-lto = true
-codegen-units = 1
 ```
 
-### Hydration Setup (VERIFIED)
+### Hydration Setup (Current)
 ```rust
-// In shell function (app.rs or main.rs)
-<HydrationScripts options=options islands=true/>
+// In shell function (app.rs)
+<HydrationScripts options/>  // NO islands=true
 
 // In lib.rs hydrate entry point
 #[cfg(feature = "hydrate")]
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn hydrate() {
     console_error_panic_hook::set_once();
-    leptos::mount::hydrate_islands();  // NOT stop_hydrating()
+    leptos::mount::hydrate_body(app::App);  // Standard hydration
 }
 ```
 
-## Islands vs Components vs Code Splitting (VERIFIED)
+## ~~Islands vs Components vs Code Splitting~~ (NO LONGER APPLICABLE)
 
-**IMPORTANT:** Islands ≠ Automatic Code Splitting!
+**NOTE:** This section is kept for reference only. We removed islands architecture on 2025-11-03.
+
+**Previous approach - Islands ≠ Automatic Code Splitting!**
 
 - `#[component]` - Server-rendered HTML only, no client JS
 - `#[island]` - Interactive WASM component with full Leptos reactivity (hydrates on-demand)
@@ -312,19 +332,21 @@ use wasm_bindgen::JsCast;
 
 ### ❌ INCORRECT in plan:
 1. **Leptos.toml file** - Does NOT exist in modern Leptos
-2. **leptos::leptos_dom::HydrationCtx::stop_hydrating()** - Wrong! Use `hydrate_islands()`
-3. **Axum SSE endpoints** - NOT needed! Leptos has native streaming via server functions
-4. **Manual EventSource setup** - NOT needed! Use `Signal::from_stream()`
-5. **Server functions in `#[cfg(feature = "ssr")]` module** - Wrong! Create non-gated `api.rs`
+2. **Islands architecture for fully interactive apps** - Wrong! Islands are for sparse interactivity. Use regular components.
+3. **leptos::leptos_dom::HydrationCtx::stop_hydrating()** - Wrong! Use `hydrate_body()`
+4. **Axum SSE endpoints** - NOT needed! Leptos has native streaming via server functions
+5. **Manual EventSource setup** - NOT needed! Use `Signal::from_stream()`
+6. **Server functions in `#[cfg(feature = "ssr")]` module** - Wrong! Create non-gated `api.rs`
 
 ### ✅ CORRECT approach:
 1. Use `cargo leptos new --git leptos-rs/start-axum` for project template
-2. Configure in `Cargo.toml` with "islands" feature
-3. Use `leptos::mount::hydrate_islands()` in lib.rs
+2. Configure in `Cargo.toml` WITHOUT "islands" feature (for fully interactive apps)
+3. Use `leptos::mount::hydrate_body(app::App)` in lib.rs
 4. Use `#[server(protocol = Websocket<>)]` for streaming
 5. Use `Signal::from_stream()` for reactive SSE/streaming data
 6. Put server functions in non-feature-gated module (api.rs)
 7. Use `web_sys::console` for browser console logging from WASM
+8. Use `provide_context()` and `use_context()` for sharing state across components
 
 ## IDE Configuration
 All editors should enable all Cargo features for rust-analyzer:
@@ -337,17 +359,19 @@ All editors should enable all Cargo features for rust-analyzer:
 
 ## ✅ Phase 1 COMPLETE - Foundation
 
-**Stack:** Leptos 0.8 Islands + SQLite + Server Functions
+**Stack:** Leptos 0.8 + SQLite + Server Functions
 **Repo:** https://github.com/madkrell/ntv.git
 
-**Key Architecture:**
-- `#[island]` = Interactive WASM (Leptos reactivity works)
-- `#[component]` = Server-only HTML (no client JS)
+**Key Architecture (Updated 2025-11-03):**
+- `#[component]` = Regular Leptos component with full reactivity and hydration
 - `#[server]` = Backend API via leptos_axum::extract()
 - Database pool via Axum Extension layer
+- Context-based state sharing with `provide_context()` / `use_context()`
 
 **Database Schema:** topologies, nodes (3D x/y/z), connections, traffic_metrics
 **Git Tag:** v0.1.0-phase1-complete
+
+**Note:** Originally used islands architecture, but this was removed in Phase 3 for better interactivity.
 
 ## ✅ Phase 2 COMPLETE - 3D Viewport & Rendering
 
@@ -490,34 +514,87 @@ Created test topology with 7 nodes and 7 connections:
 
 **Git Tag:** v0.1.0-phase2-complete (to be created)
 
-## Phase 3 - UI Layout & 3D Editing Interface (NEXT)
+## ✅ Phase 3 COMPLETE - UI Layout & 3D Editing Interface
+
+**Git Tag:** v0.1.0-phase3-complete (to be created)
+
+### Architecture Change
+- ✅ Removed islands architecture (2025-11-03)
+- ✅ Converted to regular Leptos components for better interactivity
+- ✅ Context-based state sharing with `provide_context()` / `use_context()`
+- ✅ Fixed hydration to use `hydrate_body()` instead of `hydrate_islands()`
+
+### UI Layout
+1. ✅ Professional 3-panel layout implemented (src/islands/topology_editor.rs)
+   - Left: Device Palette with 6 device types (Router, Switch, Server, Firewall, LoadBalancer, Database)
+   - Center: 3D Viewport (TopologyViewport component)
+   - Right: Properties Panel (updates on selection)
+2. ✅ Top toolbar with action buttons (Add Node, Connect, Delete, Save, Export)
+3. ✅ Responsive layout with Tailwind CSS styling
+
+### 3D Selection & Interaction
+1. ✅ Click detection in 3D viewport (differentiates drag vs click)
+2. ✅ Ray-sphere intersection for node selection
+3. ✅ **Visual feedback:** Selected nodes render in yellow/orange color
+4. ✅ **Click empty space to deselect:** Clicking non-node areas clears selection
+5. ✅ Properties panel updates reactively when selection changes
+6. ✅ Selection signals shared via Leptos context:
+   - `RwSignal<Option<i64>>` for selected_node_id
+   - `RwSignal<Option<SelectedItem>>` for selected_item (Node or Connection enum)
+
+### Backend & Data Management
+1. ✅ **Complete Node CRUD server functions** (src/api.rs):
+   - `get_node(id)` - Fetch single node
+   - `create_node(data)` - Create new node
+   - `update_node(id, data)` - Update node with dynamic fields
+   - `delete_node(id)` - Delete node
+2. ✅ **Complete Connection CRUD server functions** (src/api.rs):
+   - `get_connection(id)` - Fetch single connection
+   - `create_connection(data)` - Create new connection
+   - `update_connection(id, data)` - Update connection
+   - `delete_connection(id)` - Delete connection
+
+### Properties Panel Integration
+1. ✅ **NodeProperties component** loads real data via `get_node()` Resource
+2. ✅ **ConnectionProperties component** loads real data via `get_connection()` Resource
+3. ✅ **Suspense wrappers** for proper loading states (eliminates hydration warnings)
+4. ✅ **Save functionality** updates database via `update_node()`/`update_connection()`
+5. ✅ **Real-time viewport updates:** Viewport automatically refetches and re-renders when data changes
+   - Implemented via `refetch_trigger` signal shared through context
+   - No page refresh needed - updates are instant!
+
+### Implementation Highlights
+- **Ray-sphere intersection:** Accurate 3D picking with 45° FOV perspective camera
+- **Dual material rendering:** Normal (blue) and selected (yellow) materials for each node
+- **Dynamic UPDATE queries:** Server functions only update provided fields (all fields optional)
+- **Action-based saves:** Leptos Actions provide pending states and error handling
+- **Effect-based refetch:** Save success triggers viewport reload via signal increment
+
+### Key Files Modified
+- `src/islands/topology_editor.rs` - Main editor with 3-panel layout, properties components
+- `src/islands/topology_viewport.rs` - 3D rendering, selection, refetch mechanism
+- `src/api.rs` - All 8 CRUD server functions (4 nodes + 4 connections)
+
+## Phase 4 - Visual Enhancements & 3D Interaction (NEXT)
 
 ### Planned Features
-**UI Layout:**
-1. Professional layout with 3D viewport in center
-2. Device palette/toolbar (left or top) for selecting device types
-3. Properties panel (right side) showing selected node/connection details
-4. Top toolbar with common actions (Add Node, Delete, Connect, Save)
 
-**3D Editing Capabilities:**
-1. Click on node in 3D viewport → select, show properties
-2. Click empty space → deselect or add node (depending on mode)
-3. Drag from node to node → create connection
-4. Delete key/button → remove selected node/connection
-5. All editing happens directly in the 3D viewport (no separate 2D editor)
+**3D Interaction Enhancements:**
+1. ⏳ **Drag nodes in 3D viewport:** Click and drag nodes to reposition them in 3D space
+   - Update position in real-time during drag
+   - Save new position to database on drag end
+   - Maintain camera orbit controls (differentiate drag-node vs drag-camera)
+2. ⏳ **3D Grid and Axes:** Add visual reference grid and coordinate axes (Blender-style)
+   - Faint X, Y, Z axis lines (red, green, blue)
+   - Grid floor plane at Y=0 with subtle lines
+   - Helps with spatial orientation and node placement
 
-**Backend:**
-1. Server functions for CRUD operations (create/update/delete nodes and connections)
-2. Save/update topology functionality
-
-## Phase 4 - Visual Enhancements & 3D Models (FUTURE)
-
-### Planned Features
-1. Node labels/tooltips on hover in 3D viewport
-2. Color-coded nodes by type (router=blue, switch=green, etc.)
-3. Load custom 3D models from Blender (glTF/GLB format from public/models/)
-4. Improved lighting and materials
-5. Better camera controls (presets, bookmarks)
+**Visual Enhancements:**
+3. ⏳ Node labels/tooltips on hover in 3D viewport
+4. ⏳ Color-coded nodes by type (router=blue, switch=green, etc.)
+5. ⏳ Load custom 3D models from Blender (glTF/GLB format from public/models/)
+6. ⏳ Improved lighting and materials
+7. ⏳ Better camera controls (presets, bookmarks)
 
 ## Phase 5 - Traffic Monitoring (FUTURE)
 

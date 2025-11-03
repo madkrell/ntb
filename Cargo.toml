@@ -45,7 +45,6 @@ three-d = { version = "0.17", optional = true }
 default = []
 hydrate = [
     "leptos/hydrate",
-    "leptos/islands",
     "dep:console_error_panic_hook",
     "dep:wasm-bindgen",
     "dep:web-sys",
@@ -61,7 +60,6 @@ ssr = [
     "dep:dotenvy",
     "dep:tracing-subscriber",
     "leptos/ssr",
-    "leptos/islands",
     "leptos_meta/ssr",
     "leptos_router/ssr",
 ]

@@ -13,10 +13,10 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <meta charset="utf-8"/>
                 <meta name="viewport" content="width=device-width, initial-scale=1"/>
                 <AutoReload options=options.clone() />
-                <HydrationScripts options islands=true/>
+                <HydrationScripts options/>
                 <MetaTags/>
             </head>
-            <body>
+            <body class="m-0 p-0 overflow-hidden">
                 <App/>
             </body>
         </html>
@@ -38,11 +38,9 @@ pub fn App() -> impl IntoView {
 
         // content for this welcome page
         <Router>
-            <main>
-                <Routes fallback=|| "Page not found.".into_view()>
-                    <Route path=StaticSegment("") view=HomePage/>
-                </Routes>
-            </main>
+            <Routes fallback=|| "Page not found.".into_view()>
+                <Route path=StaticSegment("") view=HomePage/>
+            </Routes>
         </Router>
     }
 }
@@ -50,56 +48,10 @@ pub fn App() -> impl IntoView {
 /// Renders the home page of your application.
 #[component]
 fn HomePage() -> impl IntoView {
-    use crate::islands::{Counter, SimpleButton, TopologyViewport};
-    use crate::api::get_topologies;
+    use crate::islands::TopologyEditor;
 
-    // Test database connectivity
-    let topologies = Resource::new(|| (), |_| async move {
-        get_topologies().await
-    });
-
+    // Use TopologyEditor with full-screen layout
     view! {
-        <div class="container mx-auto px-4 py-8">
-            <h1 class="text-4xl font-bold text-blue-600 mb-4">"Welcome to Network Topology Visualizer!"</h1>
-            <p class="text-lg text-gray-700 mb-6">"Testing Leptos 0.8 Islands Architecture + Database"</p>
-
-            <h3 class="text-2xl font-semibold mb-3">"Database Status"</h3>
-        <Suspense fallback=move || view! { <p>"Loading topologies..."</p> }>
-            {move || {
-                topologies.get().map(|result: Result<Vec<crate::models::Topology>, ServerFnError>| match result {
-                    Ok(topos) => view! {
-                        <div>
-                            <p>"✅ Database connected! Found " {topos.len()} " topologies."</p>
-                            {if topos.is_empty() {
-                                view! { <p>"No topologies yet. Database is ready!"</p> }.into_any()
-                            } else {
-                                view! {
-                                    <ul>
-                                        {topos.into_iter().map(|t: crate::models::Topology| view! {
-                                            <li>{t.name}</li>
-                                        }).collect_view()}
-                                    </ul>
-                                }.into_any()
-                            }}
-                        </div>
-                    }.into_any(),
-                    Err(e) => view! {
-                        <p>"❌ Database error: " {e.to_string()}</p>
-                    }.into_any(),
-                })
-            }}
-        </Suspense>
-
-        <h3>"Interactive Islands (Loaded as WASM)"</h3>
-        <p>"Simple button island:"</p>
-        <SimpleButton />
-
-        <p style="margin-top: 20px;">"Counter island with controls:"</p>
-        <Counter initial_value=0 />
-
-        <h3 class="text-2xl font-semibold mt-6 mb-3">"3D Network Topology Viewport"</h3>
-        <p class="text-gray-700 mb-4">"WebGL-powered 3D visualization:"</p>
-        <TopologyViewport topology_id=1 />
-        </div>
+        <TopologyEditor topology_id=1 />
     }
 }

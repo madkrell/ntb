@@ -9,15 +9,19 @@ I'm continuing work on the Network Topology Visualizer project at:
 /Users/mattearp/Documents/CodeProjects/ntv/
 
 Please read these files to understand the current state:
-1. CLAUDE.md - Complete architecture, Phase 1 & 2 status, all learnings
+1. CLAUDE.md - Complete architecture, Phases 1-3 status, all learnings
 2. This file (SESSION-GUIDE.md) - Quick context
 
-Current Status: Phase 2 COMPLETE ✅
-- Working 3D viewport with orbit controls
-- Topology data rendering (nodes as spheres, connections as cylinders)
-- Sample data: 7 nodes, 7 connections
+Current Status: Phase 3 COMPLETE ✅ - Ready for Phase 4
+- ✅ Professional 3-panel UI layout working perfectly
+- ✅ Node selection with visual feedback (yellow highlight)
+- ✅ Click empty space to deselect
+- ✅ Full CRUD server functions for nodes and connections
+- ✅ Properties panel loads and saves real data
+- ✅ Real-time viewport updates (no refresh needed!)
+- ✅ Suspense components eliminating hydration warnings
 
-Next: [specify what you want to work on - see options below]
+Next: [specify what you want to work on - see Phase 4 options below]
 ```
 
 ## 📊 Current Project State
@@ -25,28 +29,44 @@ Next: [specify what you want to work on - see options below]
 ### ✅ Completed Phases
 
 **Phase 1 - Foundation (Git tag: v0.1.0-phase1-complete)**
-- Leptos 0.8 Islands architecture
-- SQLite database with migrations
+- Leptos 0.8 with SQLite database and migrations
 - Server functions in `src/api.rs` (non-feature-gated)
 - Database schema: topologies, nodes, connections, traffic_metrics
+- **Note:** Originally used islands, removed in Phase 3
 
 **Phase 2 - 3D Viewport (Git tag: v0.1.0-phase2-complete)**
-- TopologyViewport island with WebGL2 + three-d
+- TopologyViewport component with WebGL2 + three-d
 - Interactive orbit camera controls (drag to rotate, scroll to zoom)
 - Nodes rendered as 3D spheres at database positions
 - Connections rendered as properly rotated cylinders
 - Sample topology with 7 nodes and 7 connections
 
+**Phase 3 - UI Layout & 3D Editing (Git tag: v0.1.0-phase3-complete)**
+- ✅ Architecture change: Removed islands, using regular Leptos components
+- ✅ Context-based state sharing (`provide_context` / `use_context`)
+- ✅ Professional 3-panel layout (device palette, viewport, properties)
+- ✅ Top toolbar with action buttons
+- ✅ Node selection via ray-sphere intersection with visual feedback (yellow highlight)
+- ✅ Click empty space to deselect
+- ✅ Complete CRUD server functions (8 total: 4 for nodes, 4 for connections)
+- ✅ Properties panel loads real data via Resources with Suspense
+- ✅ Save changes from properties panel with instant viewport updates
+- ✅ Refetch mechanism using context-shared trigger signal
+
 ### 🔄 What to Work On Next
 
-**Option 1: Phase 3 - UI Layout & 3D Editing**
+**Option 1: Phase 4 - 3D Interaction Enhancements**
 ```
-Let's build the editing UI and interface. I want to:
-- Create professional UI layout (3D viewport center, panels around edges)
-- Add device palette/toolbar for selecting device types
-- Enable node selection/editing directly in 3D viewport
-- Build properties panel for editing selected node/connection details
-- Add toolbar with common actions (Add, Delete, Connect, Save)
+Let's add interactive 3D features. I want to:
+- Implement drag-to-move nodes in 3D viewport
+  * Click and drag nodes to reposition them
+  * Update position in real-time during drag
+  * Save to database on drag end
+  * Differentiate node-drag from camera-drag
+- Add 3D grid and axes (Blender-style)
+  * Faint X, Y, Z axis lines (red, green, blue)
+  * Grid floor plane at Y=0 with subtle lines
+  * Helps with spatial orientation
 ```
 
 **Option 2: Phase 4 - Visual Enhancements**
@@ -56,6 +76,7 @@ Let's enhance the 3D visualization. I want to:
 - Color-code nodes by type (router=blue, switch=green, etc.)
 - Load custom 3D models from Blender (glTF/GLB files)
 - Improve lighting and materials
+- Better camera controls (presets, bookmarks)
 ```
 
 **Option 3: Traffic Monitoring (Leptos Streaming)**
@@ -256,24 +277,26 @@ Before starting work, verify:
 cd /Users/mattearp/Documents/CodeProjects/ntv
 cargo leptos watch  # Should compile without errors
 # Visit http://127.0.0.1:3000
-# Should see 3D viewport with 7 nodes and connections
-# Console logs should show initialization messages
+# Should see:
+# - 3-panel UI: Device palette (left), 3D viewport (center), Properties (right)
+# - 7 nodes and connections in 3D viewport
+# - Click a node to select it (turns yellow)
+# - Properties panel loads node data
+# - Edit properties and click Save - viewport updates instantly!
 ```
 
 ## 🎬 Example Session Start Prompts
 
-### Continue with Phase 3 (UI Layout & 3D Editing)
+### Continue with Phase 4 (3D Interaction & Visual Enhancements)
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
-Read CLAUDE.md for complete context. Phase 2 is complete (3D viewport working).
+Read CLAUDE.md for complete context. Phase 3 is complete!
 
-Let's build Phase 3: UI Layout & 3D Editing Interface
-- Professional UI layout (3D viewport center, panels around edges)
-- Device palette/toolbar for selecting device types
-- Node selection and editing directly in 3D viewport
-- Properties panel for editing selected nodes/connections
-- Toolbar with common actions (Add, Delete, Connect, Save)
+Let's build Phase 4: 3D Interaction Enhancements
+- Add drag-to-move functionality for nodes in 3D viewport
+- Add 3D grid and axis lines (Blender-style) for spatial reference
+- (Optional) Node labels/tooltips, color-coding by type, custom 3D models
 
 Where should we start?
 ```
@@ -294,7 +317,7 @@ How should we approach this?
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
-Read CLAUDE.md for complete context. Phase 2 is complete.
+Read CLAUDE.md for complete context. Phase 3 is complete.
 
 I'm seeing [issue description] or want to improve [feature name].
 
@@ -304,11 +327,12 @@ Can you help me [what you want to do]?
 ## 💡 Pro Tips
 
 1. **Always read CLAUDE.md first** - Contains all architectural discoveries and solutions
-2. **Use Context7 MCP** - When unsure about Leptos patterns, check `/websites/book_leptos_dev`
-3. **Check git tags** - `git tag` shows v0.1.0-phase1-complete and v0.1.0-phase2-complete
+2. **Use Context7 MCP** - When unsure about Leptos/three-d patterns, check `/websites/book_leptos_dev`
+3. **Check git tags** - `git tag` shows v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete
 4. **Test in browser** - http://127.0.0.1:3000 to see current state
 5. **Console logs** - Browser console shows WASM logs from `web_sys::console`
+6. **Real-time updates work!** - Save node positions in properties panel, viewport updates instantly
 
 ## 🚀 You're Ready!
 
-Pick an option above and start coding. All the architectural patterns are working and documented in CLAUDE.md.
+Phase 3 is complete! Pick a Phase 4 task above and start coding. All the architectural patterns are working and documented in CLAUDE.md.
