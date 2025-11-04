@@ -25,14 +25,14 @@ Current Status: Phase 4 IN PROGRESS - Multiple Features Complete! ✅
 
 **✅ Phase 4 Complete (so far):**
 - 3D node rotation controls (X/Y/Z in degrees with default rotation_x=90°)
-- Model Selection UI (partial - can load glTF/GLB, need more node type models)
+- Model Selection UI (loads correct glTF/GLB for each node type: router, switch, server, firewall, load_balancer, cloud)
 - 3D Grid and Axes (Blender-style reference grid)
 - Node Labels/Tooltips (show node name on hover)
 - Color-Coded Nodes by Type (router=blue, switch=green, server=orange, etc.)
 
 **⏳ Next Phase 4 Tasks (Priority 1):**
-1. Enable Device Palette buttons ('Router', 'Switch', etc. 'Click to Add')
-2. Topology switching control (add UI + another mock topology in database)
+3. Enable Device Palette buttons ('Router', 'Switch', etc. 'Click to Add')
+4. Topology switching control (add UI + another mock topology in database)
 
 Then Priority 2: Improved lighting, better camera controls
 
@@ -77,7 +77,10 @@ Next: Start with Priority 1 task #1 (Enable Device Palette buttons)
    - Viewport: Applied using cgmath `degrees()` function
    - Default rotation_x=90° for Blender glTF models
    - Key lesson: `degrees()` converts to radians, `radians()` just wraps values
-2. ✅ **Model Selection UI (Partial)** - Can load glTF/GLB models; need more node types (switch, firewall, server)
+2. ✅ **Model Selection UI** (2025-11-04) - Loads correct glTF/GLB model for each node type
+   - All 6 models: router, switch, server, firewall, load_balancer, cloud
+   - Dynamic model loading based on node.node_type
+   - Each model colored according to node type
 3. ✅ **3D Grid and Axes** - Blender-style reference grid with X/Y/Z axis lines and grid floor plane
 
 ✅ **COMPLETED - Priority 2 (Visual Polish):**

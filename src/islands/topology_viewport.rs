@@ -256,41 +256,55 @@ async fn initialize_threed_viewport(
     let context = Context::from_gl_context(std::sync::Arc::new(gl))
         .map_err(|e| format!("Failed to create three-d Context: {:?}", e))?;
 
-    // Load router GLB model (async loading)
-    // We load the CpuModel once, then create GPU Model instances for each router node
-    let router_cpu_model = {
+    // Load all GLB models for different node types (async loading)
+    // Map node type to model filename
+    let model_files: Vec<(&str, &str)> = vec![
+        ("router", "blob-router.glb"),
+        ("switch", "blob-switch.glb"),
+        ("server", "blob-server.glb"),
+        ("firewall", "blob-firewall.glb"),
+        ("load_balancer", "blob-load-balancer.glb"),
+        ("cloud", "blob-cloud.glb"),
+    ];
+
+    let mut node_models: HashMap<String, Option<three_d_asset::Model>> = HashMap::new();
+
+    {
         use three_d_asset::io::load_async;
 
         // Build full URL from window.location
         let window = web_sys::window().expect("no global window");
         let location = window.location();
         let origin = location.origin().expect("no origin");
-        let model_url = format!("{}/models/blob-router.glb", origin);
 
-        web_sys::console::log_1(&format!("Loading router GLB model from {}...", model_url).into());
+        // Load each model type
+        for (node_type, filename) in model_files {
+            let model_url = format!("{}/models/{}", origin, filename);
+            web_sys::console::log_1(&format!("Loading {} GLB model from {}...", node_type, model_url).into());
 
-        match load_async(&[model_url.as_str()]).await {
-            Ok(mut loaded) => {
-                web_sys::console::log_1(&"✓ GLB file fetched successfully".into());
+            match load_async(&[model_url.as_str()]).await {
+                Ok(mut loaded) => {
+                    web_sys::console::log_1(&format!("✓ GLB file fetched successfully for {}", node_type).into());
 
-                // Deserialize the GLB file to CPU model
-                match loaded.deserialize::<three_d_asset::Model>("blob-router.glb") {
-                    Ok(cpu_model) => {
-                        web_sys::console::log_1(&format!("✓ Model deserialized: {} geometries", cpu_model.geometries.len()).into());
-                        Some(cpu_model)
-                    }
-                    Err(e) => {
-                        web_sys::console::error_1(&format!("✗ Failed to deserialize GLB: {:?}", e).into());
-                        None
+                    // Deserialize the GLB file to CPU model
+                    match loaded.deserialize::<three_d_asset::Model>(filename) {
+                        Ok(cpu_model) => {
+                            web_sys::console::log_1(&format!("✓ {} model deserialized: {} geometries", node_type, cpu_model.geometries.len()).into());
+                            node_models.insert(node_type.to_string(), Some(cpu_model));
+                        }
+                        Err(e) => {
+                            web_sys::console::error_1(&format!("✗ Failed to deserialize {} GLB: {:?}", node_type, e).into());
+                            node_models.insert(node_type.to_string(), None);
+                        }
                     }
                 }
-            }
-            Err(e) => {
-                web_sys::console::error_1(&format!("✗ Failed to load GLB file: {:?}", e).into());
-                None
+                Err(e) => {
+                    web_sys::console::error_1(&format!("✗ Failed to load {} GLB file: {:?}", node_type, e).into());
+                    node_models.insert(node_type.to_string(), None);
+                }
             }
         }
-    };
+    }
 
     // Create node meshes (3D models or spheres at x/y/z positions) and store node data
     let mut node_meshes: Vec<(i64, NodeMesh, NodeMesh)> = Vec::new();
@@ -330,13 +344,14 @@ async fn initialize_threed_viewport(
             radius: node_radius * 2.0,  // 2x visual radius for easier clicking
         });
 
-        // Check if this is a router node and we have a loaded 3D model
-        let is_router = node.node_type.to_lowercase() == "router";
+        // Check if we have a loaded 3D model for this node type
+        let node_type_key = node.node_type.to_lowercase();
+        let has_model = node_models.get(&node_type_key).and_then(|opt| opt.as_ref()).is_some();
 
-        if is_router && router_cpu_model.is_some() {
-            // Render router with loaded 3D model
-            let cpu_model = router_cpu_model.as_ref().unwrap();
-            web_sys::console::log_1(&format!("Router node '{}' - rendering glTF with {} primitives", node.name, cpu_model.geometries.len()).into());
+        if has_model {
+            // Render node with loaded 3D model
+            let cpu_model = node_models.get(&node_type_key).unwrap().as_ref().unwrap();
+            web_sys::console::log_1(&format!("{} node '{}' - rendering glTF with {} primitives", node.node_type, node.name, cpu_model.geometries.len()).into());
 
             // Process each primitive (sub-mesh) in the model
             for primitive in cpu_model.geometries.iter() {
@@ -347,11 +362,12 @@ async fn initialize_threed_viewport(
                         // tri_mesh is a TriMesh, which is the same as CpuMesh!
                         // Just pass it directly to Mesh::new()
 
-                        // Create materials
+                        // Create materials with color based on node type
+                        let node_color = get_node_color(&node.node_type);
                         let normal_material = PhysicalMaterial::new_opaque(
                             &context,
                             &CpuMaterial {
-                                albedo: Srgba::new(50, 150, 255, 255), // Blue for router
+                                albedo: node_color,
                                 ..Default::default()
                             },
                         );
@@ -391,7 +407,7 @@ async fn initialize_threed_viewport(
                 }
             }
         } else {
-            // Render non-router nodes or fallback as colored spheres
+            // Render nodes without 3D models as colored spheres (fallback)
             let node_color = get_node_color(&node.node_type);
 
             // Create material for this node type

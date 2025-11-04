@@ -10,7 +10,7 @@
 
 **✅ COMPLETED (Priority 1 - Core 3D Features):**
 1. ✅ **3D node rotation controls** - Full X/Y/Z rotation with database storage, UI sliders, and viewport rendering
-2. ✅ **Model Selection UI (Partial)** - Can load glTF/GLB models; need to add different node types (switch, firewall, server, etc.)
+2. ✅ **Model Selection UI** - Loads correct glTF/GLB model for each node type (router, switch, server, firewall, load_balancer, cloud)
 3. ✅ **3D Grid and Axes** - Blender-style reference grid with X/Y/Z axis lines and grid floor plane
 
 **✅ COMPLETED (Priority 2 - Visual Polish):**
