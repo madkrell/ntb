@@ -47,6 +47,9 @@ pub fn TopologyViewport(
     let error_signal = RwSignal::new(None::<String>);
     let is_initialized = RwSignal::new(false);
 
+    // Tooltip state: (node_name, node_type, x, y)
+    let tooltip_data = RwSignal::new(None::<(String, String, f64, f64)>);
+
     // Camera state as signals for reactivity (client-side only)
     #[cfg(feature = "hydrate")]
     let camera_state = RwSignal::new(CameraState::default());
@@ -94,26 +97,33 @@ pub fn TopologyViewport(
 
                 // Wait for topology data to load
                 if let Some(Some(topo_data)) = data_option {
+                    // Spawn async initialization
+                    let canvas = canvas_element.clone();
+                    let topo = topo_data.clone();
+                    let render_fn = render_fn_for_effect.clone();
 
-                    match initialize_threed_viewport(
-                        &canvas_element,
-                        camera_state,
-                        &topo_data,
-                        selected_node_id,
-                        selected_item,
-                        render_fn_for_effect.clone(),
-                    ) {
-                        Ok(_) => {
-                            is_initialized.set(true);
+                    wasm_bindgen_futures::spawn_local(async move {
+                        match initialize_threed_viewport(
+                            &canvas,
+                            camera_state,
+                            &topo,
+                            selected_node_id,
+                            selected_item,
+                            render_fn,
+                            tooltip_data,
+                        ).await {
+                            Ok(_) => {
+                                is_initialized.set(true);
+                            }
+                            Err(e) => {
+                                error_signal.set(Some(e.clone()));
+                                web_sys::console::error_1(&format!("Failed to initialize 3D viewport: {}", e).into());
+                            }
                         }
-                        Err(e) => {
-                            error_signal.set(Some(e.clone()));
-                            web_sys::console::error_1(&format!("Failed to initialize 3D viewport: {}", e).into());
-                        }
-                    }
+                    });
                 } else if topology_id.is_none() {
                     // Initialize with test scene if no topology_id
-                    match initialize_threed_viewport_test(&canvas_element, camera_state, selected_node_id, selected_item, render_fn_for_effect.clone()) {
+                    match initialize_threed_viewport_test(&canvas_element, camera_state, selected_node_id, selected_item, render_fn_for_effect.clone(), tooltip_data) {
                         Ok(_) => {
                             is_initialized.set(true);
                         }
@@ -172,27 +182,47 @@ pub fn TopologyViewport(
                     }.into_any()
                 }
             }}
+
+            // Tooltip display - shows node name and type on hover
+            {move || {
+                tooltip_data.get().map(|(name, node_type, x, y)| {
+                    view! {
+                        <div
+                            class="absolute bg-gray-900 text-white px-3 py-2 rounded shadow-lg text-sm pointer-events-none"
+                            style:left=format!("{}px", x + 10.0)
+                            style:top=format!("{}px", y + 10.0)
+                            style="z-index: 1000;"
+                        >
+                            <div class="font-semibold">{name}</div>
+                            <div class="text-gray-400 text-xs">{node_type}</div>
+                        </div>
+                    }
+                })
+            }}
         </div>
     }
 }
 
-// Node data for selection
+// Node data for selection and tooltip
 #[cfg(feature = "hydrate")]
 struct NodeData {
     id: i64,
+    name: String,
+    node_type: String,
     position: three_d::Vec3,
     radius: f32,
 }
 
 /// Initialize three-d Context with topology data
 #[cfg(feature = "hydrate")]
-fn initialize_threed_viewport(
+async fn initialize_threed_viewport(
     canvas: &web_sys::HtmlCanvasElement,
     camera_state: RwSignal<CameraState>,
     topology_data: &crate::models::TopologyFull,
     selected_node_id_signal: RwSignal<Option<i64>>,
     selected_item_signal: RwSignal<Option<crate::islands::topology_editor::SelectedItem>>,
     render_fn_storage: Rc<RefCell<Option<Rc<dyn Fn(CameraState)>>>>,
+    tooltip_data: RwSignal<Option<(String, String, f64, f64)>>,
 ) -> Result<(), String> {
     use web_sys::WebGl2RenderingContext as GL;
     use three_d::*;
@@ -211,21 +241,56 @@ fn initialize_threed_viewport(
     let context = Context::from_gl_context(std::sync::Arc::new(gl))
         .map_err(|e| format!("Failed to create three-d Context: {:?}", e))?;
 
+    // Try to load router GLB model
+    let router_model = {
+        use three_d_asset::io::load_async;
+
+        web_sys::console::log_1(&"Attempting to load router GLB model...".into());
+
+        match load_async(&["/models/blob-router.glb"]).await {
+            Ok(mut loaded) => {
+                web_sys::console::log_1(&"GLB file loaded successfully".into());
+
+                // Try to deserialize as CpuModel
+                match loaded.deserialize("blob-router.glb") {
+                    Ok(cpu_model) => {
+                        web_sys::console::log_1(&"Model deserialized successfully".into());
+
+                        // Create GPU model
+                        match Model::<PhysicalMaterial>::new(&context, &cpu_model) {
+                            Ok(model) => {
+                                web_sys::console::log_1(&"GPU model created successfully".into());
+                                Some(model)
+                            }
+                            Err(e) => {
+                                web_sys::console::error_1(&format!("Failed to create GPU model: {:?}", e).into());
+                                None
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        web_sys::console::error_1(&format!("Failed to deserialize model: {:?}", e).into());
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                web_sys::console::error_1(&format!("Failed to load GLB file: {:?}", e).into());
+                None
+            }
+        }
+    };
+
     // Create node meshes (spheres at x/y/z positions) and store node data
     let mut node_meshes = Vec::new();
     let mut node_positions = HashMap::new();
     let mut nodes_data = Vec::new();
     let node_radius = 0.3;
 
-    // Create materials for normal and selected states
-    let normal_material = PhysicalMaterial::new_opaque(
-        &context,
-        &CpuMaterial {
-            albedo: Srgba::new(50, 150, 255, 255), // Blue for normal nodes
-            ..Default::default()
-        },
-    );
+    // Create CPU mesh once for reuse
+    let sphere_cpu_mesh = CpuMesh::sphere(16);
 
+    // Selected material (yellow/orange) - same for all nodes
     let selected_material = PhysicalMaterial::new_opaque(
         &context,
         &CpuMaterial {
@@ -233,9 +298,6 @@ fn initialize_threed_viewport(
             ..Default::default()
         },
     );
-
-    // Create CPU mesh once for reuse
-    let sphere_cpu_mesh = CpuMesh::sphere(16);
 
     for node in &topology_data.nodes {
         // Map database coordinates to Blender convention (XY floor, Z up)
@@ -248,17 +310,31 @@ fn initialize_threed_viewport(
         );
         node_positions.insert(node.id, position);
 
-        // Store node data for selection (use larger radius for easier clicking)
+        // Store node data for selection and tooltip (use larger radius for easier clicking)
         nodes_data.push(NodeData {
             id: node.id,
+            name: node.name.clone(),
+            node_type: node.node_type.clone(),
             position,
             radius: node_radius * 2.0,  // 2x visual radius for easier clicking
         });
 
+        // Get color based on node type
+        let node_color = get_node_color(&node.node_type);
+
+        // Create material for this node type
+        let normal_material = PhysicalMaterial::new_opaque(
+            &context,
+            &CpuMaterial {
+                albedo: node_color,
+                ..Default::default()
+            },
+        );
+
         // Create normal sphere (new mesh for each node)
         let mut normal_sphere = Gm::new(
             Mesh::new(&context, &sphere_cpu_mesh),
-            normal_material.clone(),
+            normal_material,
         );
         normal_sphere.set_transformation(
             Mat4::from_translation(position) * Mat4::from_scale(node_radius)
@@ -427,7 +503,7 @@ fn initialize_threed_viewport(
     // Initial render
     render_scene(camera_state.get_untracked());
 
-    // Set up orbit controls with integrated click handler
+    // Set up orbit controls with integrated click handler and tooltip
     setup_orbit_controls(
         canvas,
         camera_state,
@@ -435,6 +511,7 @@ fn initialize_threed_viewport(
         Some(nodes_data),
         selected_node_id_signal,
         selected_item_signal,
+        tooltip_data,
     )?;
 
     Ok(())
@@ -448,6 +525,7 @@ fn initialize_threed_viewport_test(
     selected_node_id_signal: RwSignal<Option<i64>>,
     selected_item_signal: RwSignal<Option<crate::islands::topology_editor::SelectedItem>>,
     render_fn_storage: Rc<RefCell<Option<Rc<dyn Fn(CameraState)>>>>,
+    tooltip_data: RwSignal<Option<(String, String, f64, f64)>>,
 ) -> Result<(), String> {
     use web_sys::WebGl2RenderingContext as GL;
     use three_d::*;
@@ -545,7 +623,7 @@ fn initialize_threed_viewport_test(
     render_scene(camera_state.get_untracked());
 
     // Set up mouse drag for orbit (no node selection for test scene)
-    setup_orbit_controls(canvas, camera_state, render_scene.clone(), None, selected_node_id_signal, selected_item_signal)?;
+    setup_orbit_controls(canvas, camera_state, render_scene.clone(), None, selected_node_id_signal, selected_item_signal, tooltip_data)?;
 
     Ok(())
 }
@@ -559,6 +637,7 @@ fn setup_orbit_controls(
     nodes_data: Option<Rc<Vec<NodeData>>>,
     selected_node_id_signal: RwSignal<Option<i64>>,
     selected_item_signal: RwSignal<Option<crate::islands::topology_editor::SelectedItem>>,
+    tooltip_data: RwSignal<Option<(String, String, f64, f64)>>,
 ) -> Result<(), String> {
     use web_sys::{MouseEvent, WheelEvent};
     use three_d::*;
@@ -687,12 +766,14 @@ fn setup_orbit_controls(
         mouseup.forget();
     }
 
-    // Mouse move - rotate camera
+    // Mouse move - rotate camera and update tooltip
     {
         let is_dragging = is_dragging.clone();
         let last_mouse_pos = last_mouse_pos.clone();
         let total_mouse_movement = total_mouse_movement.clone();
         let render_scene = render_scene.clone();
+        let nodes_data = nodes_data.clone();
+        let canvas_clone = canvas.clone();
 
         let mousemove = leptos::wasm_bindgen::closure::Closure::wrap(Box::new(move |e: MouseEvent| {
             if *is_dragging.borrow() {
@@ -714,6 +795,71 @@ fn setup_orbit_controls(
                 render_scene(state);
 
                 *last_mouse_pos.borrow_mut() = current_pos;
+
+                // Clear tooltip while dragging
+                tooltip_data.set(None);
+            } else {
+                // Not dragging - check for hover and update tooltip
+                if let Some(nodes) = nodes_data.as_ref() {
+                    let rect = canvas_clone.get_bounding_client_rect();
+                    let x = e.client_x() as f64 - rect.left();
+                    let y = e.client_y() as f64 - rect.top();
+                    let width = canvas_clone.client_width() as f64;
+                    let height = canvas_clone.client_height() as f64;
+                    let ndc_x = (x / width) * 2.0 - 1.0;
+                    let ndc_y = 1.0 - (y / height) * 2.0;
+
+                    // Perform ray intersection for hover detection
+                    let state = camera_state.get_untracked();
+                    let eye = vec3(
+                        state.distance * state.elevation.cos() * state.azimuth.sin(),
+                        state.distance * state.elevation.sin(),
+                        state.distance * state.elevation.cos() * state.azimuth.cos(),
+                    );
+                    let target = vec3(0.0, 0.0, 0.0);
+                    let up = vec3(0.0, 0.0, 1.0);
+
+                    let forward = (target - eye).normalize();
+                    let right = forward.cross(up).normalize();
+                    let camera_up = right.cross(forward);
+
+                    let fov = 45.0_f32.to_radians();
+                    let aspect = width as f32 / height as f32;
+                    let tan_fov = (fov / 2.0).tan();
+
+                    let ray_dir = (forward
+                        + right * (ndc_x as f32 * tan_fov * aspect)
+                        + camera_up * (ndc_y as f32 * tan_fov)).normalize();
+
+                    // Test ray intersection with each node
+                    let mut hovered_node: Option<&NodeData> = None;
+                    let mut closest_t = f32::MAX;
+
+                    for node in nodes.iter() {
+                        let oc = eye - node.position;
+                        let a = ray_dir.dot(ray_dir);
+                        let b = 2.0 * oc.dot(ray_dir);
+                        let c = oc.dot(oc) - node.radius * node.radius;
+                        let discriminant = b * b - 4.0 * a * c;
+
+                        if discriminant >= 0.0 {
+                            let t = (-b - discriminant.sqrt()) / (2.0 * a);
+                            if t > 0.0 && t < closest_t {
+                                closest_t = t;
+                                hovered_node = Some(node);
+                            }
+                        }
+                    }
+
+                    // Update tooltip data with canvas-relative coordinates
+                    if let Some(node) = hovered_node {
+                        tooltip_data.set(Some((node.name.clone(), node.node_type.clone(), x, y)));
+                    } else {
+                        tooltip_data.set(None);
+                    }
+                } else {
+                    tooltip_data.set(None);
+                }
             }
         }) as Box<dyn FnMut(_)>);
 
@@ -875,5 +1021,21 @@ fn create_line_cylinder(
     cylinder.set_transformation(Mat4::from_translation(midpoint) * rotation * scale);
 
     Some(cylinder)
+}
+
+/// Map node type to color
+#[cfg(feature = "hydrate")]
+fn get_node_color(node_type: &str) -> three_d::Srgba {
+    use three_d::Srgba;
+
+    match node_type.to_lowercase().as_str() {
+        "router" => Srgba::new(255, 140, 60, 255),   // Orange - routing/core device
+        "switch" => Srgba::new(80, 200, 120, 255),   // Green - switching/connecting
+        "server" => Srgba::new(70, 140, 255, 255),   // Blue - computing/services
+        "firewall" => Srgba::new(220, 60, 60, 255),  // Red - security/protection
+        "load_balancer" => Srgba::new(180, 100, 200, 255), // Purple - load distribution
+        "host" | "client" => Srgba::new(150, 150, 150, 255), // Gray - generic host
+        _ => Srgba::new(120, 120, 120, 255),         // Dark gray - unknown type
+    }
 }
 

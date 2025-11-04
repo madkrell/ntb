@@ -20,7 +20,15 @@
       "Bash(git rm:*)",
       "Bash(echo:*)",
       "Bash(public/models/README.md)",
-      "Bash(./tailwindcss:*)"
+      "Bash(./tailwindcss:*)",
+      "Bash(mcp list-tools)",
+      "WebFetch(domain:book.leptos.dev)",
+      "Bash(cargo clean:*)",
+      "Bash(cargo leptos watch:*)",
+      "Bash(cargo build:*)",
+      "Bash(sqlite3:*)",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ],
     "deny": [],
     "ask": []

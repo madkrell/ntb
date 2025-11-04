@@ -40,6 +40,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = tr
 
 # 3D rendering with WebGL
 three-d = { version = "0.17", optional = true }
+three-d-asset = { version = "0.9", features = ["gltf"], optional = true }
 
 [features]
 default = []
@@ -49,6 +50,7 @@ hydrate = [
     "dep:wasm-bindgen",
     "dep:web-sys",
     "dep:three-d",
+    "dep:three-d-asset",
 ]
 ssr = [
     "dep:axum",
