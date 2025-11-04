@@ -731,10 +731,20 @@ fn setup_orbit_controls(
     use web_sys::{MouseEvent, WheelEvent};
     use three_d::*;
 
+    use std::sync::{Arc, Mutex};
+
     let is_dragging = Rc::new(RefCell::new(false));
     let last_mouse_pos = Rc::new(RefCell::new((0.0, 0.0)));
     let mouse_down_pos = Rc::new(RefCell::new((0.0, 0.0))); // Track where mouse was pressed
     let total_mouse_movement = Rc::new(RefCell::new(0.0)); // Track total movement distance
+
+    // Track if component is disposed - prevents accessing disposed signals
+    // Must use Arc + Mutex for thread-safe access (required by on_cleanup)
+    let is_disposed = Arc::new(Mutex::new(false));
+
+    // Store camera state in a non-reactive way for safe access from event handlers
+    // This avoids the disposed signal issue entirely
+    let camera_state_snapshot = Arc::new(Mutex::new(camera_state.get_untracked()));
 
     // Mouse down - start dragging
     {
@@ -756,7 +766,8 @@ fn setup_orbit_controls(
         canvas
             .add_event_listener_with_callback("mousedown", mousedown.as_ref().unchecked_ref())
             .map_err(|e| format!("Failed to add mousedown listener: {:?}", e))?;
-        mousedown.forget();
+
+        mousedown.forget(); // Leak closure - will be cleaned up when page unloads
     }
 
     // Mouse up - stop dragging OR handle click
@@ -765,8 +776,8 @@ fn setup_orbit_controls(
         let total_mouse_movement = total_mouse_movement.clone();
         let canvas_clone = canvas.clone();
         let nodes_data = nodes_data.clone(); // Clone for closure
-        let selected_node_id_signal = selected_node_id_signal; // Copy Option<RwSignal>
-        let selected_item_signal = selected_item_signal; // Copy Option<RwSignal>
+        let is_disposed = is_disposed.clone(); // Clone for disposal check
+        let camera_state_snapshot = camera_state_snapshot.clone();
         let render_scene = render_scene.clone(); // Clone for re-rendering on selection
 
         let mouseup = leptos::wasm_bindgen::closure::Closure::wrap(Box::new(move |e: MouseEvent| {
@@ -777,6 +788,11 @@ fn setup_orbit_controls(
             // If total movement is very small, treat as a click for node selection
             let movement = *total_mouse_movement.borrow();
             if was_dragging && movement < 5.0 {
+                // Check if component is disposed before accessing signals
+                if *is_disposed.lock().unwrap() {
+                    return;
+                }
+
                 // Perform node selection if we have the data
                 if let Some(nodes) = nodes_data.as_ref()
                 {
@@ -790,8 +806,8 @@ fn setup_orbit_controls(
                     let ndc_x = (x / width) * 2.0 - 1.0;
                     let ndc_y = 1.0 - (y / height) * 2.0;
 
-                    // Get camera position and view direction
-                    let state = camera_state.get_untracked();
+                    // Use snapshot for raycasting (safe - no reactive signals)
+                    let state = *camera_state_snapshot.lock().unwrap();
                     let eye = vec3(
                         state.distance * state.elevation.cos() * state.azimuth.sin(),
                         state.distance * state.elevation.sin(),
@@ -837,14 +853,16 @@ fn setup_orbit_controls(
                         }
                     }
 
-                    // Update the selection signals
+                    // Update the selection signals (guard against disposal)
                     let selected_id = closest_node.map(|(id, _)| id);
 
-                    selected_node_id_signal.set(selected_id);
-                    selected_item_signal.set(selected_id.map(crate::islands::topology_editor::SelectedItem::Node));
+                    if !*is_disposed.lock().unwrap() {
+                        selected_node_id_signal.set(selected_id);
+                        selected_item_signal.set(selected_id.map(crate::islands::topology_editor::SelectedItem::Node));
+                    }
 
-                    // Trigger re-render immediately to show selection
-                    render_scene(camera_state.get_untracked());
+                    // Trigger re-render immediately to show selection (use snapshot)
+                    render_scene(*camera_state_snapshot.lock().unwrap());
                 }
             }
         }) as Box<dyn FnMut(_)>);
@@ -852,7 +870,8 @@ fn setup_orbit_controls(
         canvas
             .add_event_listener_with_callback("mouseup", mouseup.as_ref().unchecked_ref())
             .map_err(|e| format!("Failed to add mouseup listener: {:?}", e))?;
-        mouseup.forget();
+
+        mouseup.forget(); // Leak closure - will be cleaned up when page unloads
     }
 
     // Mouse move - rotate camera and update tooltip
@@ -860,11 +879,18 @@ fn setup_orbit_controls(
         let is_dragging = is_dragging.clone();
         let last_mouse_pos = last_mouse_pos.clone();
         let total_mouse_movement = total_mouse_movement.clone();
+        let is_disposed = is_disposed.clone(); // Clone for disposal check
+        let camera_state_snapshot = camera_state_snapshot.clone();
         let render_scene = render_scene.clone();
         let nodes_data = nodes_data.clone();
         let canvas_clone = canvas.clone();
 
         let mousemove = leptos::wasm_bindgen::closure::Closure::wrap(Box::new(move |e: MouseEvent| {
+            // Check if component is disposed before accessing signals
+            if *is_disposed.lock().unwrap() {
+                return;
+            }
+
             if *is_dragging.borrow() {
                 let current_pos = (e.client_x() as f32, e.client_y() as f32);
                 let last_pos = *last_mouse_pos.borrow();
@@ -876,17 +902,25 @@ fn setup_orbit_controls(
                 let movement_dist = (delta_x * delta_x + delta_y * delta_y).sqrt();
                 *total_mouse_movement.borrow_mut() += movement_dist;
 
-                let mut state = camera_state.get_untracked();
+                // Update snapshot (safe - no reactive signals)
+                let mut state = camera_state_snapshot.lock().unwrap();
                 state.azimuth += delta_x * 0.01;
                 state.elevation = (state.elevation - delta_y * 0.01).clamp(-1.5, 1.5);
 
-                camera_state.set(state);
-                render_scene(state);
+                // Only update reactive signal if not disposed
+                if !*is_disposed.lock().unwrap() {
+                    camera_state.set(*state);
+                }
+
+                render_scene(*state);
+                drop(state); // Release lock
 
                 *last_mouse_pos.borrow_mut() = current_pos;
 
                 // Clear tooltip while dragging
-                tooltip_data.set(None);
+                if !*is_disposed.lock().unwrap() {
+                    tooltip_data.set(None);
+                }
             } else {
                 // Not dragging - check for hover and update tooltip
                 if let Some(nodes) = nodes_data.as_ref() {
@@ -898,8 +932,8 @@ fn setup_orbit_controls(
                     let ndc_x = (x / width) * 2.0 - 1.0;
                     let ndc_y = 1.0 - (y / height) * 2.0;
 
-                    // Perform ray intersection for hover detection
-                    let state = camera_state.get_untracked();
+                    // Use snapshot for hover detection (safe - no reactive signals)
+                    let state = *camera_state_snapshot.lock().unwrap();
                     let eye = vec3(
                         state.distance * state.elevation.cos() * state.azimuth.sin(),
                         state.distance * state.elevation.sin(),
@@ -940,13 +974,15 @@ fn setup_orbit_controls(
                         }
                     }
 
-                    // Update tooltip data with canvas-relative coordinates
-                    if let Some(node) = hovered_node {
-                        tooltip_data.set(Some((node.name.clone(), node.node_type.clone(), x, y)));
-                    } else {
-                        tooltip_data.set(None);
+                    // Update tooltip data with canvas-relative coordinates (guard against disposal)
+                    if !*is_disposed.lock().unwrap() {
+                        if let Some(node) = hovered_node {
+                            tooltip_data.set(Some((node.name.clone(), node.node_type.clone(), x, y)));
+                        } else {
+                            tooltip_data.set(None);
+                        }
                     }
-                } else {
+                } else if !*is_disposed.lock().unwrap() {
                     tooltip_data.set(None);
                 }
             }
@@ -955,28 +991,48 @@ fn setup_orbit_controls(
         canvas
             .add_event_listener_with_callback("mousemove", mousemove.as_ref().unchecked_ref())
             .map_err(|e| format!("Failed to add mousemove listener: {:?}", e))?;
-        mousemove.forget();
+
+        mousemove.forget(); // Leak closure - will be cleaned up when page unloads
     }
 
     // Mouse wheel - zoom
     {
+        let is_disposed = is_disposed.clone(); // Clone for disposal check
+        let camera_state_snapshot = camera_state_snapshot.clone();
         let render_scene = render_scene.clone();
 
         let wheel = leptos::wasm_bindgen::closure::Closure::wrap(Box::new(move |e: WheelEvent| {
             e.prevent_default();
 
-            let mut state = camera_state.get_untracked();
+            // Check if component is disposed before accessing signals
+            if *is_disposed.lock().unwrap() {
+                return;
+            }
+
+            // Update snapshot (safe - no reactive signals)
+            let mut state = camera_state_snapshot.lock().unwrap();
             state.distance = (state.distance + e.delta_y() as f32 * 0.01).clamp(2.0, 50.0);
 
-            camera_state.set(state);
-            render_scene(state);
+            // Only update reactive signal if not disposed
+            if !*is_disposed.lock().unwrap() {
+                camera_state.set(*state);
+            }
+
+            render_scene(*state);
         }) as Box<dyn FnMut(_)>);
 
         canvas
             .add_event_listener_with_callback("wheel", wheel.as_ref().unchecked_ref())
             .map_err(|e| format!("Failed to add wheel listener: {:?}", e))?;
-        wheel.forget();
+
+        wheel.forget(); // Leak closure - will be cleaned up when page unloads
     }
+
+    // Register cleanup callback to mark component as disposed
+    // This prevents event handlers from accessing disposed signals
+    leptos::prelude::on_cleanup(move || {
+        *is_disposed.lock().unwrap() = true;
+    });
 
     Ok(())
 }

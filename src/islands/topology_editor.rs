@@ -1,15 +1,14 @@
 use leptos::prelude::*;
 use crate::islands::TopologyViewport;
-use crate::api::{get_node, update_node, get_connection, update_connection};
-use crate::models::{UpdateNode, UpdateConnection};
+use crate::api::{get_node, update_node, get_connection, update_connection, create_node, delete_node, delete_connection, get_topologies, delete_topology};
+use crate::models::{UpdateNode, UpdateConnection, CreateNode};
 
 /// Professional topology editor layout with panels
 /// Using regular component (not island) so we can share state via context
 #[component]
 pub fn TopologyEditor(
-    /// Topology ID to edit
-    #[prop(optional)]
-    topology_id: Option<i64>,
+    /// Current topology ID (as a signal for reactivity)
+    current_topology_id: RwSignal<i64>,
 ) -> impl IntoView {
     // Create signals for selected state
     let selected_node_id = RwSignal::new(None::<i64>);
@@ -22,11 +21,12 @@ pub fn TopologyEditor(
     provide_context(selected_node_id);
     provide_context(selected_item);
     provide_context(refetch_trigger);
+    provide_context(current_topology_id);
 
     view! {
         <div class="topology-editor w-full h-screen flex flex-col bg-gray-900 text-gray-100">
             // Top Toolbar
-            <TopToolbar topology_id=topology_id />
+            <TopToolbar />
 
             // Main content area with 3 panels
             <div class="flex-1 flex overflow-hidden">
@@ -36,13 +36,9 @@ pub fn TopologyEditor(
                 // Center: 3D Viewport (main focus, takes most space)
                 <div class="flex-1 bg-gray-800 border-l border-r border-gray-700">
                     {move || {
-                        match topology_id {
-                            Some(id) => view! {
-                                <TopologyViewport topology_id=id />
-                            }.into_any(),
-                            None => view! {
-                                <TopologyViewport />
-                            }.into_any(),
+                        let topology_id = current_topology_id.get();
+                        view! {
+                            <TopologyViewport topology_id=topology_id />
                         }
                     }}
                 </div>
@@ -63,38 +59,102 @@ pub enum SelectedItem {
 
 /// Top toolbar with action buttons
 #[component]
-fn TopToolbar(
-    topology_id: Option<i64>,
-) -> impl IntoView {
+fn TopToolbar() -> impl IntoView {
+    // Get current topology ID from context
+    let current_topology_id = use_context::<RwSignal<i64>>().expect("current_topology_id context");
+    let refetch_trigger = use_context::<RwSignal<u32>>().expect("refetch_trigger context");
+    let selected_item = use_context::<RwSignal<Option<SelectedItem>>>().expect("selected_item context");
+
+    // Load list of topologies
+    let topologies = Resource::new(
+        || (),
+        |_| async move {
+            get_topologies().await.ok().unwrap_or_default()
+        }
+    );
+
+    // Delete topology action
+    let delete_topology_action = Action::new(move |_: &()| {
+        let topology_id = current_topology_id.get_untracked();
+        async move {
+            delete_topology(topology_id).await
+        }
+    });
+
+    // After deleting, switch to another topology if available
+    Effect::new(move || {
+        if let Some(Ok(_)) = delete_topology_action.value().get() {
+            // Clear selection
+            selected_item.set(None);
+            // Refetch topologies
+            topologies.refetch();
+            // Switch to topology 1 if available
+            current_topology_id.set(1);
+            // Trigger viewport refresh
+            refetch_trigger.update(|v| *v += 1);
+        }
+    });
+
     view! {
         <div class="h-14 bg-gray-800 border-b border-gray-700 flex items-center px-4 gap-3">
             // Logo/Title
             <div class="flex items-center gap-2 mr-6">
                 <div class="text-xl font-bold text-blue-400">"NTV"</div>
-                <div class="text-sm text-gray-400">
-                    {move || topology_id.map(|id| format!("Topology #{}", id)).unwrap_or_else(|| "No Topology".to_string())}
-                </div>
             </div>
 
-            // Action buttons
-            <button class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition">
-                "Add Node"
-            </button>
-            <button class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-medium transition">
-                "Connect"
-            </button>
-            <button class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition">
-                "Delete"
+            // Topology Selector
+            <div class="flex items-center gap-2">
+                <label class="text-sm text-gray-400">"Topology:"</label>
+                <Suspense fallback=move || view! { <div class="text-sm text-gray-500">"Loading..."</div> }>
+                    {move || {
+                        topologies.get().map(|topos| {
+                            view! {
+                                <select
+                                    class="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                    on:change=move |ev| {
+                                        let value = event_target_value(&ev);
+                                        if let Ok(id) = value.parse::<i64>() {
+                                            current_topology_id.set(id);
+                                            // Clear selection when switching topologies
+                                            selected_item.set(None);
+                                            // Trigger viewport refresh
+                                            refetch_trigger.update(|v| *v += 1);
+                                        }
+                                    }
+                                    prop:value=move || current_topology_id.get().to_string()
+                                >
+                                    {topos.into_iter().map(|topo| {
+                                        view! {
+                                            <option value=topo.id.to_string()>
+                                                {topo.name}
+                                            </option>
+                                        }
+                                    }).collect_view()}
+                                </select>
+                            }
+                        })
+                    }}
+                </Suspense>
+            </div>
+
+            // Delete Topology button
+            <button
+                class="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                on:click=move |_| { delete_topology_action.dispatch(()); }
+                disabled=move || delete_topology_action.pending().get()
+            >
+                {move || if delete_topology_action.pending().get() {
+                    "Deleting Topology..."
+                } else {
+                    "Delete Topology"
+                }}
             </button>
 
             // Spacer
             <div class="flex-1"></div>
 
-            // Save/Export buttons
-            <button class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded text-sm font-medium transition">
-                "Save"
-            </button>
-            <button class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-medium transition">
+            // Future action buttons (disabled for now)
+            <button class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-medium transition opacity-50 cursor-not-allowed" disabled=true>
                 "Export"
             </button>
         </div>
@@ -104,14 +164,73 @@ fn TopToolbar(
 /// Left device palette/toolbar
 #[component]
 fn DevicePalette() -> impl IntoView {
+    // Get context
+    let current_topology_id = use_context::<RwSignal<i64>>().expect("current_topology_id context");
+    let refetch_trigger = use_context::<RwSignal<u32>>().expect("refetch_trigger context");
+
+    // Counter for generating unique names and positions
+    let node_counter = RwSignal::new(0u32);
+
+    // Device type configurations: (Display Name, Icon, type_id, name_prefix)
     let device_types = vec![
-        ("Router", "🔀", "router"),
-        ("Switch", "🔌", "switch"),
-        ("Server", "🖥️", "server"),
-        ("Firewall", "🛡️", "firewall"),
-        ("LoadBalancer", "⚖️", "load_balancer"),
-        ("Database", "🗄️", "database"),
+        ("Router", "🔀", "router", "Router"),
+        ("Switch", "🔌", "switch", "Switch"),
+        ("Server", "🖥️", "server", "Server"),
+        ("Firewall", "🛡️", "firewall", "Firewall"),
+        ("Load Balancer", "⚖️", "load_balancer", "LoadBalancer"),
+        ("Cloud", "☁️", "cloud", "Cloud"),
     ];
+
+    // Action to create a node
+    let create_node_action = Action::new(move |(node_type, name_prefix): &(String, String)| {
+        let node_type = node_type.clone();
+        let name_prefix = name_prefix.clone();
+
+        async move {
+            // Get current topology_id
+            let tid = current_topology_id.get_untracked();
+
+            // Increment counter for unique name and position
+            let count = node_counter.get_untracked();
+            node_counter.update(|c| *c += 1);
+
+            // Generate unique name
+            let name = format!("{}-{}", name_prefix, count + 1);
+
+            // Calculate position in a grid to avoid overlap
+            // Grid: 5 columns, spacing of 3.0 units
+            let col = (count % 5) as f64;
+            let row = (count / 5) as f64;
+            let position_x = col * 3.0 - 6.0;  // Center the grid around origin
+            let position_y = 0.0;               // On the floor
+            let position_z = row * 3.0 - 3.0;  // Rows going back
+
+            // Create node data
+            let data = CreateNode {
+                topology_id: tid,
+                name,
+                node_type,
+                ip_address: None,
+                position_x: Some(position_x),
+                position_y: Some(position_y),
+                position_z: Some(position_z),
+                rotation_x: None, // Will use default 90°
+                rotation_y: None, // Will use default 0°
+                rotation_z: None, // Will use default 0°
+                metadata: None,
+            };
+
+            // Call server function
+            create_node(data).await
+        }
+    });
+
+    // Trigger viewport refetch on successful node creation
+    Effect::new(move || {
+        if let Some(Ok(_)) = create_node_action.value().get() {
+            refetch_trigger.update(|v| *v += 1);
+        }
+    });
 
     view! {
         <div class="w-64 bg-gray-800 border-r border-gray-700 flex flex-col">
@@ -120,24 +239,58 @@ fn DevicePalette() -> impl IntoView {
             </div>
 
             <div class="flex-1 overflow-y-auto p-3 space-y-2">
-                {device_types.into_iter().map(|(name, icon, type_id)| {
+                {device_types.into_iter().map(|(display_name, icon, type_id, name_prefix)| {
+                    let type_id_clone = type_id.to_string();
+                    let name_prefix_clone = name_prefix.to_string();
+
                     view! {
                         <button
-                            class="w-full p-3 bg-gray-700 hover:bg-gray-600 rounded border border-gray-600 hover:border-blue-500 transition flex items-center gap-3 text-left"
-                            data-device-type=type_id
+                            class="w-full p-3 bg-gray-700 hover:bg-gray-600 rounded border border-gray-600 hover:border-blue-500 transition flex items-center gap-3 text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                            on:click=move |_| {
+                                create_node_action.dispatch((type_id_clone.clone(), name_prefix_clone.clone()));
+                            }
+                            disabled=move || create_node_action.pending().get()
                         >
                             <span class="text-2xl">{icon}</span>
-                            <div>
-                                <div class="text-sm font-medium">{name}</div>
-                                <div class="text-xs text-gray-400">"Click to add"</div>
+                            <div class="flex-1">
+                                <div class="text-sm font-medium">{display_name}</div>
+                                <div class="text-xs text-gray-400">
+                                    {move || {
+                                        if create_node_action.pending().get() {
+                                            "Adding..."
+                                        } else {
+                                            "Click to add"
+                                        }
+                                    }}
+                                </div>
                             </div>
                         </button>
                     }
                 }).collect_view()}
             </div>
 
+            // Show feedback for the last action
+            <div class="px-3 py-2 border-t border-gray-700">
+                {move || {
+                    create_node_action.value().get().map(|result| {
+                        match result {
+                            Ok(node) => view! {
+                                <div class="text-xs text-green-400">
+                                    {format!("✓ Added: {}", node.name)}
+                                </div>
+                            }.into_any(),
+                            Err(e) => view! {
+                                <div class="text-xs text-red-400">
+                                    {format!("Error: {}", e)}
+                                </div>
+                            }.into_any(),
+                        }
+                    })
+                }}
+            </div>
+
             <div class="p-3 border-t border-gray-700 text-xs text-gray-400">
-                "Click a device type, then click in the 3D viewport to place"
+                "Nodes are added in a grid pattern at the origin"
             </div>
         </div>
     }
@@ -181,6 +334,9 @@ fn PropertiesPanel(
 fn NodeProperties(node_id: i64) -> impl IntoView {
     // Get refetch trigger from context
     let refetch_trigger = use_context::<RwSignal<u32>>().expect("refetch_trigger context");
+
+    // Get selected_item from context to clear selection after deletion
+    let selected_item = use_context::<RwSignal<Option<SelectedItem>>>().expect("selected_item context");
 
     // Load node data from server
     let node_data = Resource::new(
@@ -246,6 +402,23 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
     Effect::new(move || {
         if let Some(Ok(_)) = save_action.value().get() {
             // Increment trigger to cause viewport to refetch
+            refetch_trigger.update(|v| *v += 1);
+        }
+    });
+
+    // Delete action
+    let delete_action = Action::new(move |_: &()| {
+        async move {
+            delete_node(node_id).await
+        }
+    });
+
+    // Clear selection and trigger refetch on successful deletion
+    Effect::new(move || {
+        if let Some(Ok(_)) = delete_action.value().get() {
+            // Clear selection
+            selected_item.set(None);
+            // Trigger viewport refetch
             refetch_trigger.update(|v| *v += 1);
         }
     });
@@ -402,7 +575,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                     </div>
                                 </div>
 
-                                <div class="pt-4 border-t border-gray-700">
+                                <div class="pt-4 border-t border-gray-700 space-y-3">
                                     <button
                                         class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
                                         on:click=move |_| { save_action.dispatch(()); }
@@ -432,6 +605,37 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                             }
                                         })
                                     }}
+
+                                    // Delete button
+                                    <button
+                                        class="w-full px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed mt-4"
+                                        on:click=move |_| { delete_action.dispatch(()); }
+                                        disabled=move || delete_action.pending().get()
+                                    >
+                                        {move || if delete_action.pending().get() {
+                                            "Deleting..."
+                                        } else {
+                                            "Delete Node"
+                                        }}
+                                    </button>
+
+                                    // Show delete result
+                                    {move || {
+                                        delete_action.value().get().map(|result| {
+                                            match result {
+                                                Ok(_) => view! {
+                                                    <div class="text-xs text-green-400 text-center">
+                                                        "✓ Node deleted"
+                                                    </div>
+                                                }.into_any(),
+                                                Err(e) => view! {
+                                                    <div class="text-xs text-red-400 text-center">
+                                                        {format!("Error: {}", e)}
+                                                    </div>
+                                                }.into_any(),
+                                            }
+                                        })
+                                    }}
                                 </div>
                             </div>
                         }.into_any(),
@@ -452,6 +656,12 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
 /// Connection properties editor with live data loading and saving
 #[component]
 fn ConnectionProperties(connection_id: i64) -> impl IntoView {
+    // Get refetch trigger from context
+    let refetch_trigger = use_context::<RwSignal<u32>>().expect("refetch_trigger context");
+
+    // Get selected_item from context to clear selection after deletion
+    let selected_item = use_context::<RwSignal<Option<SelectedItem>>>().expect("selected_item context");
+
     // Load connection data from server
     let connection_data = Resource::new(
         move || connection_id,
@@ -488,6 +698,30 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
 
         async move {
             update_connection(connection_id, update_data).await
+        }
+    });
+
+    // Trigger viewport refetch on successful save
+    Effect::new(move || {
+        if let Some(Ok(_)) = save_action.value().get() {
+            refetch_trigger.update(|v| *v += 1);
+        }
+    });
+
+    // Delete action
+    let delete_action = Action::new(move |_: &()| {
+        async move {
+            delete_connection(connection_id).await
+        }
+    });
+
+    // Clear selection and trigger refetch on successful deletion
+    Effect::new(move || {
+        if let Some(Ok(_)) = delete_action.value().get() {
+            // Clear selection
+            selected_item.set(None);
+            // Trigger viewport refetch
+            refetch_trigger.update(|v| *v += 1);
         }
     });
 
@@ -576,7 +810,7 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
                                     </select>
                                 </div>
 
-                                <div class="pt-4 border-t border-gray-700">
+                                <div class="pt-4 border-t border-gray-700 space-y-3">
                                     <button
                                         class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
                                         on:click=move |_| { save_action.dispatch(()); }
@@ -600,6 +834,37 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
                                                 }.into_any(),
                                                 Err(e) => view! {
                                                     <div class="mt-2 text-xs text-red-400 text-center">
+                                                        {format!("Error: {}", e)}
+                                                    </div>
+                                                }.into_any(),
+                                            }
+                                        })
+                                    }}
+
+                                    // Delete button
+                                    <button
+                                        class="w-full px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed mt-4"
+                                        on:click=move |_| { delete_action.dispatch(()); }
+                                        disabled=move || delete_action.pending().get()
+                                    >
+                                        {move || if delete_action.pending().get() {
+                                            "Deleting..."
+                                        } else {
+                                            "Delete Connection"
+                                        }}
+                                    </button>
+
+                                    // Show delete result
+                                    {move || {
+                                        delete_action.value().get().map(|result| {
+                                            match result {
+                                                Ok(_) => view! {
+                                                    <div class="text-xs text-green-400 text-center">
+                                                        "✓ Connection deleted"
+                                                    </div>
+                                                }.into_any(),
+                                                Err(e) => view! {
+                                                    <div class="text-xs text-red-400 text-center">
                                                         {format!("Error: {}", e)}
                                                     </div>
                                                 }.into_any(),

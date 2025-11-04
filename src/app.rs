@@ -50,8 +50,11 @@ pub fn App() -> impl IntoView {
 fn HomePage() -> impl IntoView {
     use crate::islands::TopologyEditor;
 
+    // Create a signal for the current topology ID (default to 1)
+    let current_topology_id = RwSignal::new(1i64);
+
     // Use TopologyEditor with full-screen layout
     view! {
-        <TopologyEditor topology_id=1 />
+        <TopologyEditor current_topology_id=current_topology_id />
     }
 }

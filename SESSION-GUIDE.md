@@ -29,14 +29,15 @@ Current Status: Phase 4 IN PROGRESS - Multiple Features Complete! ✅
 - 3D Grid and Axes (Blender-style reference grid)
 - Node Labels/Tooltips (show node name on hover)
 - Color-Coded Nodes by Type (router=blue, switch=green, server=orange, etc.)
+- Topology Switching Control (dropdown selector with 2 sample topologies)
+- Critical fix: Disposed signal access in event handlers (non-reactive snapshot pattern)
 
 **⏳ Next Phase 4 Tasks (Priority 1):**
-3. Enable Device Palette buttons ('Router', 'Switch', etc. 'Click to Add')
-4. Topology switching control (add UI + another mock topology in database)
+7. Enable Device Palette buttons ('Router', 'Switch', etc. 'Click to Add')
 
 Then Priority 2: Improved lighting, better camera controls
 
-Next: Start with Priority 1 task #1 (Enable Device Palette buttons)
+Next: Start with Priority 1 task #7 (Enable Device Palette buttons)
 ```
 
 ## 📊 Current Project State
@@ -82,22 +83,26 @@ Next: Start with Priority 1 task #1 (Enable Device Palette buttons)
    - Dynamic model loading based on node.node_type
    - Each model colored according to node type
 3. ✅ **3D Grid and Axes** - Blender-style reference grid with X/Y/Z axis lines and grid floor plane
+4. ✅ **Topology switching control** (2025-11-04)
+   - Dropdown selector in top toolbar
+   - 2 sample topologies in database
+   - Dynamic loading on selection change
+   - Critical fix: Disposed signal access in event handlers using non-reactive snapshot pattern
 
 ✅ **COMPLETED - Priority 2 (Visual Polish):**
 5. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
 6. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc.
 
 ⏳ **REMAINING - Priority 1 (Core 3D Features):**
-3. ⏳ **Enable Device Palette buttons** - Make 'Router', 'Switch', etc. 'Click to Add' buttons functional
-4. ⏳ **Topology switching control** - Add UI to switch/load different topologies + another mock topology in database
+7. ⏳ **Enable Device Palette buttons** - Make 'Router', 'Switch', etc. 'Click to Add' buttons functional
 
 ⏳ **REMAINING - Priority 2 (Visual Polish):**
-7. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
-8. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
+8. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
+9. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
 
 ### 🔄 What to Work On Next
 
-**NEXT UP: Phase 4 - Priority 1, Task #3 - Enable Device Palette Buttons**
+**NEXT UP: Phase 4 - Priority 1, Task #7 - Enable Device Palette Buttons**
 ```
 Let's make the Device Palette functional:
 - Enable 'Router' button - Click to add router node to topology
@@ -110,21 +115,11 @@ Let's make the Device Palette functional:
 - Nodes should appear at a default position (or random position)
 ```
 
-**THEN: Phase 4 - Priority 1, Task #4 - Topology Switching Control**
-```
-Let's add topology switching:
-- Add another mock topology to database (e.g., "Data Center Network")
-- Add topology selector UI (dropdown or buttons in top toolbar)
-- Update TopologyEditor to accept topology_id parameter
-- Load selected topology's nodes and connections
-- Save current topology selection to state/context
-```
-
 **FUTURE: Phase 4 - Priority 2 - Visual Polish**
 ```
 Once Priority 1 is complete:
-- Task #7: Improved lighting and materials
-- Task #8: Better camera controls (presets, bookmarks, reset view)
+- Task #8: Improved lighting and materials
+- Task #9: Better camera controls (presets, bookmarks, reset view)
 ```
 
 **LATER: Phase 5 - Export & Finalization**

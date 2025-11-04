@@ -12,18 +12,18 @@
 1. ✅ **3D node rotation controls** - Full X/Y/Z rotation with database storage, UI sliders, and viewport rendering
 2. ✅ **Model Selection UI** - Loads correct glTF/GLB model for each node type (router, switch, server, firewall, load_balancer, cloud)
 3. ✅ **3D Grid and Axes** - Blender-style reference grid with X/Y/Z axis lines and grid floor plane
+4. ✅ **Topology switching control** - Multiple topologies with dropdown selector in UI
 
 **✅ COMPLETED (Priority 2 - Visual Polish):**
 5. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
 6. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc.
 
 **⏳ REMAINING (Priority 1 - Core 3D Features):**
-3. ⏳ **Enable Device Palette buttons** - Make 'Router', 'Switch', etc. 'Click to Add' buttons functional
-4. ⏳ **Topology switching control** - Add UI to switch/load different topologies (add another mock topology in database)
+7. ⏳ **Enable Device Palette buttons** - Make 'Router', 'Switch', etc. 'Click to Add' buttons functional
 
 **⏳ REMAINING (Priority 2 - Visual Polish):**
-7. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
-8. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
+8. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
+9. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
 
 ### Phase 3 - COMPLETE ✅
 - ✅ Professional 3-panel layout (device palette, viewport, properties)
@@ -341,6 +341,46 @@ wasm-bindgen = { version = "=0.2.101", optional = true }
 use wasm_bindgen::JsCast;
 ```
 
+### 7. Disposed Reactive Signals in Event Handlers
+**Issue:** Event handlers with `.forget()` panic when accessing reactive signals after component is disposed
+```
+panicked at reactive_graph-0.2.9/src/traits.rs:361:29:
+you tried to access a reactive value which has already been disposed
+```
+**Root Cause:** Event handlers outlive the component lifecycle when using `.forget()`, creating race conditions with reactive signal disposal
+
+**Solution:** Use non-reactive snapshot pattern with `Arc<Mutex<T>>`:
+```rust
+// Create non-reactive snapshot of reactive state
+let camera_state_snapshot = Arc::new(Mutex::new(camera_state.get_untracked()));
+let is_disposed = Arc::new(Mutex::new(false));
+
+// Register cleanup
+on_cleanup(move || *is_disposed.lock().unwrap() = true);
+
+// Event handlers access snapshot, not reactive signals
+let mousemove = Closure::wrap(Box::new(move |e: MouseEvent| {
+    if *is_disposed.lock().unwrap() { return; }
+
+    // Safe - no reactive signal access
+    let mut state = camera_state_snapshot.lock().unwrap();
+    state.azimuth += delta_x * 0.01;
+
+    // Conditionally sync back to reactive signal
+    if !*is_disposed.lock().unwrap() {
+        camera_state.set(*state);
+    }
+
+    render_scene(*state);
+}));
+```
+
+**Key Points:**
+- Event handlers read/write snapshot only (thread-safe, non-reactive)
+- Conditionally sync snapshot to reactive signal when not disposed
+- Always check disposal flag before signal `.set()` calls
+- Applies to all closures using `.forget()`
+
 ## Database
 - SQLite with sqlx
 - Migrations in /migrations/
@@ -651,13 +691,85 @@ Blender uses Y-up coordinate system, while our viewport uses Z-up. To make glTF/
 - Root cause: Browser caching old WASM + conflicting cargo-leptos processes
 - Solution: `cargo clean`, kill all processes, fresh rebuild, hard browser refresh
 
+### ✅ COMPLETED: Topology Switching Control (2025-11-04)
+
+**Implementation:**
+1. ✅ Multiple topologies in database (2 sample topologies for testing)
+2. ✅ Topology selector dropdown in top toolbar
+3. ✅ Dynamic topology loading based on selection
+4. ✅ Proper component cleanup on topology switch
+
+**Database Changes:**
+- Added second mock topology: "Data Center Network" with 5 nodes
+- First topology: "Test Network" with 7 nodes
+
+**Key Files Modified:**
+- `src/islands/topology_editor.rs` - Added topology selector dropdown, fixed topology_id passing
+- `src/islands/topology_viewport.rs` - Fixed disposed signal access in event handlers
+- `src/app.rs` - Updated to load all topologies for selector
+
+**Critical Bug Fix - Disposed Reactive Signals in Event Handlers:**
+
+**Problem:** When switching topologies, the old TopologyViewport component is disposed but event handlers (mousedown, mouseup, mousemove, wheel) persist because they use `.forget()`. These handlers tried to access disposed reactive signals (`RwSignal<CameraState>`) causing panics:
+
+```
+panicked at reactive_graph-0.2.9/src/traits.rs:361:29:
+At src/islands/topology_viewport.rs:902:46, you tried to access a reactive value
+which was defined at src/islands/topology_viewport.rs:58:24, but it has already been disposed.
+```
+
+**Initial Approach (FAILED):** Added disposal checks before signal access:
+```rust
+let is_disposed = Arc::new(Mutex::new(false));
+on_cleanup(move || *is_disposed.lock().unwrap() = true);
+
+// In event handler
+if *is_disposed.lock().unwrap() { return; }
+let state = camera_state.get_untracked();  // Still panics due to race condition!
+```
+
+**Problem with Disposal Checks:** Race condition - component could be disposed between the check and the signal access.
+
+**Final Solution (SUCCESSFUL):** Eliminate reactive signal access from event handlers entirely using a non-reactive snapshot:
+
+```rust
+// Create non-reactive camera state snapshot for safe access from event handlers
+let camera_state_snapshot = Arc::new(Mutex::new(camera_state.get_untracked()));
+
+// Event handlers only access the snapshot
+let mousemove = Closure::wrap(Box::new(move |e: MouseEvent| {
+    if *is_disposed.lock().unwrap() { return; }
+
+    // Safe - no reactive signals accessed
+    let mut state = camera_state_snapshot.lock().unwrap();
+    state.azimuth += delta_x * 0.01;
+
+    // Only update reactive signal if not disposed
+    if !*is_disposed.lock().unwrap() {
+        camera_state.set(*state);
+    }
+
+    render_scene(*state);
+}));
+```
+
+**Pattern Summary:**
+1. Create `Arc<Mutex<T>>` snapshot of reactive state at component initialization
+2. Event handlers read/write only to the snapshot (thread-safe, non-reactive)
+3. Conditionally sync snapshot back to reactive signal only when component is not disposed
+4. Register cleanup callback to set disposal flag: `on_cleanup(move || *is_disposed = true)`
+
+**Lessons Learned:**
+1. **Event handlers with `.forget()` outlive components** - They must not access reactive signals directly
+2. **Disposal checks are insufficient** - Race conditions occur between check and access
+3. **Non-reactive snapshots are the solution** - Use `Arc<Mutex<T>>` for thread-safe non-reactive state
+4. **Always guard signal updates** - Check disposal flag before every `.set()` call
+5. **Applies to all leaked closures** - Any closure using `.forget()` should use this pattern
+
 ### Remaining Phase 4 Features
 
 **Priority 1 - Core 3D Features:**
-3. ⏳ **Enable Device Palette buttons** - Make left panel buttons functional ('Router', 'Switch', etc. 'Click to Add')
-4. ⏳ **Topology switching control** - Add UI to switch/load different topologies
-   - Add another mock topology to database for testing
-   - Dropdown or selector to switch between topologies
+7. ⏳ **Enable Device Palette buttons** - Make left panel buttons functional ('Router', 'Switch', etc. 'Click to Add')
 
 **Priority 2 - Visual Polish:**
 7. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
