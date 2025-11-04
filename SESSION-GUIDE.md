@@ -12,7 +12,7 @@ Please read these files to understand the current state:
 1. CLAUDE.md - Complete architecture, Phases 1-3 status, all learnings
 2. This file (SESSION-GUIDE.md) - Quick context
 
-Current Status: Phase 3 COMPLETE ✅ - Ready for Phase 4
+Current Status: Phase 4 IN PROGRESS - 3D Model Rotation Complete! ✅
 - ✅ Professional 3-panel UI layout working perfectly
 - ✅ Node selection with visual feedback (yellow highlight)
 - ✅ Click empty space to deselect
@@ -20,8 +20,10 @@ Current Status: Phase 3 COMPLETE ✅ - Ready for Phase 4
 - ✅ Properties panel loads and saves real data
 - ✅ Real-time viewport updates (no refresh needed!)
 - ✅ Suspense components eliminating hydration warnings
+- ✅ **NEW: 3D node rotation controls (X/Y/Z in degrees)**
+- ✅ **NEW: Default rotation_x=90° for Blender glTF models**
 
-Next: [specify what you want to work on - see Phase 4 options below]
+Next: [specify what you want to work on - see Phase 4 remaining options below]
 ```
 
 ## 📊 Current Project State
@@ -52,6 +54,25 @@ Next: [specify what you want to work on - see Phase 4 options below]
 - ✅ Properties panel loads real data via Resources with Suspense
 - ✅ Save changes from properties panel with instant viewport updates
 - ✅ Refetch mechanism using context-shared trigger signal
+
+**Phase 4 - Visual Enhancements & 3D Interaction (IN PROGRESS)**
+
+✅ **COMPLETED: 3D Model Rotation Controls (2025-11-04)**
+- ✅ Database migration: Added rotation_x/y/z columns to nodes table
+- ✅ Updated Node model with rotation fields (stored in degrees)
+- ✅ Full CRUD API support for rotation values
+- ✅ Properties panel UI with X/Y/Z rotation sliders (-180° to +180°)
+- ✅ Viewport rendering applies rotations using cgmath `degrees()` function
+- ✅ Default rotation_x=90° for Blender glTF models (correct orientation on Z-up grid)
+- ✅ **Key lesson:** cgmath `degrees()` converts from degrees to radians, `radians()` just wraps radian values
+- ✅ **Troubleshooting:** Clean rebuild (`cargo clean`) + hard browser refresh fixed rendering issues
+
+Files modified:
+- `migrations/20250102000002_add_node_rotations.sql`
+- `src/models/node.rs` - Added rotation fields to Node, CreateNode, UpdateNode
+- `src/api.rs` - Updated all CRUD functions, set default rotation_x=90.0
+- `src/islands/topology_editor.rs` - Added rotation UI controls
+- `src/islands/topology_viewport.rs` - Applied rotations with degrees() fix
 
 ### 🔄 What to Work On Next
 

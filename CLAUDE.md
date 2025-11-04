@@ -1,10 +1,21 @@
 # Network Topology Visualizer - Claude Development Notes
 
 ## Project Status
-**Current Phase:** Phase 3 COMPLETE ✅ - Ready for Phase 4
-**Last Updated:** 2025-11-03
-**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete (to be created)
+**Current Phase:** Phase 4 IN PROGRESS - 3D Model Rotation Complete ✅
+**Last Updated:** 2025-11-04
+**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete
 **Architecture:** Regular Leptos Components (Islands removed - see notes below)
+
+### Phase 4 - IN PROGRESS (3D Model Rotation COMPLETE ✅)
+- ✅ **Database migration for rotation fields** - Added rotation_x/y/z columns to nodes table
+- ✅ **Model DTOs updated** - CreateNode and UpdateNode include rotation fields
+- ✅ **API server functions** - Full CRUD support for rotation values
+- ✅ **Properties panel UI** - X/Y/Z rotation sliders (-180° to +180°)
+- ✅ **Viewport rendering** - Node rotations applied using cgmath degrees()
+- ✅ **Blender glTF default rotation** - New router nodes default to rotation_x=90° for correct orientation
+- ⏳ Model selection UI - Load different 3D models from public/models/
+- ⏳ 3D grid and axes enhancement
+- ⏳ Node drag-and-drop repositioning
 
 ### Phase 3 - COMPLETE ✅
 - ✅ Professional 3-panel layout (device palette, viewport, properties)
@@ -575,24 +586,79 @@ Created test topology with 7 nodes and 7 connections:
 - `src/islands/topology_viewport.rs` - 3D rendering, selection, refetch mechanism
 - `src/api.rs` - All 8 CRUD server functions (4 nodes + 4 connections)
 
-## Phase 4 - Visual Enhancements & 3D Interaction (NEXT)
+## Phase 4 - Visual Enhancements & 3D Interaction (IN PROGRESS)
 
-### Planned Features
+### ✅ COMPLETED: 3D Model Rotation Controls (2025-11-04)
+
+**Implementation:**
+1. ✅ Database migration for rotation_x/y/z columns
+2. ✅ Updated Node model structs and DTOs with rotation fields
+3. ✅ Full CRUD API support for rotation values
+4. ✅ Properties panel UI with X/Y/Z rotation sliders
+5. ✅ Viewport rendering with rotation transformations
+6. ✅ Default rotation_x=90° for Blender glTF models
+
+**Database Changes:**
+- Migration: `20250102000002_add_node_rotations.sql`
+- Added columns: `rotation_x`, `rotation_y`, `rotation_z` (REAL, default 0.0)
+- All rotation values stored in **degrees** for user clarity
+
+**Key Files Modified:**
+- `src/models/node.rs` - Added rotation fields to Node, CreateNode, UpdateNode
+- `src/api.rs` - Updated all CRUD functions, set default rotation_x=90.0
+- `src/islands/topology_editor.rs` - Added rotation UI controls (-180° to +180° range)
+- `src/islands/topology_viewport.rs` - Applied rotations using cgmath `degrees()` function
+
+**Critical Bug Fix:**
+Initial implementation used `radians()` function incorrectly. The cgmath library has two angle wrapper functions:
+- `radians(value)` - Wraps a value that's ALREADY in radians (no conversion)
+- `degrees(value)` - Wraps a value in degrees, auto-converts to radians via Angle trait
+
+**WRONG (initial implementation):**
+```rust
+let x_rotation = Mat4::from_angle_x(radians(node.rotation_x as f32));
+// User enters 90° → treated as 90 radians → ~5156° rotation!
+```
+
+**CORRECT (fixed implementation):**
+```rust
+let x_rotation = Mat4::from_angle_x(degrees(node.rotation_x as f32));
+// User enters 90° → converted to radians properly → quarter turn
+```
+
+**Blender Coordinate System:**
+Blender uses Y-up coordinate system, while our viewport uses Z-up. To make glTF/GLB models from Blender sit flat on the grid floor, they need a 90° rotation around X-axis:
+- Default rotation for new nodes: `rotation_x = 90.0`
+- This ensures router models (and all Blender exports) are oriented correctly by default
+
+**Lessons Learned:**
+1. **Always verify unit conversions** - cgmath's function naming is subtle (radians vs degrees)
+2. **Clean rebuilds are essential** - Browser caches WASM modules; use `cargo clean` + hard refresh
+3. **Kill old processes** - Multiple cargo-leptos instances can conflict
+4. **Coordinate system defaults** - Set sensible rotation defaults based on model source
+5. **Store degrees in database** - More intuitive for users than radians
+
+**Troubleshooting Process:**
+- Issue: Topology stopped rendering after rotation implementation
+- Root cause: Browser caching old WASM + conflicting cargo-leptos processes
+- Solution: `cargo clean`, kill all processes, fresh rebuild, hard browser refresh
+
+### Remaining Phase 4 Features
 
 **3D Interaction Enhancements:**
-1. ⏳ **Drag nodes in 3D viewport:** Click and drag nodes to reposition them in 3D space
+1. ⏳ **Model Selection UI:** Dropdown to select different glTF/GLB models from public/models/
+2. ⏳ **Drag nodes in 3D viewport:** Click and drag nodes to reposition them in 3D space
    - Update position in real-time during drag
    - Save new position to database on drag end
    - Maintain camera orbit controls (differentiate drag-node vs drag-camera)
-2. ⏳ **3D Grid and Axes:** Add visual reference grid and coordinate axes (Blender-style)
+3. ⏳ **3D Grid and Axes:** Add visual reference grid and coordinate axes (Blender-style)
    - Faint X, Y, Z axis lines (red, green, blue)
    - Grid floor plane at Y=0 with subtle lines
    - Helps with spatial orientation and node placement
 
 **Visual Enhancements:**
-3. ⏳ Node labels/tooltips on hover in 3D viewport
-4. ⏳ Color-coded nodes by type (router=blue, switch=green, etc.)
-5. ⏳ Load custom 3D models from Blender (glTF/GLB format from public/models/)
+4. ⏳ Node labels/tooltips on hover in 3D viewport
+5. ⏳ Color-coded nodes by type (router=blue, switch=green, etc.)
 6. ⏳ Improved lighting and materials
 7. ⏳ Better camera controls (presets, bookmarks)
 

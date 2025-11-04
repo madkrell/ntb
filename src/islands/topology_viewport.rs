@@ -39,6 +39,9 @@ pub fn TopologyViewport(
     #[prop(optional)]
     topology_id: Option<i64>,
 ) -> impl IntoView {
+    #[cfg(feature = "hydrate")]
+    web_sys::console::log_1(&format!("TopologyViewport component created with topology_id: {:?}", topology_id).into());
+
     // Get shared state from context (provided by TopologyEditor)
     let selected_node_id = use_context::<RwSignal<Option<i64>>>().expect("selected_node_id context");
     let selected_item = use_context::<RwSignal<Option<crate::islands::topology_editor::SelectedItem>>>().expect("selected_item context");
@@ -92,12 +95,17 @@ pub fn TopologyViewport(
         if let Some(canvas_element) = canvas_ref.get() {
             #[cfg(feature = "hydrate")]
             {
+                web_sys::console::log_1(&"Effect running - canvas element exists".into());
+
                 // Access topology_data to make Effect reactive to it
                 let data_option = topology_data.get();
+                web_sys::console::log_1(&format!("Data option: {:?}", data_option.is_some()).into());
 
                 // Wait for topology data to load
                 if let Some(Some(topo_data)) = data_option {
-                    // Spawn async initialization
+                    web_sys::console::log_1(&format!("Topology data loaded! {} nodes", topo_data.nodes.len()).into());
+
+                    // Spawn async initialization (needed for glTF loading)
                     let canvas = canvas_element.clone();
                     let topo = topo_data.clone();
                     let render_fn = render_fn_for_effect.clone();
@@ -213,6 +221,10 @@ struct NodeData {
     radius: f32,
 }
 
+// Type alias for node mesh (sphere with material)
+#[cfg(feature = "hydrate")]
+type NodeMesh = three_d::Gm<three_d::Mesh, three_d::PhysicalMaterial>;
+
 /// Initialize three-d Context with topology data
 #[cfg(feature = "hydrate")]
 async fn initialize_threed_viewport(
@@ -228,6 +240,9 @@ async fn initialize_threed_viewport(
     use three_d::*;
     use std::collections::HashMap;
 
+    web_sys::console::log_1(&"=== Starting viewport initialization ===".into());
+    web_sys::console::log_1(&format!("Topology has {} nodes", topology_data.nodes.len()).into());
+
     // Get WebGL2 context from canvas
     let webgl2_context = canvas
         .get_context("webgl2")
@@ -241,48 +256,44 @@ async fn initialize_threed_viewport(
     let context = Context::from_gl_context(std::sync::Arc::new(gl))
         .map_err(|e| format!("Failed to create three-d Context: {:?}", e))?;
 
-    // Try to load router GLB model
-    let router_model = {
+    // Load router GLB model (async loading)
+    // We load the CpuModel once, then create GPU Model instances for each router node
+    let router_cpu_model = {
         use three_d_asset::io::load_async;
 
-        web_sys::console::log_1(&"Attempting to load router GLB model...".into());
+        // Build full URL from window.location
+        let window = web_sys::window().expect("no global window");
+        let location = window.location();
+        let origin = location.origin().expect("no origin");
+        let model_url = format!("{}/models/blob-router.glb", origin);
 
-        match load_async(&["/models/blob-router.glb"]).await {
+        web_sys::console::log_1(&format!("Loading router GLB model from {}...", model_url).into());
+
+        match load_async(&[model_url.as_str()]).await {
             Ok(mut loaded) => {
-                web_sys::console::log_1(&"GLB file loaded successfully".into());
+                web_sys::console::log_1(&"✓ GLB file fetched successfully".into());
 
-                // Try to deserialize as CpuModel
-                match loaded.deserialize("blob-router.glb") {
+                // Deserialize the GLB file to CPU model
+                match loaded.deserialize::<three_d_asset::Model>("blob-router.glb") {
                     Ok(cpu_model) => {
-                        web_sys::console::log_1(&"Model deserialized successfully".into());
-
-                        // Create GPU model
-                        match Model::<PhysicalMaterial>::new(&context, &cpu_model) {
-                            Ok(model) => {
-                                web_sys::console::log_1(&"GPU model created successfully".into());
-                                Some(model)
-                            }
-                            Err(e) => {
-                                web_sys::console::error_1(&format!("Failed to create GPU model: {:?}", e).into());
-                                None
-                            }
-                        }
+                        web_sys::console::log_1(&format!("✓ Model deserialized: {} geometries", cpu_model.geometries.len()).into());
+                        Some(cpu_model)
                     }
                     Err(e) => {
-                        web_sys::console::error_1(&format!("Failed to deserialize model: {:?}", e).into());
+                        web_sys::console::error_1(&format!("✗ Failed to deserialize GLB: {:?}", e).into());
                         None
                     }
                 }
             }
             Err(e) => {
-                web_sys::console::error_1(&format!("Failed to load GLB file: {:?}", e).into());
+                web_sys::console::error_1(&format!("✗ Failed to load GLB file: {:?}", e).into());
                 None
             }
         }
     };
 
-    // Create node meshes (spheres at x/y/z positions) and store node data
-    let mut node_meshes = Vec::new();
+    // Create node meshes (3D models or spheres at x/y/z positions) and store node data
+    let mut node_meshes: Vec<(i64, NodeMesh, NodeMesh)> = Vec::new();
     let mut node_positions = HashMap::new();
     let mut nodes_data = Vec::new();
     let node_radius = 0.3;
@@ -319,38 +330,100 @@ async fn initialize_threed_viewport(
             radius: node_radius * 2.0,  // 2x visual radius for easier clicking
         });
 
-        // Get color based on node type
-        let node_color = get_node_color(&node.node_type);
+        // Check if this is a router node and we have a loaded 3D model
+        let is_router = node.node_type.to_lowercase() == "router";
 
-        // Create material for this node type
-        let normal_material = PhysicalMaterial::new_opaque(
-            &context,
-            &CpuMaterial {
-                albedo: node_color,
-                ..Default::default()
-            },
-        );
+        if is_router && router_cpu_model.is_some() {
+            // Render router with loaded 3D model
+            let cpu_model = router_cpu_model.as_ref().unwrap();
+            web_sys::console::log_1(&format!("Router node '{}' - rendering glTF with {} primitives", node.name, cpu_model.geometries.len()).into());
 
-        // Create normal sphere (new mesh for each node)
-        let mut normal_sphere = Gm::new(
-            Mesh::new(&context, &sphere_cpu_mesh),
-            normal_material,
-        );
-        normal_sphere.set_transformation(
-            Mat4::from_translation(position) * Mat4::from_scale(node_radius)
-        );
+            // Process each primitive (sub-mesh) in the model
+            for primitive in cpu_model.geometries.iter() {
+                // Geometry is an enum: Triangles(TriMesh) or Points(PointCloud)
+                // We only handle triangle meshes
+                match &primitive.geometry {
+                    three_d_asset::geometry::Geometry::Triangles(tri_mesh) => {
+                        // tri_mesh is a TriMesh, which is the same as CpuMesh!
+                        // Just pass it directly to Mesh::new()
 
-        // Create selected sphere (same position, different material, new mesh)
-        let mut selected_sphere = Gm::new(
-            Mesh::new(&context, &sphere_cpu_mesh),
-            selected_material.clone(),
-        );
-        selected_sphere.set_transformation(
-            Mat4::from_translation(position) * Mat4::from_scale(node_radius)
-        );
+                        // Create materials
+                        let normal_material = PhysicalMaterial::new_opaque(
+                            &context,
+                            &CpuMaterial {
+                                albedo: Srgba::new(50, 150, 255, 255), // Blue for router
+                                ..Default::default()
+                            },
+                        );
 
-        // Store (node_id, normal_mesh, selected_mesh) tuple
-        node_meshes.push((node.id, normal_sphere, selected_sphere));
+                        // Create GPU meshes (tri_mesh is already &TriMesh/&CpuMesh)
+                        let mut normal_mesh = Gm::new(
+                            Mesh::new(&context, tri_mesh),
+                            normal_material,
+                        );
+
+                        let mut selected_mesh = Gm::new(
+                            Mesh::new(&context, tri_mesh),
+                            selected_material.clone(),
+                        );
+
+                        // Apply node rotations from database (in degrees)
+                        // Use degrees() to create Deg type, which auto-converts to radians
+                        let x_rotation = Mat4::from_angle_x(degrees(node.rotation_x as f32));
+                        let y_rotation = Mat4::from_angle_y(degrees(node.rotation_y as f32));
+                        let z_rotation = Mat4::from_angle_z(degrees(node.rotation_z as f32));
+
+                        let transform = Mat4::from_translation(position)
+                            * Mat4::from_scale(node_radius)
+                            * z_rotation
+                            * y_rotation
+                            * x_rotation
+                            * primitive.transformation;
+
+                        normal_mesh.set_transformation(transform);
+                        selected_mesh.set_transformation(transform);
+
+                        node_meshes.push((node.id, normal_mesh, selected_mesh));
+                    }
+                    three_d_asset::geometry::Geometry::Points(_) => {
+                        web_sys::console::log_1(&"Skipping point cloud geometry (not supported)".into());
+                    }
+                }
+            }
+        } else {
+            // Render non-router nodes or fallback as colored spheres
+            let node_color = get_node_color(&node.node_type);
+
+            // Create material for this node type
+            let normal_material = PhysicalMaterial::new_opaque(
+                &context,
+                &CpuMaterial {
+                    albedo: node_color,
+                    ..Default::default()
+                },
+            );
+
+            // Create normal sphere (new mesh for each node)
+            let mut normal_sphere = Gm::new(
+                Mesh::new(&context, &sphere_cpu_mesh),
+                normal_material,
+            );
+            normal_sphere.set_transformation(
+                Mat4::from_translation(position) * Mat4::from_scale(node_radius)
+            );
+
+            // Create selected sphere (same position, different material, new mesh)
+            let mut selected_sphere = Gm::new(
+                Mesh::new(&context, &sphere_cpu_mesh),
+                selected_material.clone(),
+            );
+            selected_sphere.set_transformation(
+                Mat4::from_translation(position) * Mat4::from_scale(node_radius)
+            );
+
+            // Store (node_id, normal_mesh, selected_mesh) tuple
+            node_meshes.push((node.id, normal_sphere, selected_sphere));
+        }
     }
 
     // Create grid and axes for spatial reference
@@ -414,7 +487,7 @@ async fn initialize_threed_viewport(
         &context,
         1.5,
         Srgba::WHITE,
-        &vec3(-1.0, -1.0, -1.0),
+        vec3(-1.0, -1.0, -1.0),
     ));
 
     // Wrap meshes and data in Rc<RefCell> for render closure
@@ -572,7 +645,7 @@ fn initialize_threed_viewport_test(
         &context,
         2.0,
         Srgba::WHITE,
-        &vec3(-1.0, -1.0, -1.0),
+        vec3(-1.0, -1.0, -1.0),
     ));
 
     // Render function that uses current camera state
@@ -947,7 +1020,7 @@ fn create_grid_and_axes(context: &three_d::Context) -> Vec<three_d::Gm<three_d::
         meshes.push(x_axis);
     }
 
-    // Y axis (Green) - front to back on floor
+    // Y axis (Green) - front to back on floor, along three-d Y coordinate
     if let Some(y_axis) = create_line_cylinder(
         context,
         vec3(0.0, -axis_length, 0.0),
@@ -959,7 +1032,7 @@ fn create_grid_and_axes(context: &three_d::Context) -> Vec<three_d::Gm<three_d::
         meshes.push(y_axis);
     }
 
-    // Z axis (Blue) - vertical up/down
+    // Z axis (Blue) - vertical up/down, along three-d Z coordinate
     if let Some(z_axis) = create_line_cylinder(
         context,
         vec3(0.0, 0.0, -axis_length),

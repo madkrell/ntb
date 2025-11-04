@@ -197,28 +197,43 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
     let position_x = RwSignal::new(0.0);
     let position_y = RwSignal::new(0.0);
     let position_z = RwSignal::new(0.0);
+    let rotation_x = RwSignal::new(0.0);
+    let rotation_y = RwSignal::new(0.0);
+    let rotation_z = RwSignal::new(0.0);
 
     // Populate signals when data loads
+    // NOTE: Swap Y and Z to match Blender convention in UI
+    // Database stores: position_y (vertical in DB), position_z (depth in DB)
+    // UI shows: Position Y (horizontal green), Position Z (vertical blue)
     Effect::new(move || {
         if let Some(Some(node)) = node_data.get() {
             name.set(node.name);
             node_type.set(node.node_type);
             ip_address.set(node.ip_address.unwrap_or_default());
             position_x.set(node.position_x);
-            position_y.set(node.position_y);
-            position_z.set(node.position_z);
+            position_y.set(node.position_z);  // UI Y ← DB Z (horizontal)
+            position_z.set(node.position_y);  // UI Z ← DB Y (vertical)
+            rotation_x.set(node.rotation_x);
+            rotation_y.set(node.rotation_y);
+            rotation_z.set(node.rotation_z);
         }
     });
 
     // Save action
+    // NOTE: Swap Y and Z back when saving to database
+    // UI Position Y (green, horizontal) → DB position_z
+    // UI Position Z (blue, vertical) → DB position_y
     let save_action = Action::new(move |_: &()| {
         let update_data = UpdateNode {
             name: Some(name.get_untracked()),
             node_type: Some(node_type.get_untracked()),
             ip_address: Some(ip_address.get_untracked()).filter(|s| !s.is_empty()),
             position_x: Some(position_x.get_untracked()),
-            position_y: Some(position_y.get_untracked()),
-            position_z: Some(position_z.get_untracked()),
+            position_y: Some(position_z.get_untracked()),  // DB Y ← UI Z (vertical)
+            position_z: Some(position_y.get_untracked()),  // DB Z ← UI Y (horizontal)
+            rotation_x: Some(rotation_x.get_untracked()),
+            rotation_y: Some(rotation_y.get_untracked()),
+            rotation_z: Some(rotation_z.get_untracked()),
             metadata: None,
         };
 
@@ -307,7 +322,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                         />
                                     </div>
                                     <div>
-                                        <label class="block text-xs font-medium text-blue-400 mb-1">"Position Y"</label>
+                                        <label class="block text-xs font-medium text-green-400 mb-1">"Position Y"</label>
                                         <input
                                             type="number"
                                             class="w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
@@ -321,7 +336,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                         />
                                     </div>
                                     <div>
-                                        <label class="block text-xs font-medium text-green-400 mb-1">"Position Z"</label>
+                                        <label class="block text-xs font-medium text-blue-400 mb-1">"Position Z"</label>
                                         <input
                                             type="number"
                                             class="w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
@@ -330,6 +345,57 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                             on:input=move |ev| {
                                                 if let Ok(val) = event_target_value(&ev).parse::<f64>() {
                                                     position_z.set(val);
+                                                }
+                                            }
+                                        />
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-3 gap-2">
+                                    <div>
+                                        <label class="block text-xs font-medium text-red-400 mb-1">"Rotation X"</label>
+                                        <input
+                                            type="number"
+                                            class="w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                            step="1"
+                                            min="-180"
+                                            max="180"
+                                            prop:value=move || rotation_x.get()
+                                            on:input=move |ev| {
+                                                if let Ok(val) = event_target_value(&ev).parse::<f64>() {
+                                                    rotation_x.set(val);
+                                                }
+                                            }
+                                        />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-green-400 mb-1">"Rotation Y"</label>
+                                        <input
+                                            type="number"
+                                            class="w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                            step="1"
+                                            min="-180"
+                                            max="180"
+                                            prop:value=move || rotation_y.get()
+                                            on:input=move |ev| {
+                                                if let Ok(val) = event_target_value(&ev).parse::<f64>() {
+                                                    rotation_y.set(val);
+                                                }
+                                            }
+                                        />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-blue-400 mb-1">"Rotation Z"</label>
+                                        <input
+                                            type="number"
+                                            class="w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                            step="1"
+                                            min="-180"
+                                            max="180"
+                                            prop:value=move || rotation_z.get()
+                                            on:input=move |ev| {
+                                                if let Ok(val) = event_target_value(&ev).parse::<f64>() {
+                                                    rotation_z.set(val);
                                                 }
                                             }
                                         />

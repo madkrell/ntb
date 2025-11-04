@@ -5,31 +5,61 @@
 
 ## 📊 PROJECT STATUS
 
-**Current Phase:** Phase 2 Complete ✅
-**Git Tag:** `v0.1.0-phase2-complete`
-**Last Updated:** 2025-11-03
+**Current Phase:** Phase 4 IN PROGRESS - 3D Model Rotation Complete ✅
+**Git Tag:** `v0.1.0-phase3-complete` (Phase 4 rotation work to be tagged)
+**Last Updated:** 2025-11-04
 
 ### Completed Phases
 
 #### ✅ Phase 1 - Foundation (Git tag: v0.1.0-phase1-complete)
-- Leptos 0.8 Islands architecture configured
+- Leptos 0.8 ~~Islands~~ architecture configured (Islands removed in Phase 3)
 - SQLite database with migrations
 - Server functions in `src/api.rs` (non-feature-gated pattern)
 - Database schema: topologies, nodes, connections, traffic_metrics
 - Sample topology data with 7 nodes and 7 connections
 
 #### ✅ Phase 2 - 3D Viewport (Git tag: v0.1.0-phase2-complete)
-- TopologyViewport island with WebGL2 + three-d
+- TopologyViewport component with WebGL2 + three-d
 - Interactive orbit camera controls (drag to rotate, scroll to zoom)
 - Nodes rendered as 3D spheres at database positions
 - Connections rendered as properly rotated cylinders between nodes
 - Browser console logging for debugging
 - Working with sample topology (7 nodes, 7 connections)
 
+#### ✅ Phase 3 - UI Layout & 3D Editing (Git tag: v0.1.0-phase3-complete)
+- **Architecture change:** Removed islands, converted to regular Leptos components
+- Context-based state sharing (`provide_context` / `use_context`)
+- Professional 3-panel layout (device palette, viewport, properties)
+- Top toolbar with action buttons
+- Node selection via ray-sphere intersection with visual feedback (yellow highlight)
+- Click empty space to deselect
+- Complete CRUD server functions (8 total: 4 for nodes, 4 for connections)
+- Properties panel loads real data via Resources with Suspense
+- Save changes from properties panel with instant viewport updates
+- Refetch mechanism using context-shared trigger signal
+
+#### 🔄 Phase 4 - Visual Enhancements & 3D Interaction (IN PROGRESS)
+
+**✅ COMPLETED: 3D Model Rotation Controls (2025-11-04)**
+- Database migration: Added rotation_x/y/z columns to nodes table
+- Updated Node model with rotation fields (stored in degrees)
+- Full CRUD API support for rotation values
+- Properties panel UI with X/Y/Z rotation sliders (-180° to +180°)
+- Viewport rendering applies rotations using cgmath `degrees()` function
+- Default rotation_x=90° for Blender glTF models (correct orientation on Z-up grid)
+- **Critical bug fix:** Used `degrees()` instead of `radians()` for proper conversion
+- Files: `migrations/20250102000002_add_node_rotations.sql`, `src/models/node.rs`, `src/api.rs`, `src/islands/topology_editor.rs`, `src/islands/topology_viewport.rs`
+
+**⏳ Remaining Phase 4 Tasks:**
+- Model selection UI - Load different glTF/GLB models from public/models/
+- 3D grid and axes enhancement (Blender-style)
+- Node drag-and-drop repositioning in 3D viewport
+- Node labels/tooltips on hover
+- Color-coded nodes by type
+- Improved lighting and materials
+
 ### Remaining Phases
 
-- ⏳ Phase 3 - UI Layout & 3D Editing Interface
-- ⏳ Phase 4 - Visual Enhancements & 3D Models (Blender glTF/GLB)
 - ⏳ Phase 5 - Traffic Monitoring (Real-time with Leptos streaming)
 - ⏳ Phase 6 - Export & Finalization (PNG, JSON)
 

@@ -15,6 +15,9 @@ pub struct Node {
     pub position_x: f64,
     pub position_y: f64,
     pub position_z: f64,
+    pub rotation_x: f64,
+    pub rotation_y: f64,
+    pub rotation_z: f64,
     pub metadata: Option<String>, // JSON string
     pub created_at: i64,
     pub updated_at: i64,
@@ -30,6 +33,9 @@ pub struct CreateNode {
     pub position_x: Option<f64>,
     pub position_y: Option<f64>,
     pub position_z: Option<f64>,
+    pub rotation_x: Option<f64>,
+    pub rotation_y: Option<f64>,
+    pub rotation_z: Option<f64>,
     pub metadata: Option<String>,
 }
 
@@ -42,6 +48,9 @@ pub struct UpdateNode {
     pub position_x: Option<f64>,
     pub position_y: Option<f64>,
     pub position_z: Option<f64>,
+    pub rotation_x: Option<f64>,
+    pub rotation_y: Option<f64>,
+    pub rotation_z: Option<f64>,
     pub metadata: Option<String>,
 }
 

@@ -127,7 +127,7 @@ pub async fn get_topology_full(id: i64) -> Result<TopologyFull, ServerFnError> {
 
         // Fetch all nodes for this topology
         let nodes = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, metadata, created_at, updated_at
              FROM nodes WHERE topology_id = ? ORDER BY created_at"
         )
         .bind(id)
@@ -175,7 +175,7 @@ pub async fn get_node(id: i64) -> Result<Node, ServerFnError> {
             .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
         let node = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, metadata, created_at, updated_at
              FROM nodes WHERE id = ?"
         )
         .bind(id)
@@ -208,10 +208,14 @@ pub async fn create_node(data: CreateNode) -> Result<Node, ServerFnError> {
         let pos_x = data.position_x.unwrap_or(0.0);
         let pos_y = data.position_y.unwrap_or(0.0);
         let pos_z = data.position_z.unwrap_or(0.0);
+        // Default rotation X = 90° for Blender glTF models to sit flat on grid floor
+        let rot_x = data.rotation_x.unwrap_or(90.0);
+        let rot_y = data.rotation_y.unwrap_or(0.0);
+        let rot_z = data.rotation_z.unwrap_or(0.0);
 
         let result = sqlx::query(
-            "INSERT INTO nodes (topology_id, name, node_type, ip_address, position_x, position_y, position_z, metadata)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO nodes (topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, metadata)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(data.topology_id)
         .bind(&data.name)
@@ -220,6 +224,9 @@ pub async fn create_node(data: CreateNode) -> Result<Node, ServerFnError> {
         .bind(pos_x)
         .bind(pos_y)
         .bind(pos_z)
+        .bind(rot_x)
+        .bind(rot_y)
+        .bind(rot_z)
         .bind(&data.metadata)
         .execute(&pool)
         .await
@@ -229,7 +236,7 @@ pub async fn create_node(data: CreateNode) -> Result<Node, ServerFnError> {
 
         // Fetch the created node
         let node = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, metadata, created_at, updated_at
              FROM nodes WHERE id = ?"
         )
         .bind(id)
@@ -305,6 +312,15 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
         if let Some(_) = data.position_z {
             query_str.push_str(", position_z = ?");
         }
+        if let Some(_) = data.rotation_x {
+            query_str.push_str(", rotation_x = ?");
+        }
+        if let Some(_) = data.rotation_y {
+            query_str.push_str(", rotation_y = ?");
+        }
+        if let Some(_) = data.rotation_z {
+            query_str.push_str(", rotation_z = ?");
+        }
         if let Some(ref metadata) = data.metadata {
             query_str.push_str(", metadata = ?");
         }
@@ -332,6 +348,15 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
         if let Some(pos_z) = data.position_z {
             query = query.bind(pos_z);
         }
+        if let Some(rot_x) = data.rotation_x {
+            query = query.bind(rot_x);
+        }
+        if let Some(rot_y) = data.rotation_y {
+            query = query.bind(rot_y);
+        }
+        if let Some(rot_z) = data.rotation_z {
+            query = query.bind(rot_z);
+        }
         if let Some(ref metadata) = data.metadata {
             query = query.bind(metadata);
         }
@@ -344,7 +369,7 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
 
         // Fetch the updated node
         let node = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, metadata, created_at, updated_at
              FROM nodes WHERE id = ?"
         )
         .bind(id)
