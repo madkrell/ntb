@@ -6,16 +6,24 @@
 **Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete
 **Architecture:** Regular Leptos Components (Islands removed - see notes below)
 
-### Phase 4 - IN PROGRESS (3D Model Rotation COMPLETE ✅)
-- ✅ **Database migration for rotation fields** - Added rotation_x/y/z columns to nodes table
-- ✅ **Model DTOs updated** - CreateNode and UpdateNode include rotation fields
-- ✅ **API server functions** - Full CRUD support for rotation values
-- ✅ **Properties panel UI** - X/Y/Z rotation sliders (-180° to +180°)
-- ✅ **Viewport rendering** - Node rotations applied using cgmath degrees()
-- ✅ **Blender glTF default rotation** - New router nodes default to rotation_x=90° for correct orientation
-- ⏳ Model selection UI - Load different 3D models from public/models/
-- ⏳ 3D grid and axes enhancement
-- ⏳ Node drag-and-drop repositioning
+### Phase 4 - IN PROGRESS
+
+**✅ COMPLETED (Priority 1 - Core 3D Features):**
+1. ✅ **3D node rotation controls** - Full X/Y/Z rotation with database storage, UI sliders, and viewport rendering
+2. ✅ **Model Selection UI (Partial)** - Can load glTF/GLB models; need to add different node types (switch, firewall, server, etc.)
+3. ✅ **3D Grid and Axes** - Blender-style reference grid with X/Y/Z axis lines and grid floor plane
+
+**✅ COMPLETED (Priority 2 - Visual Polish):**
+5. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
+6. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc.
+
+**⏳ REMAINING (Priority 1 - Core 3D Features):**
+3. ⏳ **Enable Device Palette buttons** - Make 'Router', 'Switch', etc. 'Click to Add' buttons functional
+4. ⏳ **Topology switching control** - Add UI to switch/load different topologies (add another mock topology in database)
+
+**⏳ REMAINING (Priority 2 - Visual Polish):**
+7. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
+8. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
 
 ### Phase 3 - COMPLETE ✅
 - ✅ Professional 3-panel layout (device palette, viewport, properties)
@@ -645,35 +653,30 @@ Blender uses Y-up coordinate system, while our viewport uses Z-up. To make glTF/
 
 ### Remaining Phase 4 Features
 
-**3D Interaction Enhancements:**
-1. ⏳ **Model Selection UI:** Dropdown to select different glTF/GLB models from public/models/
-2. ⏳ **Drag nodes in 3D viewport:** Click and drag nodes to reposition them in 3D space
-   - Update position in real-time during drag
-   - Save new position to database on drag end
-   - Maintain camera orbit controls (differentiate drag-node vs drag-camera)
-3. ⏳ **3D Grid and Axes:** Add visual reference grid and coordinate axes (Blender-style)
-   - Faint X, Y, Z axis lines (red, green, blue)
-   - Grid floor plane at Y=0 with subtle lines
-   - Helps with spatial orientation and node placement
+**Priority 1 - Core 3D Features:**
+3. ⏳ **Enable Device Palette buttons** - Make left panel buttons functional ('Router', 'Switch', etc. 'Click to Add')
+4. ⏳ **Topology switching control** - Add UI to switch/load different topologies
+   - Add another mock topology to database for testing
+   - Dropdown or selector to switch between topologies
 
-**Visual Enhancements:**
-4. ⏳ Node labels/tooltips on hover in 3D viewport
-5. ⏳ Color-coded nodes by type (router=blue, switch=green, etc.)
-6. ⏳ Improved lighting and materials
-7. ⏳ Better camera controls (presets, bookmarks)
+**Priority 2 - Visual Polish:**
+7. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
+8. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
 
-## Phase 5 - Traffic Monitoring (FUTURE)
-
-### Planned Features
-1. Real-time traffic data visualization using Leptos native streaming
-2. Use `#[server(protocol = Websocket<...>)]` for streaming data
-3. Display traffic throughput on connections
-4. Color/animate connections based on traffic load
-
-## Phase 6 - Export & Finalization (FUTURE)
+## Phase 5 - Export & Finalization (FUTURE)
 
 ### Planned Features
 1. Export topology as PNG image
 2. Export topology as JSON data
 3. Import topology from JSON
 4. UI polish and optimizations
+5. Documentation and deployment
+
+## Phase 6 - Traffic Monitoring (FUTURE)
+
+### Planned Features
+1. Real-time traffic data visualization using Leptos native streaming
+2. Use `#[server(protocol = Websocket<...>)]` for streaming data
+3. Display traffic throughput on connections
+4. Color/animate connections based on traffic load
+5. Traffic metrics dashboard

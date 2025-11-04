@@ -40,28 +40,32 @@
 
 #### 🔄 Phase 4 - Visual Enhancements & 3D Interaction (IN PROGRESS)
 
-**✅ COMPLETED: 3D Model Rotation Controls (2025-11-04)**
-- Database migration: Added rotation_x/y/z columns to nodes table
-- Updated Node model with rotation fields (stored in degrees)
-- Full CRUD API support for rotation values
-- Properties panel UI with X/Y/Z rotation sliders (-180° to +180°)
-- Viewport rendering applies rotations using cgmath `degrees()` function
-- Default rotation_x=90° for Blender glTF models (correct orientation on Z-up grid)
-- **Critical bug fix:** Used `degrees()` instead of `radians()` for proper conversion
-- Files: `migrations/20250102000002_add_node_rotations.sql`, `src/models/node.rs`, `src/api.rs`, `src/islands/topology_editor.rs`, `src/islands/topology_viewport.rs`
+**✅ COMPLETED - Priority 1 (Core 3D Features):**
+1. ✅ **3D node rotation controls** (2025-11-04)
+   - Database migration: rotation_x/y/z columns (stored in degrees)
+   - Properties panel: X/Y/Z sliders (-180° to +180°)
+   - Viewport: Applied using cgmath `degrees()` function
+   - Default rotation_x=90° for Blender glTF models
+   - Critical bug fix: Used `degrees()` instead of `radians()` for proper conversion
+2. ✅ **Model Selection UI (Partial)** - Can load glTF/GLB models; need more node types (switch, firewall, server)
+3. ✅ **3D Grid and Axes** - Blender-style reference grid with X/Y/Z axis lines and grid floor plane
 
-**⏳ Remaining Phase 4 Tasks:**
-- Model selection UI - Load different glTF/GLB models from public/models/
-- 3D grid and axes enhancement (Blender-style)
-- Node drag-and-drop repositioning in 3D viewport
-- Node labels/tooltips on hover
-- Color-coded nodes by type
-- Improved lighting and materials
+**✅ COMPLETED - Priority 2 (Visual Polish):**
+5. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
+6. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc.
+
+**⏳ REMAINING - Priority 1 (Core 3D Features):**
+3. ⏳ **Enable Device Palette buttons** - Make 'Router', 'Switch', etc. 'Click to Add' buttons functional
+4. ⏳ **Topology switching control** - Add UI to switch/load different topologies + another mock topology in database
+
+**⏳ REMAINING - Priority 2 (Visual Polish):**
+7. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
+8. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
 
 ### Remaining Phases
 
-- ⏳ Phase 5 - Traffic Monitoring (Real-time with Leptos streaming)
-- ⏳ Phase 6 - Export & Finalization (PNG, JSON)
+- ⏳ Phase 5 - Export & Finalization (PNG, JSON, UI polish, deployment)
+- ⏳ Phase 6 - Traffic Monitoring (Real-time with Leptos streaming)
 
 **See [SESSION-GUIDE.md](SESSION-GUIDE.md) for continuation guidance.**
 

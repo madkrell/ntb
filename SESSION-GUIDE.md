@@ -12,18 +12,31 @@ Please read these files to understand the current state:
 1. CLAUDE.md - Complete architecture, Phases 1-3 status, all learnings
 2. This file (SESSION-GUIDE.md) - Quick context
 
-Current Status: Phase 4 IN PROGRESS - 3D Model Rotation Complete! ✅
-- ✅ Professional 3-panel UI layout working perfectly
-- ✅ Node selection with visual feedback (yellow highlight)
-- ✅ Click empty space to deselect
-- ✅ Full CRUD server functions for nodes and connections
-- ✅ Properties panel loads and saves real data
-- ✅ Real-time viewport updates (no refresh needed!)
-- ✅ Suspense components eliminating hydration warnings
-- ✅ **NEW: 3D node rotation controls (X/Y/Z in degrees)**
-- ✅ **NEW: Default rotation_x=90° for Blender glTF models**
+Current Status: Phase 4 IN PROGRESS - Multiple Features Complete! ✅
 
-Next: [specify what you want to work on - see Phase 4 remaining options below]
+**✅ Phase 3 Complete:**
+- Professional 3-panel UI layout working perfectly
+- Node selection with visual feedback (yellow highlight)
+- Click empty space to deselect
+- Full CRUD server functions for nodes and connections
+- Properties panel loads and saves real data
+- Real-time viewport updates (no refresh needed!)
+- Suspense components eliminating hydration warnings
+
+**✅ Phase 4 Complete (so far):**
+- 3D node rotation controls (X/Y/Z in degrees with default rotation_x=90°)
+- Model Selection UI (partial - can load glTF/GLB, need more node type models)
+- 3D Grid and Axes (Blender-style reference grid)
+- Node Labels/Tooltips (show node name on hover)
+- Color-Coded Nodes by Type (router=blue, switch=green, server=orange, etc.)
+
+**⏳ Next Phase 4 Tasks (Priority 1):**
+1. Enable Device Palette buttons ('Router', 'Switch', etc. 'Click to Add')
+2. Topology switching control (add UI + another mock topology in database)
+
+Then Priority 2: Improved lighting, better camera controls
+
+Next: Start with Priority 1 task #1 (Enable Device Palette buttons)
 ```
 
 ## 📊 Current Project State
@@ -57,63 +70,74 @@ Next: [specify what you want to work on - see Phase 4 remaining options below]
 
 **Phase 4 - Visual Enhancements & 3D Interaction (IN PROGRESS)**
 
-✅ **COMPLETED: 3D Model Rotation Controls (2025-11-04)**
-- ✅ Database migration: Added rotation_x/y/z columns to nodes table
-- ✅ Updated Node model with rotation fields (stored in degrees)
-- ✅ Full CRUD API support for rotation values
-- ✅ Properties panel UI with X/Y/Z rotation sliders (-180° to +180°)
-- ✅ Viewport rendering applies rotations using cgmath `degrees()` function
-- ✅ Default rotation_x=90° for Blender glTF models (correct orientation on Z-up grid)
-- ✅ **Key lesson:** cgmath `degrees()` converts from degrees to radians, `radians()` just wraps radian values
-- ✅ **Troubleshooting:** Clean rebuild (`cargo clean`) + hard browser refresh fixed rendering issues
+✅ **COMPLETED - Priority 1 (Core 3D Features):**
+1. ✅ **3D node rotation controls** (2025-11-04)
+   - Database migration: rotation_x/y/z columns (stored in degrees)
+   - Properties panel: X/Y/Z sliders (-180° to +180°)
+   - Viewport: Applied using cgmath `degrees()` function
+   - Default rotation_x=90° for Blender glTF models
+   - Key lesson: `degrees()` converts to radians, `radians()` just wraps values
+2. ✅ **Model Selection UI (Partial)** - Can load glTF/GLB models; need more node types (switch, firewall, server)
+3. ✅ **3D Grid and Axes** - Blender-style reference grid with X/Y/Z axis lines and grid floor plane
 
-Files modified:
-- `migrations/20250102000002_add_node_rotations.sql`
-- `src/models/node.rs` - Added rotation fields to Node, CreateNode, UpdateNode
-- `src/api.rs` - Updated all CRUD functions, set default rotation_x=90.0
-- `src/islands/topology_editor.rs` - Added rotation UI controls
-- `src/islands/topology_viewport.rs` - Applied rotations with degrees() fix
+✅ **COMPLETED - Priority 2 (Visual Polish):**
+5. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
+6. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc.
+
+⏳ **REMAINING - Priority 1 (Core 3D Features):**
+3. ⏳ **Enable Device Palette buttons** - Make 'Router', 'Switch', etc. 'Click to Add' buttons functional
+4. ⏳ **Topology switching control** - Add UI to switch/load different topologies + another mock topology in database
+
+⏳ **REMAINING - Priority 2 (Visual Polish):**
+7. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
+8. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
 
 ### 🔄 What to Work On Next
 
-**Option 1: Phase 4 - 3D Interaction Enhancements**
+**NEXT UP: Phase 4 - Priority 1, Task #3 - Enable Device Palette Buttons**
 ```
-Let's add interactive 3D features. I want to:
-- Implement drag-to-move nodes in 3D viewport
-  * Click and drag nodes to reposition them
-  * Update position in real-time during drag
-  * Save to database on drag end
-  * Differentiate node-drag from camera-drag
-- Add 3D grid and axes (Blender-style)
-  * Faint X, Y, Z axis lines (red, green, blue)
-  * Grid floor plane at Y=0 with subtle lines
-  * Helps with spatial orientation
-```
-
-**Option 2: Phase 4 - Visual Enhancements**
-```
-Let's enhance the 3D visualization. I want to:
-- Show node labels/tooltips on hover
-- Color-code nodes by type (router=blue, switch=green, etc.)
-- Load custom 3D models from Blender (glTF/GLB files)
-- Improve lighting and materials
-- Better camera controls (presets, bookmarks)
+Let's make the Device Palette functional:
+- Enable 'Router' button - Click to add router node to topology
+- Enable 'Switch' button - Click to add switch node
+- Enable 'Server' button - Click to add server node
+- Enable 'Firewall' button - Click to add firewall node
+- Enable 'Load Balancer' button - Click to add load balancer node
+- Enable 'Database' button - Click to add database node
+- Each button creates a new node via create_node() server function
+- Nodes should appear at a default position (or random position)
 ```
 
-**Option 3: Traffic Monitoring (Leptos Streaming)**
+**THEN: Phase 4 - Priority 1, Task #4 - Topology Switching Control**
 ```
-Let's add real-time traffic monitoring using Leptos native streaming:
-- Use #[server(protocol = Websocket<...>)] for streaming
-- Display traffic data on connections in real-time
-- No manual Axum SSE needed!
+Let's add topology switching:
+- Add another mock topology to database (e.g., "Data Center Network")
+- Add topology selector UI (dropdown or buttons in top toolbar)
+- Update TopologyEditor to accept topology_id parameter
+- Load selected topology's nodes and connections
+- Save current topology selection to state/context
 ```
 
-**Option 4: Export Functionality**
+**FUTURE: Phase 4 - Priority 2 - Visual Polish**
 ```
-Let's add export features:
+Once Priority 1 is complete:
+- Task #7: Improved lighting and materials
+- Task #8: Better camera controls (presets, bookmarks, reset view)
+```
+
+**LATER: Phase 5 - Export & Finalization**
+```
 - Export topology as PNG image
-- Export topology as JSON data
-- Provide download mechanism
+- Export/Import topology as JSON
+- UI polish and optimizations
+- Documentation and deployment
+```
+
+**FUTURE: Phase 6 - Traffic Monitoring**
+```
+- Real-time traffic visualization using Leptos streaming
+- Use #[server(protocol = Websocket<...>)]
+- Animate connections based on traffic load
+- Traffic metrics dashboard
 ```
 
 ## 📁 Key Files to Reference
@@ -308,41 +332,47 @@ cargo leptos watch  # Should compile without errors
 
 ## 🎬 Example Session Start Prompts
 
-### Continue with Phase 4 (3D Interaction & Visual Enhancements)
+### Continue with Next Phase 4 Task
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
-Read CLAUDE.md for complete context. Phase 3 is complete!
+Read CLAUDE.md and SESSION-GUIDE.md for complete context.
 
-Let's build Phase 4: 3D Interaction Enhancements
-- Add drag-to-move functionality for nodes in 3D viewport
-- Add 3D grid and axis lines (Blender-style) for spatial reference
-- (Optional) Node labels/tooltips, color-coding by type, custom 3D models
+Current Status: Phase 4 IN PROGRESS
+- ✅ Rotation controls, grid/axes, labels, color-coding complete
+- ⏳ Next: Enable Device Palette buttons
 
-Where should we start?
+Let's implement Phase 4 Priority 1, Task #3:
+Make the Device Palette buttons functional so clicking 'Router', 'Switch', etc.
+creates new nodes in the topology via the create_node() server function.
+
+Ready to start!
 ```
 
-### Add Specific Feature
+### Work on Topology Switching
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
-Read CLAUDE.md for complete context. Phase 2 is complete.
+Read CLAUDE.md and SESSION-GUIDE.md for complete context.
 
-I want to add [specific feature]:
+Let's implement Phase 4 Priority 1, Task #4:
+- Add another mock topology to the database
+- Create topology selector UI in top toolbar
+- Enable switching between topologies
+
+Ready to start!
+```
+
+### Jump to Specific Feature
+```
+I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
+
+Read CLAUDE.md for complete context.
+
+I want to work on [specific feature from Phase 4/5/6]:
 [describe what you want]
 
 How should we approach this?
-```
-
-### Fix or Improve Something
-```
-I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
-
-Read CLAUDE.md for complete context. Phase 3 is complete.
-
-I'm seeing [issue description] or want to improve [feature name].
-
-Can you help me [what you want to do]?
 ```
 
 ## 💡 Pro Tips
@@ -356,4 +386,8 @@ Can you help me [what you want to do]?
 
 ## 🚀 You're Ready!
 
-Phase 3 is complete! Pick a Phase 4 task above and start coding. All the architectural patterns are working and documented in CLAUDE.md.
+Phase 4 is partially complete! Next up:
+1. **Enable Device Palette buttons** (Priority 1, Task #3)
+2. **Topology switching control** (Priority 1, Task #4)
+
+All architectural patterns are working and documented in CLAUDE.md.
