@@ -46,6 +46,13 @@ pub fn TopologyViewport(
     let selected_node_id = use_context::<RwSignal<Option<i64>>>().expect("selected_node_id context");
     let selected_item = use_context::<RwSignal<Option<crate::islands::topology_editor::SelectedItem>>>().expect("selected_item context");
 
+    // Get grid/axes visibility controls from context (optional - may not exist)
+    let viewport_visibility = use_context::<crate::islands::topology_editor::ViewportVisibility>();
+    let (show_grid, show_x_axis, show_y_axis, show_z_axis) = match viewport_visibility {
+        Some(vis) => (vis.show_grid, vis.show_x_axis, vis.show_y_axis, vis.show_z_axis),
+        None => (RwSignal::new(true), RwSignal::new(true), RwSignal::new(true), RwSignal::new(true)),
+    };
+
     let canvas_ref = NodeRef::<Canvas>::new();
     let error_signal = RwSignal::new(None::<String>);
     let is_initialized = RwSignal::new(false);
@@ -110,7 +117,14 @@ pub fn TopologyViewport(
                     let topo = topo_data.clone();
                     let render_fn = render_fn_for_effect.clone();
 
+                    // Read signal values BEFORE entering async context
+                    let show_grid_val = show_grid.get_untracked();
+                    let show_x_val = show_x_axis.get_untracked();
+                    let show_y_val = show_y_axis.get_untracked();
+                    let show_z_val = show_z_axis.get_untracked();
+
                     wasm_bindgen_futures::spawn_local(async move {
+                        web_sys::console::log_1(&"Starting async initialization...".into());
                         match initialize_threed_viewport(
                             &canvas,
                             camera_state,
@@ -119,13 +133,18 @@ pub fn TopologyViewport(
                             selected_item,
                             render_fn,
                             tooltip_data,
+                            show_grid_val,
+                            show_x_val,
+                            show_y_val,
+                            show_z_val,
                         ).await {
                             Ok(_) => {
+                                web_sys::console::log_1(&"Initialization successful!".into());
                                 is_initialized.set(true);
                             }
                             Err(e) => {
+                                web_sys::console::error_1(&format!("Initialization failed: {}", e).into());
                                 error_signal.set(Some(e.clone()));
-                                web_sys::console::error_1(&format!("Failed to initialize 3D viewport: {}", e).into());
                             }
                         }
                     });
@@ -158,6 +177,32 @@ pub fn TopologyViewport(
                 render(camera_state.get_untracked());
             }
         });
+    }
+
+    // Component-level Effect to trigger re-initialization when visibility changes
+    #[cfg(feature = "hydrate")]
+    {
+        if let Some(refetch_trigger) = refetch_trigger {
+            // Track if this is the first run to avoid triggering on initial mount
+            let is_first_run = RwSignal::new(true);
+
+            let _effect = Effect::new(move || {
+                // Track visibility signals
+                let _grid = show_grid.get();
+                let _x = show_x_axis.get();
+                let _y = show_y_axis.get();
+                let _z = show_z_axis.get();
+
+                // Skip the first run (initial mount)
+                if is_first_run.get_untracked() {
+                    is_first_run.set(false);
+                    return;
+                }
+
+                // Trigger viewport re-initialization
+                refetch_trigger.update(|v| *v += 1);
+            });
+        }
     }
 
     view! {
@@ -235,6 +280,10 @@ async fn initialize_threed_viewport(
     selected_item_signal: RwSignal<Option<crate::islands::topology_editor::SelectedItem>>,
     render_fn_storage: Rc<RefCell<Option<Rc<dyn Fn(CameraState)>>>>,
     tooltip_data: RwSignal<Option<(String, String, f64, f64)>>,
+    show_grid: bool,
+    show_x_axis: bool,
+    show_y_axis: bool,
+    show_z_axis: bool,
 ) -> Result<(), String> {
     use web_sys::WebGl2RenderingContext as GL;
     use three_d::*;
@@ -442,8 +491,17 @@ async fn initialize_threed_viewport(
         }
     }
 
-    // Create grid and axes for spatial reference
-    let grid_axes_meshes = create_grid_and_axes(&context);
+    // Create grid and axes for spatial reference (based on visibility settings)
+    let grid_axes_meshes = create_grid_and_axes(
+        &context,
+        show_grid,
+        show_x_axis,
+        show_y_axis,
+        show_z_axis,
+    );
+
+    // Shared cylinder mesh for all connections (for efficiency)
+    let cylinder_cpu_mesh = CpuMesh::cylinder(16);
 
     // Create connection meshes (lines between nodes)
     let mut connection_meshes = Vec::new();
@@ -453,47 +511,24 @@ async fn initialize_threed_viewport(
             node_positions.get(&conn.source_node_id),
             node_positions.get(&conn.target_node_id),
         ) {
-            // Create cylinder between two points
-            let direction = end_pos - start_pos;
-            let length = direction.magnitude();
-            let midpoint = start_pos + direction * 0.5;
-
-            // Calculate rotation to align cylinder with connection direction
-            // Default cylinder in three-d is along Y axis, so we need to rotate it
-            let normalized_dir = direction.normalize();
-            let up = vec3(0.0, 1.0, 0.0);
-
-            // Calculate rotation axis (cross product) and angle
-            let rotation = if (normalized_dir - up).magnitude() < 0.001 {
-                // Already aligned with Y axis
-                Mat4::identity()
-            } else if (normalized_dir + up).magnitude() < 0.001 {
-                // Pointing opposite to Y axis (180 degree rotation)
-                Mat4::from_angle_x(radians(std::f32::consts::PI))
-            } else {
-                // General case: rotate from up vector to direction vector
-                let axis = up.cross(normalized_dir).normalize();
-                let angle = up.dot(normalized_dir).acos();
-                Mat4::from_axis_angle(axis, radians(angle))
+            // Determine connection color based on type (fiber = cyan, ethernet = light gray)
+            let connection_color = match conn.connection_type.as_str() {
+                "fiber" => Srgba::new(100, 200, 255, 255),    // Bright cyan for fiber
+                "ethernet" => Srgba::new(200, 200, 200, 255), // Light gray for ethernet
+                _ => Srgba::new(180, 180, 180, 255),          // Default gray
             };
 
-            // Create thin cylinder
-            let mut cylinder = Gm::new(
-                Mesh::new(&context, &CpuMesh::cylinder(8)),
-                PhysicalMaterial::new_opaque(
-                    &context,
-                    &CpuMaterial {
-                        albedo: Srgba::new(150, 150, 150, 255), // Gray for connections
-                        ..Default::default()
-                    },
-                ),
-            );
-
-            // Transform: translate to midpoint, rotate to align, then scale length
-            let scale = Mat4::from_nonuniform_scale(0.05, length * 0.5, 0.05); // length * 0.5 because cylinder is unit height 2
-            cylinder.set_transformation(Mat4::from_translation(midpoint) * rotation * scale);
-
-            connection_meshes.push(cylinder);
+            // Use the same helper function as grid/axes for consistent rendering
+            if let Some(connection_mesh) = create_line_cylinder(
+                &context,
+                start_pos,
+                end_pos,
+                0.012, // Very thin thickness for clean, delicate lines
+                connection_color,
+                &cylinder_cpu_mesh,
+            ) {
+                connection_meshes.push((conn.id, connection_mesh));
+            }
         }
     }
 
@@ -509,7 +544,7 @@ async fn initialize_threed_viewport(
     // Wrap meshes and data in Rc<RefCell> for render closure
     let node_meshes = Rc::new(RefCell::new(node_meshes));
     let connection_meshes = Rc::new(RefCell::new(connection_meshes));
-    let grid_axes_meshes = Rc::new(grid_axes_meshes);
+    let grid_axes_meshes = Rc::new(RefCell::new(grid_axes_meshes)); // RefCell so we can update it
     let nodes_data = Rc::new(nodes_data);
 
     // Get canvas dimensions
@@ -558,13 +593,13 @@ async fn initialize_threed_viewport(
             target.clear(clear_state);
 
             // Render grid and axes first (background reference)
-            for mesh in grid_axes_meshes.iter() {
+            for mesh in grid_axes_meshes.borrow().iter() {
                 target.render(&camera, mesh, &[]);
             }
 
-            // Render connections (so they appear behind nodes)
-            for conn in connection_meshes.borrow().iter() {
-                target.render(&camera, conn, &[&*ambient, &*directional]);
+            // Render connections (ColorMaterial - no lights needed, renders before nodes)
+            for (_conn_id, conn_mesh) in connection_meshes.borrow().iter() {
+                target.render(&camera, conn_mesh, &[]);
             }
 
             // Get currently selected node ID (untracked - we handle reactivity via Effect)
@@ -1039,7 +1074,13 @@ fn setup_orbit_controls(
 
 /// Create grid floor and XYZ axes for spatial reference (Blender-style)
 #[cfg(feature = "hydrate")]
-fn create_grid_and_axes(context: &three_d::Context) -> Vec<three_d::Gm<three_d::Mesh, three_d::ColorMaterial>> {
+fn create_grid_and_axes(
+    context: &three_d::Context,
+    show_grid: bool,
+    show_x_axis: bool,
+    show_y_axis: bool,
+    show_z_axis: bool,
+) -> Vec<three_d::Gm<three_d::Mesh, three_d::ColorMaterial>> {
     use three_d::*;
 
     let mut meshes = Vec::new();
@@ -1049,31 +1090,34 @@ fn create_grid_and_axes(context: &three_d::Context) -> Vec<three_d::Gm<three_d::
     let grid_spacing = 1.0; // 1 unit between lines
     let grid_z = 0.0; // Floor at Z=0 (Blender convention)
     let grid_line_thickness = 0.006; // Very thin lines
-    let axis_line_thickness = 0.012; // Slightly thicker for axes
+    let axis_line_thickness = 0.006; // Same thickness as grid lines (half of previous 0.012)
 
-    // Create grid lines as thin cylinders on XY plane (Z=0)
-    let grid_color = Srgba::new(50, 50, 50, 180); // Faint dark gray with transparency
     let cylinder_cpu_mesh = CpuMesh::cylinder(8); // 8-sided cylinder for lines
 
-    // Lines parallel to X axis (varying Y) - these go left-right
-    for i in -grid_size..=grid_size {
-        let y = i as f32 * grid_spacing;
-        let start = vec3(-grid_size as f32 * grid_spacing, y, grid_z);
-        let end = vec3(grid_size as f32 * grid_spacing, y, grid_z);
+    // Create grid lines only if enabled
+    if show_grid {
+        let grid_color = Srgba::new(50, 50, 50, 180); // Faint dark gray with transparency
 
-        if let Some(line_mesh) = create_line_cylinder(context, start, end, grid_line_thickness, grid_color, &cylinder_cpu_mesh) {
-            meshes.push(line_mesh);
+        // Lines parallel to X axis (varying Y) - these go left-right
+        for i in -grid_size..=grid_size {
+            let y = i as f32 * grid_spacing;
+            let start = vec3(-grid_size as f32 * grid_spacing, y, grid_z);
+            let end = vec3(grid_size as f32 * grid_spacing, y, grid_z);
+
+            if let Some(line_mesh) = create_line_cylinder(context, start, end, grid_line_thickness, grid_color, &cylinder_cpu_mesh) {
+                meshes.push(line_mesh);
+            }
         }
-    }
 
-    // Lines parallel to Y axis (varying X) - these go front-back
-    for i in -grid_size..=grid_size {
-        let x = i as f32 * grid_spacing;
-        let start = vec3(x, -grid_size as f32 * grid_spacing, grid_z);
-        let end = vec3(x, grid_size as f32 * grid_spacing, grid_z);
+        // Lines parallel to Y axis (varying X) - these go front-back
+        for i in -grid_size..=grid_size {
+            let x = i as f32 * grid_spacing;
+            let start = vec3(x, -grid_size as f32 * grid_spacing, grid_z);
+            let end = vec3(x, grid_size as f32 * grid_spacing, grid_z);
 
-        if let Some(line_mesh) = create_line_cylinder(context, start, end, grid_line_thickness, grid_color, &cylinder_cpu_mesh) {
-            meshes.push(line_mesh);
+            if let Some(line_mesh) = create_line_cylinder(context, start, end, grid_line_thickness, grid_color, &cylinder_cpu_mesh) {
+                meshes.push(line_mesh);
+            }
         }
     }
 
@@ -1081,39 +1125,45 @@ fn create_grid_and_axes(context: &three_d::Context) -> Vec<three_d::Gm<three_d::
     let axis_length = 15.0;
 
     // X axis (Red) - left to right on floor
-    if let Some(x_axis) = create_line_cylinder(
-        context,
-        vec3(-axis_length, 0.0, 0.0),
-        vec3(axis_length, 0.0, 0.0),
-        axis_line_thickness,
-        Srgba::new(200, 80, 80, 200), // Faint red with transparency
-        &cylinder_cpu_mesh,
-    ) {
-        meshes.push(x_axis);
+    if show_x_axis {
+        if let Some(x_axis) = create_line_cylinder(
+            context,
+            vec3(-axis_length, 0.0, 0.0),
+            vec3(axis_length, 0.0, 0.0),
+            axis_line_thickness,
+            Srgba::new(200, 80, 80, 200), // Faint red with transparency
+            &cylinder_cpu_mesh,
+        ) {
+            meshes.push(x_axis);
+        }
     }
 
     // Y axis (Green) - front to back on floor, along three-d Y coordinate
-    if let Some(y_axis) = create_line_cylinder(
-        context,
-        vec3(0.0, -axis_length, 0.0),
-        vec3(0.0, axis_length, 0.0),
-        axis_line_thickness,
-        Srgba::new(80, 200, 80, 200), // Faint green with transparency
-        &cylinder_cpu_mesh,
-    ) {
-        meshes.push(y_axis);
+    if show_y_axis {
+        if let Some(y_axis) = create_line_cylinder(
+            context,
+            vec3(0.0, -axis_length, 0.0),
+            vec3(0.0, axis_length, 0.0),
+            axis_line_thickness,
+            Srgba::new(80, 200, 80, 200), // Faint green with transparency
+            &cylinder_cpu_mesh,
+        ) {
+            meshes.push(y_axis);
+        }
     }
 
     // Z axis (Blue) - vertical up/down, along three-d Z coordinate
-    if let Some(z_axis) = create_line_cylinder(
-        context,
-        vec3(0.0, 0.0, -axis_length),
-        vec3(0.0, 0.0, axis_length),
-        axis_line_thickness,
-        Srgba::new(80, 160, 240, 200), // Faint light blue with transparency
-        &cylinder_cpu_mesh,
-    ) {
-        meshes.push(z_axis);
+    if show_z_axis {
+        if let Some(z_axis) = create_line_cylinder(
+            context,
+            vec3(0.0, 0.0, -axis_length),
+            vec3(0.0, 0.0, axis_length),
+            axis_line_thickness,
+            Srgba::new(80, 160, 240, 25), // Extremely transparent blue (barely visible)
+            &cylinder_cpu_mesh,
+        ) {
+            meshes.push(z_axis);
+        }
     }
 
     meshes

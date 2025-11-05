@@ -1,8 +1,8 @@
 # Network Topology Visualizer - Claude Development Notes
 
 ## Project Status
-**Current Phase:** Phase 4 IN PROGRESS - 3D Model Rotation Complete ✅
-**Last Updated:** 2025-11-04
+**Current Phase:** Phase 4 IN PROGRESS - Most Features Complete! ✅
+**Last Updated:** 2025-11-05
 **Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete
 **Architecture:** Regular Leptos Components (Islands removed - see notes below)
 
@@ -13,17 +13,24 @@
 2. ✅ **Model Selection UI** - Loads correct glTF/GLB model for each node type (router, switch, server, firewall, load_balancer, cloud)
 3. ✅ **3D Grid and Axes** - Blender-style reference grid with X/Y/Z axis lines and grid floor plane
 4. ✅ **Topology switching control** - Multiple topologies with dropdown selector in UI
+5. ✅ **Enable Device Palette buttons** - All 6 device types ('Router', 'Switch', 'Server', 'Firewall', 'Load Balancer', 'Cloud') create nodes with grid positioning
+6. ✅ **Grid/Axes visibility controls** (2025-11-05) - Toggle buttons to show/hide grid and individual axes
+   - ViewportVisibility struct pattern prevents context collision for same-typed signals
+   - Independent toggles for Grid Floor, X Axis (Red), Y Axis (Green), Z Axis (Blue)
+   - Z-axis extremely transparent (alpha=25), all axes thinned to 0.006
 
 **✅ COMPLETED (Priority 2 - Visual Polish):**
-5. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
-6. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc.
+7. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
+8. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc.
+9. ✅ **Connection rendering improvements** (2025-11-05) - Thin cylindrical lines (0.012 thickness) using ColorMaterial
 
 **⏳ REMAINING (Priority 1 - Core 3D Features):**
-7. ⏳ **Enable Device Palette buttons** - Make 'Router', 'Switch', etc. 'Click to Add' buttons functional
+10. ⏳ **Connection creation mode** - Click two nodes to create connection between them
 
 **⏳ REMAINING (Priority 2 - Visual Polish):**
-8. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
-9. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
+11. ⏳ **Connection selection** - Click to select connections in viewport
+12. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
+13. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
 
 ### Phase 3 - COMPLETE ✅
 - ✅ Professional 3-panel layout (device palette, viewport, properties)
@@ -380,6 +387,48 @@ let mousemove = Closure::wrap(Box::new(move |e: MouseEvent| {
 - Conditionally sync snapshot to reactive signal when not disposed
 - Always check disposal flag before signal `.set()` calls
 - Applies to all closures using `.forget()`
+
+### 8. Context Collision with Same-Typed Signals
+**Issue:** Multiple `RwSignal<bool>` values provided to context cause collisions - all signals become the same
+```rust
+// ❌ WRONG - All four signals reference the same context value
+provide_context(show_grid);      // RwSignal<bool>
+provide_context(show_x_axis);    // RwSignal<bool> - overwrites!
+provide_context(show_y_axis);    // RwSignal<bool> - overwrites!
+provide_context(show_z_axis);    // RwSignal<bool> - overwrites!
+
+// Later: all four signals are the same value
+let show_grid = use_context::<RwSignal<bool>>(); // Gets the last one set!
+```
+
+**Root Cause:** Leptos context uses type-based lookup. Multiple values of same type overwrite each other.
+
+**Solution:** Wrap related signals in a unique struct type:
+```rust
+// ✅ CORRECT - Struct provides unique type for context
+#[derive(Clone, Copy)]
+pub struct ViewportVisibility {
+    pub show_grid: RwSignal<bool>,
+    pub show_x_axis: RwSignal<bool>,
+    pub show_y_axis: RwSignal<bool>,
+    pub show_z_axis: RwSignal<bool>,
+}
+
+// Provide once
+let viewport_visibility = ViewportVisibility {
+    show_grid: RwSignal::new(true),
+    show_x_axis: RwSignal::new(true),
+    show_y_axis: RwSignal::new(true),
+    show_z_axis: RwSignal::new(true),
+};
+provide_context(viewport_visibility);
+
+// Access individual signals from struct
+let vis = use_context::<ViewportVisibility>().expect("viewport_visibility context");
+let show_grid = vis.show_grid;  // ✅ Each signal is independent!
+```
+
+**Key Pattern:** Group related same-typed signals into a struct for context sharing
 
 ## Database
 - SQLite with sqlx

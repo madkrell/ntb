@@ -1,7 +1,24 @@
 use leptos::prelude::*;
 use crate::islands::TopologyViewport;
-use crate::api::{get_node, update_node, get_connection, update_connection, create_node, delete_node, delete_connection, get_topologies, delete_topology};
-use crate::models::{UpdateNode, UpdateConnection, CreateNode};
+use crate::api::{get_node, update_node, get_connection, update_connection, create_node, delete_node, delete_connection, get_topologies, delete_topology, create_connection};
+use crate::models::{UpdateNode, UpdateConnection, CreateNode, CreateConnection};
+
+/// Connection creation mode state
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ConnectionMode {
+    Disabled,
+    SelectingFirstNode,
+    SelectingSecondNode { first_node_id: i64 },
+}
+
+/// Grid and axes visibility settings
+#[derive(Clone, Copy)]
+pub struct ViewportVisibility {
+    pub show_grid: RwSignal<bool>,
+    pub show_x_axis: RwSignal<bool>,
+    pub show_y_axis: RwSignal<bool>,
+    pub show_z_axis: RwSignal<bool>,
+}
 
 /// Professional topology editor layout with panels
 /// Using regular component (not island) so we can share state via context
@@ -17,11 +34,24 @@ pub fn TopologyEditor(
     // Create refetch trigger - increment this to reload viewport data
     let refetch_trigger = RwSignal::new(0u32);
 
+    // Connection creation mode state
+    let connection_mode = RwSignal::new(ConnectionMode::Disabled);
+
+    // Grid and axes visibility controls (wrapped in struct to avoid context collision)
+    let viewport_visibility = ViewportVisibility {
+        show_grid: RwSignal::new(true),
+        show_x_axis: RwSignal::new(true),
+        show_y_axis: RwSignal::new(true),
+        show_z_axis: RwSignal::new(true),
+    };
+
     // Provide signals via context so islands can access them
     provide_context(selected_node_id);
     provide_context(selected_item);
     provide_context(refetch_trigger);
     provide_context(current_topology_id);
+    provide_context(connection_mode);
+    provide_context(viewport_visibility);
 
     view! {
         <div class="topology-editor w-full h-screen flex flex-col bg-gray-900 text-gray-100">
@@ -167,6 +197,14 @@ fn DevicePalette() -> impl IntoView {
     // Get context
     let current_topology_id = use_context::<RwSignal<i64>>().expect("current_topology_id context");
     let refetch_trigger = use_context::<RwSignal<u32>>().expect("refetch_trigger context");
+    let connection_mode = use_context::<RwSignal<ConnectionMode>>().expect("connection_mode context");
+
+    // Grid and axes visibility controls - extract from struct
+    let viewport_visibility = use_context::<ViewportVisibility>().expect("viewport_visibility context");
+    let show_grid = viewport_visibility.show_grid;
+    let show_x_axis = viewport_visibility.show_x_axis;
+    let show_y_axis = viewport_visibility.show_y_axis;
+    let show_z_axis = viewport_visibility.show_z_axis;
 
     // Counter for generating unique names and positions
     let node_counter = RwSignal::new(0u32);
@@ -238,6 +276,41 @@ fn DevicePalette() -> impl IntoView {
                 <h2 class="text-sm font-semibold text-gray-300">"Device Palette"</h2>
             </div>
 
+            // Connection creation button
+            <div class="p-3 border-b border-gray-700">
+                <button
+                    class="w-full p-3 rounded border transition flex items-center gap-3 text-left"
+                    class:bg-purple-600=move || connection_mode.get() != ConnectionMode::Disabled
+                    class:hover:bg-purple-700=move || connection_mode.get() != ConnectionMode::Disabled
+                    class:border-purple-500=move || connection_mode.get() != ConnectionMode::Disabled
+                    class:bg-gray-700=move || connection_mode.get() == ConnectionMode::Disabled
+                    class:hover:bg-gray-600=move || connection_mode.get() == ConnectionMode::Disabled
+                    class:border-gray-600=move || connection_mode.get() == ConnectionMode::Disabled
+                    on:click=move |_| {
+                        let current_mode = connection_mode.get();
+                        if current_mode == ConnectionMode::Disabled {
+                            connection_mode.set(ConnectionMode::SelectingFirstNode);
+                        } else {
+                            connection_mode.set(ConnectionMode::Disabled);
+                        }
+                    }
+                >
+                    <span class="text-2xl">"🔗"</span>
+                    <div class="flex-1">
+                        <div class="text-sm font-medium">"Connect Nodes"</div>
+                        <div class="text-xs text-gray-400">
+                            {move || {
+                                match connection_mode.get() {
+                                    ConnectionMode::Disabled => "Click to activate",
+                                    ConnectionMode::SelectingFirstNode => "Select first node",
+                                    ConnectionMode::SelectingSecondNode { .. } => "Select second node",
+                                }
+                            }}
+                        </div>
+                    </div>
+                </button>
+            </div>
+
             <div class="flex-1 overflow-y-auto p-3 space-y-2">
                 {device_types.into_iter().map(|(display_name, icon, type_id, name_prefix)| {
                     let type_id_clone = type_id.to_string();
@@ -287,6 +360,61 @@ fn DevicePalette() -> impl IntoView {
                         }
                     })
                 }}
+            </div>
+
+            // Grid and Axes visibility controls
+            <div class="p-3 border-t border-gray-700">
+                <div class="text-xs font-semibold text-gray-300 mb-2">"View Controls"</div>
+                <div class="space-y-2">
+                    <div class="flex items-center gap-2 text-xs text-gray-300">
+                        <button
+                            class="px-2 py-1 rounded text-xs border transition"
+                            class:bg-blue-600=move || show_grid.get()
+                            class:border-blue-500=move || show_grid.get()
+                            class:bg-gray-700=move || !show_grid.get()
+                            class:border-gray-600=move || !show_grid.get()
+                            on:click=move |_| show_grid.update(|v| *v = !*v)
+                        >
+                            "Grid Floor"
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs text-gray-300">
+                        <button
+                            class="px-2 py-1 rounded text-xs border transition"
+                            class:bg-red-600=move || show_x_axis.get()
+                            class:border-red-500=move || show_x_axis.get()
+                            class:bg-gray-700=move || !show_x_axis.get()
+                            class:border-gray-600=move || !show_x_axis.get()
+                            on:click=move |_| show_x_axis.update(|v| *v = !*v)
+                        >
+                            "X Axis (Red)"
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs text-gray-300">
+                        <button
+                            class="px-2 py-1 rounded text-xs border transition"
+                            class:bg-green-600=move || show_y_axis.get()
+                            class:border-green-500=move || show_y_axis.get()
+                            class:bg-gray-700=move || !show_y_axis.get()
+                            class:border-gray-600=move || !show_y_axis.get()
+                            on:click=move |_| show_y_axis.update(|v| *v = !*v)
+                        >
+                            "Y Axis (Green)"
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs text-gray-300">
+                        <button
+                            class="px-2 py-1 rounded text-xs border transition"
+                            class:bg-blue-600=move || show_z_axis.get()
+                            class:border-blue-500=move || show_z_axis.get()
+                            class:bg-gray-700=move || !show_z_axis.get()
+                            class:border-gray-600=move || !show_z_axis.get()
+                            on:click=move |_| show_z_axis.update(|v| *v = !*v)
+                        >
+                            "Z Axis (Blue)"
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <div class="p-3 border-t border-gray-700 text-xs text-gray-400">

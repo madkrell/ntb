@@ -31,13 +31,17 @@ Current Status: Phase 4 IN PROGRESS - Multiple Features Complete! ✅
 - Color-Coded Nodes by Type (router=blue, switch=green, server=orange, etc.)
 - Topology Switching Control (dropdown selector with 2 sample topologies)
 - Critical fix: Disposed signal access in event handlers (non-reactive snapshot pattern)
+- **Device Palette buttons functional** (all 6 device types create nodes with grid positioning) ✅
+- **Grid/Axes visibility toggles** (2025-11-05) - Show/hide grid and individual axes independently ✅
+- **Connection rendering improved** (thin cylindrical lines, 0.012 thickness) ✅
+- **ViewportVisibility pattern** for context - prevents collision with same-typed signals ✅
 
 **⏳ Next Phase 4 Tasks (Priority 1):**
-7. Enable Device Palette buttons ('Router', 'Switch', etc. 'Click to Add')
+10. Connection creation mode (click two nodes to create connection)
 
-Then Priority 2: Improved lighting, better camera controls
+Then Priority 2: Connection selection, improved lighting, better camera controls
 
-Next: Start with Priority 1 task #7 (Enable Device Palette buttons)
+Next: Implement connection creation mode
 ```
 
 ## 📊 Current Project State
@@ -89,37 +93,49 @@ Next: Start with Priority 1 task #7 (Enable Device Palette buttons)
    - Dynamic loading on selection change
    - Critical fix: Disposed signal access in event handlers using non-reactive snapshot pattern
 
+✅ **COMPLETED - Priority 1 (Core 3D Features):**
+5. ✅ **Enable Device Palette buttons** (2025-11-05) - All 6 device types functional
+   - Create nodes via create_node() server function
+   - Grid positioning to avoid overlap (5-column layout)
+   - Real-time viewport updates via refetch trigger
+6. ✅ **Grid/Axes visibility controls** (2025-11-05) - Toggle buttons to show/hide elements
+   - ViewportVisibility struct pattern prevents context collision
+   - Independent toggles for Grid Floor, X Axis (Red), Y Axis (Green), Z Axis (Blue)
+   - Z-axis extremely transparent (alpha=25), axes thinned to 0.006
+
 ✅ **COMPLETED - Priority 2 (Visual Polish):**
-5. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
-6. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc.
+7. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
+8. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc.
+9. ✅ **Connection rendering improvements** (2025-11-05) - Thin cylindrical lines (0.012 thickness) using ColorMaterial
 
 ⏳ **REMAINING - Priority 1 (Core 3D Features):**
-7. ⏳ **Enable Device Palette buttons** - Make 'Router', 'Switch', etc. 'Click to Add' buttons functional
+10. ⏳ **Connection creation mode** - Click two nodes to create connection between them
 
 ⏳ **REMAINING - Priority 2 (Visual Polish):**
-8. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
-9. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
+11. ⏳ **Connection selection** - Click to select connections in viewport
+12. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
+13. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
 
 ### 🔄 What to Work On Next
 
-**NEXT UP: Phase 4 - Priority 1, Task #7 - Enable Device Palette Buttons**
+**NEXT UP: Phase 4 - Priority 1, Task #10 - Connection Creation Mode**
 ```
-Let's make the Device Palette functional:
-- Enable 'Router' button - Click to add router node to topology
-- Enable 'Switch' button - Click to add switch node
-- Enable 'Server' button - Click to add server node
-- Enable 'Firewall' button - Click to add firewall node
-- Enable 'Load Balancer' button - Click to add load balancer node
-- Enable 'Database' button - Click to add database node
-- Each button creates a new node via create_node() server function
-- Nodes should appear at a default position (or random position)
+Implement the "Connect Nodes" functionality:
+- "Connect Nodes" button already exists in Device Palette
+- Track connection mode state: Disabled → SelectingFirstNode → SelectingSecondNode
+- When mode active, clicking first node selects it as connection source
+- Clicking second node creates connection via create_connection() server function
+- Default connection type: "ethernet", bandwidth: 1000 Mbps, status: "active"
+- Cancel mode on second node click or when clicking button again
+- Visual feedback showing which mode is active (button color changes)
 ```
 
 **FUTURE: Phase 4 - Priority 2 - Visual Polish**
 ```
-Once Priority 1 is complete:
-- Task #8: Improved lighting and materials
-- Task #9: Better camera controls (presets, bookmarks, reset view)
+After connection creation:
+- Task #11: Connection selection (click to select connections, show in properties)
+- Task #12: Improved lighting and materials
+- Task #13: Better camera controls (presets, bookmarks, reset view)
 ```
 
 **LATER: Phase 5 - Export & Finalization**
