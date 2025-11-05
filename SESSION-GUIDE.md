@@ -145,34 +145,232 @@ Visual polish features implemented:
 - Color-coded nodes ✅
 - Connection rendering improvements ✅
 
-**REMAINING: Phase 4 - Priority 2**
-```
-Two remaining polish items:
-- Task #12: Improved lighting and materials
-- Task #13: Better camera controls (presets, bookmarks, reset view)
-```
+---
 
-**NEXT MAJOR WORK:**
-Choose your direction:
-- Complete Phase 4 polish (lighting & camera controls)
-- OR Phase 5: Export & Finalization (PNG export, JSON import/export)
-- OR Phase 6: Traffic Monitoring (real-time traffic visualization)
+## 📋 Next Steps (In Order)
 
-**LATER: Phase 5 - Export & Finalization**
-```
-- Export topology as PNG image
-- Export/Import topology as JSON
-- UI polish and optimizations
-- Documentation and deployment
-```
+### Phase 4 - Priority 2 (Visual Polish)
 
-**FUTURE: Phase 6 - Traffic Monitoring**
-```
-- Real-time traffic visualization using Leptos streaming
-- Use #[server(protocol = Websocket<...>)]
-- Animate connections based on traffic load
-- Traffic metrics dashboard
-```
+#### Task #12: Improved Lighting and Materials
+**Goal:** Better 3D scene lighting and realistic rendering
+
+**Current State:**
+- Single ambient light
+- Single directional light
+- Basic PhysicalMaterial on nodes
+- No shadows
+- Flat appearance
+
+**Implementation Steps:**
+1. Add multiple light sources:
+   - Key light (main directional light from above-front)
+   - Fill light (softer light from side, reduces harsh shadows)
+   - Rim/back light (highlights edges, adds depth)
+2. Configure light intensities and colors:
+   - Warm key light (slight yellow tint)
+   - Cool fill light (slight blue tint)
+   - Subtle rim light for edge definition
+3. Improve material properties:
+   - Add metallic/roughness properties to PhysicalMaterial
+   - Different materials for different node types (metal for routers, matte for servers, etc.)
+   - Adjust reflectivity and shininess
+4. Enable shadows:
+   - Configure three-d shadow mapping
+   - Cast shadows from nodes onto grid
+   - Soft shadow edges for realism
+5. Add ambient occlusion if supported:
+   - Darkening in crevices and corners
+   - Enhances depth perception
+
+**Expected Outcome:**
+- More realistic 3D appearance
+- Better depth perception
+- Professional lighting setup
+- Nodes look less flat
+
+---
+
+#### Task #13: Better Camera Controls
+**Goal:** Enhanced camera control features for easier navigation
+
+**Current State:**
+- Orbit controls (drag to rotate, scroll to zoom)
+- Manual camera positioning
+- No camera presets or saved views
+
+**Implementation Steps:**
+1. Camera preset buttons in top toolbar:
+   - **Top View** - Look straight down (0, Y, 0 looking at origin)
+   - **Front View** - Look from front (0, 0, Z looking at origin)
+   - **Side View** - Look from side (X, 0, 0 looking at origin)
+   - **Isometric View** - 45° angle (X, Y, Z balanced for isometric)
+   - Smooth animated transitions between presets (not instant jumps)
+2. Reset View button:
+   - Return to default camera position
+   - Default: distance=18, azimuth=π/4, elevation=π/6
+   - Animated transition
+3. Camera bookmarks system:
+   - "Save Bookmark" button - stores current camera position
+   - Dropdown list of saved bookmarks
+   - "Load Bookmark" - animate to saved position
+   - "Delete Bookmark" option
+   - Store in localStorage for persistence across sessions
+4. Camera animation helper:
+   - Smooth lerp/slerp between camera positions
+   - Duration: ~500-800ms for good UX
+   - Easing function (ease-in-out)
+5. UI additions:
+   - Camera controls section in toolbar
+   - Preset buttons with icons
+   - Bookmark management UI
+
+**Expected Outcome:**
+- Quick navigation to standard views
+- Save custom viewpoints
+- Professional camera control UX
+- Easier to showcase topology from specific angles
+
+---
+
+### Phase 5 - Export & Finalization
+
+#### Task #1: Export Topology as PNG Image
+**Implementation Steps:**
+1. Add "Export as PNG" button to top toolbar
+2. Capture current canvas content:
+   - Use canvas.toDataURL('image/png')
+   - Or render at higher resolution for better quality
+3. Trigger download:
+   - Create temporary <a> element with download attribute
+   - Set href to data URL
+   - Programmatically click to download
+4. Options dialog (optional):
+   - Image resolution (1x, 2x, 4x current viewport)
+   - Include/exclude grid and axes
+   - Background color (transparent, white, black)
+
+**Expected Outcome:**
+- Users can export topology visualizations as images
+- Useful for documentation, presentations, reports
+
+---
+
+#### Task #2: Export/Import Topology as JSON
+**Implementation Steps:**
+1. Export topology to JSON:
+   - Button in toolbar: "Export JSON"
+   - Fetch full topology data (nodes + connections) via get_topology_full()
+   - Serialize to JSON with pretty formatting
+   - Download as topology-{name}-{timestamp}.json
+2. Import topology from JSON:
+   - Button in toolbar: "Import JSON"
+   - File picker dialog
+   - Parse JSON and validate structure
+   - Create new topology via create_topology()
+   - Batch create nodes via create_node()
+   - Batch create connections via create_connection()
+   - Show progress indicator for large topologies
+3. JSON format validation:
+   - Check required fields
+   - Validate node positions, types
+   - Validate connection references
+   - Show clear error messages if invalid
+
+**Expected Outcome:**
+- Users can backup topologies
+- Share topology configurations
+- Migrate between environments
+- Template topologies for reuse
+
+---
+
+#### Task #3: UI Polish and Optimizations
+**Implementation Steps:**
+1. UI improvements:
+   - Consistent button styling
+   - Loading states for all async operations
+   - Better error messages (user-friendly, actionable)
+   - Confirm dialogs for destructive actions (delete)
+2. Performance optimizations:
+   - Profile WASM bundle size
+   - Reduce unnecessary re-renders
+   - Optimize three-d mesh updates
+   - Lazy load 3D models
+3. Accessibility:
+   - Keyboard shortcuts for common actions
+   - ARIA labels for screen readers
+   - Focus indicators
+4. Responsive design:
+   - Test on different screen sizes
+   - Adjust panel widths for mobile/tablet
+   - Touch-friendly controls
+
+**Expected Outcome:**
+- Polished, professional UI
+- Fast, responsive interactions
+- Better user experience
+- Accessible to more users
+
+---
+
+#### Task #4: Documentation
+**Implementation Steps:**
+1. User documentation:
+   - README.md with screenshots
+   - How to use the application
+   - Feature overview
+   - Keyboard shortcuts
+2. Developer documentation:
+   - Architecture overview
+   - How to add new node types
+   - How to extend the application
+   - API documentation
+3. Deployment guide:
+   - Production build instructions
+   - Environment setup
+   - Database configuration
+   - Hosting options (Docker, VPS, etc.)
+
+**Expected Outcome:**
+- Users can learn the application quickly
+- Developers can contribute easily
+- Clear deployment process
+
+---
+
+### Phase 6 - Traffic Monitoring (Real-time with Leptos Streaming)
+
+**Goal:** Real-time traffic visualization using Leptos native streaming
+
+**Implementation Steps:**
+1. Database schema for traffic metrics:
+   - Already have traffic_metrics table
+   - Add indexes for efficient queries
+2. Mock traffic generator (for demo):
+   - Server function that generates random traffic data
+   - Simulates network activity on connections
+3. Streaming server function:
+   - Use `#[server(protocol = Websocket<JsonEncoding, JsonEncoding>)]`
+   - Stream traffic updates to client
+   - Update every 100-500ms for smooth animation
+4. Client-side visualization:
+   - Animate connections based on traffic load
+   - Color gradient: green (low) → yellow (medium) → red (high)
+   - Animated particles/pulses moving along connections
+   - Thickness variation based on bandwidth utilization
+5. Traffic metrics dashboard:
+   - Panel showing current traffic stats
+   - Top connections by traffic
+   - Total throughput
+   - Real-time graphs (optional)
+
+**Expected Outcome:**
+- Live traffic monitoring
+- Visual representation of network load
+- Identify bottlenecks and congestion
+- Professional network monitoring tool
+
+---
 
 ## 📁 Key Files to Reference
 
