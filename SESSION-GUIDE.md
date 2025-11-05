@@ -12,7 +12,7 @@ Please read these files to understand the current state:
 1. CLAUDE.md - Complete architecture, Phases 1-3 status, all learnings
 2. This file (SESSION-GUIDE.md) - Quick context
 
-Current Status: Phase 4 IN PROGRESS - Multiple Features Complete! ✅
+Current Status: Phase 4 NEARLY COMPLETE - All Priority 1 Features Done! ✅
 
 **✅ Phase 3 Complete:**
 - Professional 3-panel UI layout working perfectly
@@ -23,25 +23,33 @@ Current Status: Phase 4 IN PROGRESS - Multiple Features Complete! ✅
 - Real-time viewport updates (no refresh needed!)
 - Suspense components eliminating hydration warnings
 
-**✅ Phase 4 Complete (so far):**
+**✅ Phase 4 Priority 1 - ALL COMPLETE:**
 - 3D node rotation controls (X/Y/Z in degrees with default rotation_x=90°)
 - Model Selection UI (loads correct glTF/GLB for each node type: router, switch, server, firewall, load_balancer, cloud)
 - 3D Grid and Axes (Blender-style reference grid)
+- Topology Switching Control (dropdown selector with 2 sample topologies)
+- **Device Palette buttons functional** (all 6 device types create nodes with grid positioning) ✅
+- **Grid/Axes visibility toggles** - Show/hide grid and individual axes independently ✅
+- **Connection creation mode** (2025-11-05) - Click two nodes to create connection ✅
+  - Three-state mode: Disabled → SelectingFirstNode → SelectingSecondNode
+  - Visual button feedback showing current mode
+  - Creates connections via server function with real-time updates
+
+**✅ Phase 4 Priority 2 - MOSTLY COMPLETE:**
 - Node Labels/Tooltips (show node name on hover)
 - Color-Coded Nodes by Type (router=blue, switch=green, server=orange, etc.)
-- Topology Switching Control (dropdown selector with 2 sample topologies)
-- Critical fix: Disposed signal access in event handlers (non-reactive snapshot pattern)
-- **Device Palette buttons functional** (all 6 device types create nodes with grid positioning) ✅
-- **Grid/Axes visibility toggles** (2025-11-05) - Show/hide grid and individual axes independently ✅
 - **Connection rendering improved** (thin cylindrical lines, 0.012 thickness) ✅
-- **ViewportVisibility pattern** for context - prevents collision with same-typed signals ✅
+- **Connection selection** (2025-11-05) - Click to select connections in viewport ✅
+  - Ray-cylinder intersection algorithm for accurate 3D picking
+  - Visual feedback with yellow/orange highlighting
+  - Properties panel shows connection details
+  - **Critical fix:** Mutable storage pattern for event handlers to access fresh data
 
-**⏳ Next Phase 4 Tasks (Priority 1):**
-10. Connection creation mode (click two nodes to create connection)
+**⏳ Remaining Phase 4 Tasks (Priority 2):**
+- Improved Lighting and Materials
+- Better Camera Controls (presets, bookmarks, reset view)
 
-Then Priority 2: Connection selection, improved lighting, better camera controls
-
-Next: Implement connection creation mode
+Next: Priority 2 polish OR Phase 5 Export features OR Phase 6 Traffic Monitoring
 ```
 
 ## 📊 Current Project State
@@ -102,41 +110,53 @@ Next: Implement connection creation mode
    - ViewportVisibility struct pattern prevents context collision
    - Independent toggles for Grid Floor, X Axis (Red), Y Axis (Green), Z Axis (Blue)
    - Z-axis extremely transparent (alpha=25), axes thinned to 0.006
+7. ✅ **Connection creation mode** (2025-11-05) - Click two nodes to create connection
+   - Three-state mode with visual button feedback
+   - Creates connections via create_connection() server function
+   - Real-time viewport updates after creation
 
 ✅ **COMPLETED - Priority 2 (Visual Polish):**
-7. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
-8. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc.
-9. ✅ **Connection rendering improvements** (2025-11-05) - Thin cylindrical lines (0.012 thickness) using ColorMaterial
-
-⏳ **REMAINING - Priority 1 (Core 3D Features):**
-10. ⏳ **Connection creation mode** - Click two nodes to create connection between them
+8. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
+9. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc.
+10. ✅ **Connection rendering improvements** (2025-11-05) - Thin cylindrical lines (0.012 thickness) using ColorMaterial
+11. ✅ **Connection selection** (2025-11-05) - Click to select connections in viewport
+    - Ray-cylinder intersection algorithm for 3D picking
+    - Visual feedback with yellow/orange highlighting
+    - Properties panel shows connection details (type, bandwidth, status)
+    - Critical mutable storage pattern fix for event handler data access
 
 ⏳ **REMAINING - Priority 2 (Visual Polish):**
-11. ⏳ **Connection selection** - Click to select connections in viewport
 12. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
 13. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
 
 ### 🔄 What to Work On Next
 
-**NEXT UP: Phase 4 - Priority 1, Task #10 - Connection Creation Mode**
-```
-Implement the "Connect Nodes" functionality:
-- "Connect Nodes" button already exists in Device Palette
-- Track connection mode state: Disabled → SelectingFirstNode → SelectingSecondNode
-- When mode active, clicking first node selects it as connection source
-- Clicking second node creates connection via create_connection() server function
-- Default connection type: "ethernet", bandwidth: 1000 Mbps, status: "active"
-- Cancel mode on second node click or when clicking button again
-- Visual feedback showing which mode is active (button color changes)
-```
+**Phase 4 - Priority 1: ALL COMPLETE! ✅**
+All core 3D features are now implemented and working:
+- Connection creation mode ✅
+- Device palette buttons ✅
+- Grid/axes visibility controls ✅
+- All other Priority 1 features ✅
 
-**FUTURE: Phase 4 - Priority 2 - Visual Polish**
+**Phase 4 - Priority 2: MOSTLY COMPLETE! ✅**
+Visual polish features implemented:
+- Connection selection ✅
+- Node labels/tooltips ✅
+- Color-coded nodes ✅
+- Connection rendering improvements ✅
+
+**REMAINING: Phase 4 - Priority 2**
 ```
-After connection creation:
-- Task #11: Connection selection (click to select connections, show in properties)
+Two remaining polish items:
 - Task #12: Improved lighting and materials
 - Task #13: Better camera controls (presets, bookmarks, reset view)
 ```
+
+**NEXT MAJOR WORK:**
+Choose your direction:
+- Complete Phase 4 polish (lighting & camera controls)
+- OR Phase 5: Export & Finalization (PNG export, JSON import/export)
+- OR Phase 6: Traffic Monitoring (real-time traffic visualization)
 
 **LATER: Phase 5 - Export & Finalization**
 ```

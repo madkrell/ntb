@@ -40,11 +40,13 @@ pub fn TopologyViewport(
     topology_id: Option<i64>,
 ) -> impl IntoView {
     #[cfg(feature = "hydrate")]
-    web_sys::console::log_1(&format!("TopologyViewport component created with topology_id: {:?}", topology_id).into());
 
     // Get shared state from context (provided by TopologyEditor)
     let selected_node_id = use_context::<RwSignal<Option<i64>>>().expect("selected_node_id context");
     let selected_item = use_context::<RwSignal<Option<crate::islands::topology_editor::SelectedItem>>>().expect("selected_item context");
+
+    // Get connection mode from context (optional - may not exist)
+    let connection_mode = use_context::<RwSignal<crate::islands::topology_editor::ConnectionMode>>();
 
     // Get grid/axes visibility controls from context (optional - may not exist)
     let viewport_visibility = use_context::<crate::islands::topology_editor::ViewportVisibility>();
@@ -60,6 +62,9 @@ pub fn TopologyViewport(
     // Tooltip state: (node_name, node_type, x, y)
     let tooltip_data = RwSignal::new(None::<(String, String, f64, f64)>);
 
+    // Create signal for topology_id (needed for connection creation)
+    let current_topology_id = RwSignal::new(topology_id.unwrap_or(1));
+
     // Camera state as signals for reactivity (client-side only)
     #[cfg(feature = "hydrate")]
     let camera_state = RwSignal::new(CameraState::default());
@@ -67,6 +72,12 @@ pub fn TopologyViewport(
     // Store render function so we can trigger re-renders when selection changes
     #[cfg(feature = "hydrate")]
     let render_fn: Rc<RefCell<Option<Rc<dyn Fn(CameraState)>>>> = Rc::new(RefCell::new(None));
+
+    // Store nodes/connections data so event handlers can access updated data on refetch
+    #[cfg(feature = "hydrate")]
+    let nodes_data_storage: Rc<RefCell<Vec<NodeData>>> = Rc::new(RefCell::new(Vec::new()));
+    #[cfg(feature = "hydrate")]
+    let connections_data_storage: Rc<RefCell<Vec<ConnectionData>>> = Rc::new(RefCell::new(Vec::new()));
 
     // Get refetch trigger from context (optional - may not exist if not in editor)
     let refetch_trigger = use_context::<RwSignal<u32>>();
@@ -92,9 +103,13 @@ pub fn TopologyViewport(
         },
     );
 
-    // Clone render_fn for the Effect closure below
+    // Clone render_fn and data storages for the Effect closure below
     #[cfg(feature = "hydrate")]
     let render_fn_for_effect = render_fn.clone();
+    #[cfg(feature = "hydrate")]
+    let nodes_data_for_effect = nodes_data_storage.clone();
+    #[cfg(feature = "hydrate")]
+    let connections_data_for_effect = connections_data_storage.clone();
 
     // Initialize three-d viewport when canvas mounts or data loads
     Effect::new(move || {
@@ -102,20 +117,20 @@ pub fn TopologyViewport(
         if let Some(canvas_element) = canvas_ref.get() {
             #[cfg(feature = "hydrate")]
             {
-                web_sys::console::log_1(&"Effect running - canvas element exists".into());
-
                 // Access topology_data to make Effect reactive to it
                 let data_option = topology_data.get();
-                web_sys::console::log_1(&format!("Data option: {:?}", data_option.is_some()).into());
 
                 // Wait for topology data to load
                 if let Some(Some(topo_data)) = data_option {
-                    web_sys::console::log_1(&format!("Topology data loaded! {} nodes", topo_data.nodes.len()).into());
+                    // Check if this is a refetch (already initialized)
+                    let already_initialized = is_initialized.get_untracked();
 
                     // Spawn async initialization (needed for glTF loading)
                     let canvas = canvas_element.clone();
                     let topo = topo_data.clone();
                     let render_fn = render_fn_for_effect.clone();
+                    let nodes_storage = nodes_data_for_effect.clone();
+                    let connections_storage = connections_data_for_effect.clone();
 
                     // Read signal values BEFORE entering async context
                     let show_grid_val = show_grid.get_untracked();
@@ -124,7 +139,6 @@ pub fn TopologyViewport(
                     let show_z_val = show_z_axis.get_untracked();
 
                     wasm_bindgen_futures::spawn_local(async move {
-                        web_sys::console::log_1(&"Starting async initialization...".into());
                         match initialize_threed_viewport(
                             &canvas,
                             camera_state,
@@ -132,14 +146,19 @@ pub fn TopologyViewport(
                             selected_node_id,
                             selected_item,
                             render_fn,
+                            nodes_storage,
+                            connections_storage,
                             tooltip_data,
                             show_grid_val,
                             show_x_val,
                             show_y_val,
                             show_z_val,
+                            connection_mode,
+                            refetch_trigger,
+                            Some(current_topology_id),
+                            already_initialized, // Skip event handlers on refetch
                         ).await {
                             Ok(_) => {
-                                web_sys::console::log_1(&"Initialization successful!".into());
                                 is_initialized.set(true);
                             }
                             Err(e) => {
@@ -150,7 +169,7 @@ pub fn TopologyViewport(
                     });
                 } else if topology_id.is_none() {
                     // Initialize with test scene if no topology_id
-                    match initialize_threed_viewport_test(&canvas_element, camera_state, selected_node_id, selected_item, render_fn_for_effect.clone(), tooltip_data) {
+                    match initialize_threed_viewport_test(&canvas_element, camera_state, selected_node_id, selected_item, render_fn_for_effect.clone(), tooltip_data, connection_mode, refetch_trigger, Some(current_topology_id)) {
                         Ok(_) => {
                             is_initialized.set(true);
                         }
@@ -164,13 +183,28 @@ pub fn TopologyViewport(
         }
     });
 
-    // Component-level Effect to re-render when selection changes
+    // Component-level Effect to re-render when node selection changes
     #[cfg(feature = "hydrate")]
     {
         let render_fn = render_fn.clone();
         let _effect = Effect::new(move || {
             // Track the selection signal
             let _selected = selected_node_id.get();
+
+            // Call the stored render function if available
+            if let Some(render) = render_fn.borrow().as_ref() {
+                render(camera_state.get_untracked());
+            }
+        });
+    }
+
+    // Component-level Effect to re-render when item selection changes (connections)
+    #[cfg(feature = "hydrate")]
+    {
+        let render_fn = render_fn.clone();
+        let _effect = Effect::new(move || {
+            // Track the selected item signal
+            let _selected = selected_item.get();
 
             // Call the stored render function if available
             if let Some(render) = render_fn.borrow().as_ref() {
@@ -266,6 +300,80 @@ struct NodeData {
     radius: f32,
 }
 
+// Connection data for selection
+#[cfg(feature = "hydrate")]
+struct ConnectionData {
+    id: i64,
+    source_pos: three_d::Vec3,
+    target_pos: three_d::Vec3,
+    radius: f32, // Cylinder radius for hit detection
+}
+
+// Ray-cylinder intersection test
+// Returns Some(distance) if ray intersects the cylinder, None otherwise
+#[cfg(feature = "hydrate")]
+fn ray_cylinder_intersection(
+    ray_origin: three_d::Vec3,
+    ray_dir: three_d::Vec3,
+    cylinder_start: three_d::Vec3,
+    cylinder_end: three_d::Vec3,
+    cylinder_radius: f32,
+) -> Option<f32> {
+    use three_d::*;
+
+    // Vector along the cylinder axis
+    let axis = cylinder_end - cylinder_start;
+    let axis_length = axis.magnitude();
+    let axis_normalized = axis.normalize();
+
+    // Vector from cylinder start to ray origin
+    let oc = ray_origin - cylinder_start;
+
+    // Project ray onto the plane perpendicular to cylinder axis
+    // We're solving for the closest point on the ray to the cylinder axis
+    let dot_axis_ray = axis_normalized.dot(ray_dir);
+    let dot_axis_oc = axis_normalized.dot(oc);
+
+    // Ray perpendicular components (components perpendicular to cylinder axis)
+    let ray_perp = ray_dir - axis_normalized * dot_axis_ray;
+    let oc_perp = oc - axis_normalized * dot_axis_oc;
+
+    // Solve quadratic equation for ray-cylinder intersection
+    let a = ray_perp.dot(ray_perp);
+    let b = 2.0 * ray_perp.dot(oc_perp);
+    let c = oc_perp.dot(oc_perp) - cylinder_radius * cylinder_radius;
+
+    let discriminant = b * b - 4.0 * a * c;
+
+    // No intersection if discriminant is negative
+    if discriminant < 0.0 || a.abs() < 0.0001 {
+        return None;
+    }
+
+    // Calculate the two intersection points along the ray
+    let sqrt_disc = discriminant.sqrt();
+    let t1 = (-b - sqrt_disc) / (2.0 * a);
+    let t2 = (-b + sqrt_disc) / (2.0 * a);
+
+    // Check both intersection points
+    for t in [t1, t2] {
+        if t > 0.0 {
+            // Calculate the point on the ray
+            let point = ray_origin + ray_dir * t;
+
+            // Project point onto cylinder axis to check if it's within the cylinder length
+            let point_on_axis = (point - cylinder_start).dot(axis_normalized);
+
+            // Check if the intersection is within the cylinder bounds
+            if point_on_axis >= 0.0 && point_on_axis <= axis_length {
+                return Some(t);
+            }
+        }
+    }
+
+    None
+}
+
 // Type alias for node mesh (sphere with material)
 #[cfg(feature = "hydrate")]
 type NodeMesh = three_d::Gm<three_d::Mesh, three_d::PhysicalMaterial>;
@@ -279,18 +387,21 @@ async fn initialize_threed_viewport(
     selected_node_id_signal: RwSignal<Option<i64>>,
     selected_item_signal: RwSignal<Option<crate::islands::topology_editor::SelectedItem>>,
     render_fn_storage: Rc<RefCell<Option<Rc<dyn Fn(CameraState)>>>>,
+    nodes_data_storage: Rc<RefCell<Vec<NodeData>>>,
+    connections_data_storage: Rc<RefCell<Vec<ConnectionData>>>,
     tooltip_data: RwSignal<Option<(String, String, f64, f64)>>,
     show_grid: bool,
     show_x_axis: bool,
     show_y_axis: bool,
     show_z_axis: bool,
+    connection_mode: Option<RwSignal<crate::islands::topology_editor::ConnectionMode>>,
+    refetch_trigger: Option<RwSignal<u32>>,
+    current_topology_id: Option<RwSignal<i64>>,
+    skip_event_handlers: bool, // Set to true on refetches to avoid duplicate handlers
 ) -> Result<(), String> {
     use web_sys::WebGl2RenderingContext as GL;
     use three_d::*;
     use std::collections::HashMap;
-
-    web_sys::console::log_1(&"=== Starting viewport initialization ===".into());
-    web_sys::console::log_1(&format!("Topology has {} nodes", topology_data.nodes.len()).into());
 
     // Get WebGL2 context from canvas
     let webgl2_context = canvas
@@ -329,16 +440,13 @@ async fn initialize_threed_viewport(
         // Load each model type
         for (node_type, filename) in model_files {
             let model_url = format!("{}/models/{}", origin, filename);
-            web_sys::console::log_1(&format!("Loading {} GLB model from {}...", node_type, model_url).into());
 
             match load_async(&[model_url.as_str()]).await {
                 Ok(mut loaded) => {
-                    web_sys::console::log_1(&format!("✓ GLB file fetched successfully for {}", node_type).into());
 
                     // Deserialize the GLB file to CPU model
                     match loaded.deserialize::<three_d_asset::Model>(filename) {
                         Ok(cpu_model) => {
-                            web_sys::console::log_1(&format!("✓ {} model deserialized: {} geometries", node_type, cpu_model.geometries.len()).into());
                             node_models.insert(node_type.to_string(), Some(cpu_model));
                         }
                         Err(e) => {
@@ -400,7 +508,6 @@ async fn initialize_threed_viewport(
         if has_model {
             // Render node with loaded 3D model
             let cpu_model = node_models.get(&node_type_key).unwrap().as_ref().unwrap();
-            web_sys::console::log_1(&format!("{} node '{}' - rendering glTF with {} primitives", node.node_type, node.name, cpu_model.geometries.len()).into());
 
             // Process each primitive (sub-mesh) in the model
             for primitive in cpu_model.geometries.iter() {
@@ -451,7 +558,6 @@ async fn initialize_threed_viewport(
                         node_meshes.push((node.id, normal_mesh, selected_mesh));
                     }
                     three_d_asset::geometry::Geometry::Points(_) => {
-                        web_sys::console::log_1(&"Skipping point cloud geometry (not supported)".into());
                     }
                 }
             }
@@ -503,31 +609,54 @@ async fn initialize_threed_viewport(
     // Shared cylinder mesh for all connections (for efficiency)
     let cylinder_cpu_mesh = CpuMesh::cylinder(16);
 
-    // Create connection meshes (lines between nodes)
+    // Create connection meshes (lines between nodes) - both normal and selected versions
     let mut connection_meshes = Vec::new();
+    let mut connections_data = Vec::new();
 
     for conn in &topology_data.connections {
         if let (Some(&start_pos), Some(&end_pos)) = (
             node_positions.get(&conn.source_node_id),
             node_positions.get(&conn.target_node_id),
         ) {
+            // Store connection data for selection (use larger radius for easier clicking)
+            connections_data.push(ConnectionData {
+                id: conn.id,
+                source_pos: start_pos,
+                target_pos: end_pos,
+                radius: 0.15, // Larger than visual radius for easier clicking
+            });
+
             // Determine connection color based on type (fiber = cyan, ethernet = light gray)
-            let connection_color = match conn.connection_type.as_str() {
+            let normal_color = match conn.connection_type.as_str() {
                 "fiber" => Srgba::new(100, 200, 255, 255),    // Bright cyan for fiber
                 "ethernet" => Srgba::new(200, 200, 200, 255), // Light gray for ethernet
                 _ => Srgba::new(180, 180, 180, 255),          // Default gray
             };
 
-            // Use the same helper function as grid/axes for consistent rendering
-            if let Some(connection_mesh) = create_line_cylinder(
+            // Selected color - bright yellow/orange for visibility
+            let selected_color = Srgba::new(255, 200, 0, 255);
+
+            // Create normal and selected meshes
+            let normal_mesh = create_line_cylinder(
                 &context,
                 start_pos,
                 end_pos,
                 0.012, // Very thin thickness for clean, delicate lines
-                connection_color,
+                normal_color,
                 &cylinder_cpu_mesh,
-            ) {
-                connection_meshes.push((conn.id, connection_mesh));
+            );
+
+            let selected_mesh = create_line_cylinder(
+                &context,
+                start_pos,
+                end_pos,
+                0.020, // Slightly thicker when selected for better visibility
+                selected_color,
+                &cylinder_cpu_mesh,
+            );
+
+            if let (Some(normal), Some(selected)) = (normal_mesh, selected_mesh) {
+                connection_meshes.push((conn.id, normal, selected));
             }
         }
     }
@@ -541,11 +670,14 @@ async fn initialize_threed_viewport(
         vec3(-1.0, -1.0, -1.0),
     ));
 
-    // Wrap meshes and data in Rc<RefCell> for render closure
+    // Update storage containers with new data (for event handlers to reference)
+    *nodes_data_storage.borrow_mut() = nodes_data;
+    *connections_data_storage.borrow_mut() = connections_data;
+
+    // Wrap meshes in Rc<RefCell> for render closure
     let node_meshes = Rc::new(RefCell::new(node_meshes));
     let connection_meshes = Rc::new(RefCell::new(connection_meshes));
     let grid_axes_meshes = Rc::new(RefCell::new(grid_axes_meshes)); // RefCell so we can update it
-    let nodes_data = Rc::new(nodes_data);
 
     // Get canvas dimensions
     let canvas_width = canvas.client_width() as u32;
@@ -565,6 +697,7 @@ async fn initialize_threed_viewport(
         let directional = directional.clone();
         let canvas = canvas.clone();
         let selected_node_id_signal = selected_node_id_signal; // Capture signal for render closure
+        let selected_item_signal = selected_item_signal; // Capture signal for connection selection
 
         move |state: CameraState| {
             let width = canvas.client_width() as u32;
@@ -597,9 +730,19 @@ async fn initialize_threed_viewport(
                 target.render(&camera, mesh, &[]);
             }
 
-            // Render connections (ColorMaterial - no lights needed, renders before nodes)
-            for (_conn_id, conn_mesh) in connection_meshes.borrow().iter() {
-                target.render(&camera, conn_mesh, &[]);
+            // Get currently selected item (untracked - we handle reactivity via Effect)
+            let selected_item = selected_item_signal.get_untracked();
+
+            // Render connections (use selected mesh if connection is selected)
+            let connections_to_render = connection_meshes.borrow();
+            for (conn_id, normal_mesh, selected_mesh) in connections_to_render.iter() {
+                let is_selected = matches!(selected_item, Some(crate::islands::topology_editor::SelectedItem::Connection(id)) if id == *conn_id);
+                let mesh_to_render = if is_selected {
+                    selected_mesh
+                } else {
+                    normal_mesh
+                };
+                target.render(&camera, mesh_to_render, &[]);
             }
 
             // Get currently selected node ID (untracked - we handle reactivity via Effect)
@@ -628,15 +771,23 @@ async fn initialize_threed_viewport(
     render_scene(camera_state.get_untracked());
 
     // Set up orbit controls with integrated click handler and tooltip
-    setup_orbit_controls(
-        canvas,
-        camera_state,
-        render_scene.clone(),
-        Some(nodes_data),
-        selected_node_id_signal,
-        selected_item_signal,
-        tooltip_data,
-    )?;
+    // ONLY on first initialization - skip on refetches to avoid duplicate handlers
+    if !skip_event_handlers {
+        setup_orbit_controls(
+            canvas,
+            camera_state,
+            render_fn_storage.clone(), // Pass storage so handlers always use latest render function
+            nodes_data_storage.clone(), // Pass storage so handlers always reference latest data
+            connections_data_storage.clone(), // Pass storage so handlers always reference latest data
+            selected_node_id_signal,
+            selected_item_signal,
+            tooltip_data,
+            connection_mode,
+            refetch_trigger,
+            current_topology_id,
+        )?;
+    } else {
+    }
 
     Ok(())
 }
@@ -650,6 +801,9 @@ fn initialize_threed_viewport_test(
     selected_item_signal: RwSignal<Option<crate::islands::topology_editor::SelectedItem>>,
     render_fn_storage: Rc<RefCell<Option<Rc<dyn Fn(CameraState)>>>>,
     tooltip_data: RwSignal<Option<(String, String, f64, f64)>>,
+    connection_mode: Option<RwSignal<crate::islands::topology_editor::ConnectionMode>>,
+    refetch_trigger: Option<RwSignal<u32>>,
+    current_topology_id: Option<RwSignal<i64>>,
 ) -> Result<(), String> {
     use web_sys::WebGl2RenderingContext as GL;
     use three_d::*;
@@ -746,8 +900,10 @@ fn initialize_threed_viewport_test(
     // Initial render
     render_scene(camera_state.get_untracked());
 
-    // Set up mouse drag for orbit (no node selection for test scene)
-    setup_orbit_controls(canvas, camera_state, render_scene.clone(), None, selected_node_id_signal, selected_item_signal, tooltip_data)?;
+    // Set up mouse drag for orbit (no node selection for test scene - use empty storage)
+    let empty_nodes = Rc::new(RefCell::new(Vec::new()));
+    let empty_connections = Rc::new(RefCell::new(Vec::new()));
+    setup_orbit_controls(canvas, camera_state, render_fn_storage.clone(), empty_nodes, empty_connections, selected_node_id_signal, selected_item_signal, tooltip_data, connection_mode, refetch_trigger, current_topology_id)?;
 
     Ok(())
 }
@@ -757,16 +913,24 @@ fn initialize_threed_viewport_test(
 fn setup_orbit_controls(
     canvas: &web_sys::HtmlCanvasElement,
     camera_state: RwSignal<CameraState>,
-    render_scene: Rc<dyn Fn(CameraState)>,
-    nodes_data: Option<Rc<Vec<NodeData>>>,
+    render_fn_storage: Rc<RefCell<Option<Rc<dyn Fn(CameraState)>>>>,
+    nodes_data: Rc<RefCell<Vec<NodeData>>>,
+    connections_data: Rc<RefCell<Vec<ConnectionData>>>,
     selected_node_id_signal: RwSignal<Option<i64>>,
     selected_item_signal: RwSignal<Option<crate::islands::topology_editor::SelectedItem>>,
     tooltip_data: RwSignal<Option<(String, String, f64, f64)>>,
+    connection_mode: Option<RwSignal<crate::islands::topology_editor::ConnectionMode>>,
+    refetch_trigger: Option<RwSignal<u32>>,
+    current_topology_id: Option<RwSignal<i64>>,
 ) -> Result<(), String> {
     use web_sys::{MouseEvent, WheelEvent};
     use three_d::*;
 
     use std::sync::{Arc, Mutex};
+
+    // Generate unique handler ID for debugging
+    static HANDLER_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let handler_id = HANDLER_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
     let is_dragging = Rc::new(RefCell::new(false));
     let last_mouse_pos = Rc::new(RefCell::new((0.0, 0.0)));
@@ -811,14 +975,16 @@ fn setup_orbit_controls(
         let total_mouse_movement = total_mouse_movement.clone();
         let canvas_clone = canvas.clone();
         let nodes_data = nodes_data.clone(); // Clone for closure
+        let connections_data = connections_data.clone(); // Clone for closure
         let is_disposed = is_disposed.clone(); // Clone for disposal check
         let camera_state_snapshot = camera_state_snapshot.clone();
-        let render_scene = render_scene.clone(); // Clone for re-rendering on selection
+        let render_fn_storage = render_fn_storage.clone(); // Clone storage to always use latest render function
 
         let mouseup = leptos::wasm_bindgen::closure::Closure::wrap(Box::new(move |e: MouseEvent| {
             let was_dragging = *is_dragging.borrow();
             *is_dragging.borrow_mut() = false;
             canvas_clone.set_attribute("style", "cursor: pointer; border: 1px solid #ccc; display: block; background-color: #1a1a1a;").ok();
+
 
             // If total movement is very small, treat as a click for node selection
             let movement = *total_mouse_movement.borrow();
@@ -828,9 +994,9 @@ fn setup_orbit_controls(
                     return;
                 }
 
-                // Perform node selection if we have the data
-                if let Some(nodes) = nodes_data.as_ref()
+                // Perform node selection using stored data
                 {
+                    let nodes = nodes_data.borrow(); // Borrow from storage
                     let rect = canvas_clone.get_bounding_client_rect();
                     let x = e.client_x() as f64 - rect.left();
                     let y = e.client_y() as f64 - rect.top();
@@ -888,16 +1054,136 @@ fn setup_orbit_controls(
                         }
                     }
 
-                    // Update the selection signals (guard against disposal)
+                    // Handle node click based on connection mode
                     let selected_id = closest_node.map(|(id, _)| id);
 
+                    // Check connection mode (if available)
+                    let current_mode = if let Some(mode_signal) = connection_mode {
+                        if !*is_disposed.lock().unwrap() {
+                            Some(mode_signal.get_untracked())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+
                     if !*is_disposed.lock().unwrap() {
-                        selected_node_id_signal.set(selected_id);
-                        selected_item_signal.set(selected_id.map(crate::islands::topology_editor::SelectedItem::Node));
+                        match current_mode {
+                            Some(crate::islands::topology_editor::ConnectionMode::Disabled) | None => {
+                                // Normal selection mode - check nodes first, then connections
+                                if selected_id.is_some() {
+                                    // Node was clicked
+                                    selected_node_id_signal.set(selected_id);
+                                    selected_item_signal.set(selected_id.map(crate::islands::topology_editor::SelectedItem::Node));
+                                } else {
+                                    // No node clicked - check for connection clicks using stored data
+                                    let connections = connections_data.borrow();
+                                    let mut closest_connection: Option<(i64, f32)> = None;
+
+                                    for conn in connections.iter() {
+                                        if let Some(t) = ray_cylinder_intersection(
+                                            eye,
+                                            ray_dir,
+                                            conn.source_pos,
+                                            conn.target_pos,
+                                            conn.radius,
+                                        ) {
+                                            match closest_connection {
+                                                None => closest_connection = Some((conn.id, t)),
+                                                Some((_, prev_t)) if t < prev_t => closest_connection = Some((conn.id, t)),
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+
+                                    if let Some((conn_id, _)) = closest_connection {
+                                        // Connection was clicked
+                                        selected_node_id_signal.set(None);
+                                        selected_item_signal.set(Some(crate::islands::topology_editor::SelectedItem::Connection(conn_id)));
+                                    } else {
+                                        // Empty space clicked - deselect
+                                        selected_node_id_signal.set(None);
+                                        selected_item_signal.set(None);
+                                    }
+                                }
+                            }
+                            Some(crate::islands::topology_editor::ConnectionMode::SelectingFirstNode) => {
+                                // First node selected - transition to selecting second node
+                                if let Some(node_id) = selected_id {
+                                    if let Some(mode_signal) = connection_mode {
+                                        mode_signal.set(crate::islands::topology_editor::ConnectionMode::SelectingSecondNode {
+                                            first_node_id: node_id,
+                                        });
+                                    } else {
+                                        web_sys::console::error_1(&"  ERROR: connection_mode is None!".into());
+                                    }
+                                    // Also update selection to show which node was picked
+                                    selected_node_id_signal.set(selected_id);
+                                    selected_item_signal.set(selected_id.map(crate::islands::topology_editor::SelectedItem::Node));
+                                } else {
+                                    // Clicked empty space - deselect to ensure render happens
+                                    selected_node_id_signal.set(None);
+                                    selected_item_signal.set(None);
+                                }
+                            }
+                            Some(crate::islands::topology_editor::ConnectionMode::SelectingSecondNode { first_node_id }) => {
+                                // Second node selected - create connection
+                                if let Some(second_node_id) = selected_id {
+
+                                    // Create connection via server function
+                                    if let (Some(mode_signal), Some(trigger), Some(topo_id_signal)) = (connection_mode, refetch_trigger, current_topology_id) {
+                                        let topology_id = topo_id_signal.get_untracked();
+
+                                        // Spawn async task to create connection
+                                        wasm_bindgen_futures::spawn_local(async move {
+                                            use crate::api::create_connection;
+                                            use crate::models::CreateConnection;
+
+                                            let data = CreateConnection {
+                                                topology_id,
+                                                source_node_id: first_node_id,
+                                                target_node_id: second_node_id,
+                                                connection_type: Some("ethernet".to_string()),
+                                                bandwidth_mbps: Some(1000),
+                                                latency_ms: Some(1.0),
+                                                status: Some("active".to_string()),
+                                                metadata: None,
+                                            };
+
+                                            match create_connection(data).await {
+                                                Ok(conn) => {
+                                                    // Stay in connection mode - reset to SelectingFirstNode so user can create more connections
+                                                    mode_signal.set(crate::islands::topology_editor::ConnectionMode::SelectingFirstNode);
+                                                    // Trigger viewport refetch to show new connection
+                                                    trigger.update(|v| *v += 1);
+                                                }
+                                                Err(e) => {
+                                                    web_sys::console::error_1(&format!("✗ Failed to create connection: {}", e).into());
+                                                    // On error, also go back to SelectingFirstNode to allow retry
+                                                    mode_signal.set(crate::islands::topology_editor::ConnectionMode::SelectingFirstNode);
+                                                }
+                                            }
+                                        });
+                                    }
+                                } else {
+                                    // Clicked empty space in SelectingSecondNode - cancel and go back to first node selection
+                                    if let Some(mode_signal) = connection_mode {
+                                        mode_signal.set(crate::islands::topology_editor::ConnectionMode::SelectingFirstNode);
+                                    }
+                                    // Deselect to trigger re-render
+                                    selected_node_id_signal.set(None);
+                                    selected_item_signal.set(None);
+                                }
+                            }
+                        }
                     }
 
-                    // Trigger re-render immediately to show selection (use snapshot)
-                    render_scene(*camera_state_snapshot.lock().unwrap());
+                    // Trigger re-render immediately to show selection (use snapshot, borrow latest render function)
+                    if let Some(render_fn) = render_fn_storage.borrow().as_ref() {
+                        render_fn(*camera_state_snapshot.lock().unwrap());
+                    }
                 }
             }
         }) as Box<dyn FnMut(_)>);
@@ -916,7 +1202,7 @@ fn setup_orbit_controls(
         let total_mouse_movement = total_mouse_movement.clone();
         let is_disposed = is_disposed.clone(); // Clone for disposal check
         let camera_state_snapshot = camera_state_snapshot.clone();
-        let render_scene = render_scene.clone();
+        let render_fn_storage = render_fn_storage.clone(); // Clone storage to always use latest render function
         let nodes_data = nodes_data.clone();
         let canvas_clone = canvas.clone();
 
@@ -947,7 +1233,10 @@ fn setup_orbit_controls(
                     camera_state.set(*state);
                 }
 
-                render_scene(*state);
+                // Render using latest render function from storage
+                if let Some(render_fn) = render_fn_storage.borrow().as_ref() {
+                    render_fn(*state);
+                }
                 drop(state); // Release lock
 
                 *last_mouse_pos.borrow_mut() = current_pos;
@@ -958,7 +1247,9 @@ fn setup_orbit_controls(
                 }
             } else {
                 // Not dragging - check for hover and update tooltip
-                if let Some(nodes) = nodes_data.as_ref() {
+                // Borrow from storage to get latest node data
+                {
+                    let nodes = nodes_data.borrow();
                     let rect = canvas_clone.get_bounding_client_rect();
                     let x = e.client_x() as f64 - rect.left();
                     let y = e.client_y() as f64 - rect.top();
@@ -1017,8 +1308,6 @@ fn setup_orbit_controls(
                             tooltip_data.set(None);
                         }
                     }
-                } else if !*is_disposed.lock().unwrap() {
-                    tooltip_data.set(None);
                 }
             }
         }) as Box<dyn FnMut(_)>);
@@ -1034,7 +1323,7 @@ fn setup_orbit_controls(
     {
         let is_disposed = is_disposed.clone(); // Clone for disposal check
         let camera_state_snapshot = camera_state_snapshot.clone();
-        let render_scene = render_scene.clone();
+        let render_fn_storage = render_fn_storage.clone(); // Clone storage to always use latest render function
 
         let wheel = leptos::wasm_bindgen::closure::Closure::wrap(Box::new(move |e: WheelEvent| {
             e.prevent_default();
@@ -1053,7 +1342,10 @@ fn setup_orbit_controls(
                 camera_state.set(*state);
             }
 
-            render_scene(*state);
+            // Render using latest render function from storage
+            if let Some(render_fn) = render_fn_storage.borrow().as_ref() {
+                render_fn(*state);
+            }
         }) as Box<dyn FnMut(_)>);
 
         canvas

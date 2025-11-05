@@ -703,49 +703,53 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                     </div>
                                 </div>
 
-                                <div class="pt-4 border-t border-gray-700 space-y-3">
-                                    <button
-                                        class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                        on:click=move |_| { save_action.dispatch(()); }
-                                        disabled=move || save_action.pending().get()
-                                    >
-                                        {move || if save_action.pending().get() {
-                                            "Saving..."
-                                        } else {
-                                            "Save Changes"
-                                        }}
-                                    </button>
+                                <div class="pt-4 border-t border-gray-700">
+                                    // Save button group
+                                    <div class="mb-4">
+                                        <button
+                                            class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                            on:click=move |_| { save_action.dispatch(()); }
+                                            disabled=move || save_action.pending().get()
+                                        >
+                                            {move || if save_action.pending().get() {
+                                                "Saving..."
+                                            } else {
+                                                "Save Changes"
+                                            }}
+                                        </button>
 
-                                    // Show save result
-                                    {move || {
-                                        save_action.value().get().map(|result| {
-                                            match result {
-                                                Ok(_) => view! {
-                                                    <div class="mt-2 text-xs text-green-400 text-center">
-                                                        "✓ Saved successfully"
-                                                    </div>
-                                                }.into_any(),
-                                                Err(e) => view! {
-                                                    <div class="mt-2 text-xs text-red-400 text-center">
-                                                        {format!("Error: {}", e)}
-                                                    </div>
-                                                }.into_any(),
-                                            }
-                                        })
-                                    }}
-
-                                    // Delete button
-                                    <button
-                                        class="w-full px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed mt-4"
-                                        on:click=move |_| { delete_action.dispatch(()); }
-                                        disabled=move || delete_action.pending().get()
-                                    >
-                                        {move || if delete_action.pending().get() {
-                                            "Deleting..."
-                                        } else {
-                                            "Delete Node"
+                                        // Show save result
+                                        {move || {
+                                            save_action.value().get().map(|result| {
+                                                match result {
+                                                    Ok(_) => view! {
+                                                        <div class="mt-2 text-xs text-green-400 text-center">
+                                                            "✓ Saved successfully"
+                                                        </div>
+                                                    }.into_any(),
+                                                    Err(e) => view! {
+                                                        <div class="mt-2 text-xs text-red-400 text-center">
+                                                            {format!("Error: {}", e)}
+                                                        </div>
+                                                    }.into_any(),
+                                                }
+                                            })
                                         }}
-                                    </button>
+                                    </div>
+
+                                    // Delete button group
+                                    <div>
+                                        <button
+                                            class="w-full px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                            on:click=move |_| { delete_action.dispatch(()); }
+                                            disabled=move || delete_action.pending().get()
+                                        >
+                                            {move || if delete_action.pending().get() {
+                                                "Deleting..."
+                                            } else {
+                                                "Delete Node"
+                                            }}
+                                        </button>
 
                                     // Show delete result
                                     {move || {
@@ -764,6 +768,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                             }
                                         })
                                     }}
+                                    </div>
                                 </div>
                             </div>
                         }.into_any(),
@@ -938,49 +943,53 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
                                     </select>
                                 </div>
 
-                                <div class="pt-4 border-t border-gray-700 space-y-3">
-                                    <button
-                                        class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                        on:click=move |_| { save_action.dispatch(()); }
-                                        disabled=move || save_action.pending().get()
-                                    >
-                                        {move || if save_action.pending().get() {
-                                            "Saving..."
-                                        } else {
-                                            "Save Changes"
-                                        }}
-                                    </button>
+                                <div class="pt-4 border-t border-gray-700">
+                                    // Save button group
+                                    <div class="mb-4">
+                                        <button
+                                            class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                            on:click=move |_| { save_action.dispatch(()); }
+                                            disabled=move || save_action.pending().get()
+                                        >
+                                            {move || if save_action.pending().get() {
+                                                "Saving..."
+                                            } else {
+                                                "Save Changes"
+                                            }}
+                                        </button>
 
-                                    // Show save result
-                                    {move || {
-                                        save_action.value().get().map(|result| {
-                                            match result {
-                                                Ok(_) => view! {
-                                                    <div class="mt-2 text-xs text-green-400 text-center">
-                                                        "✓ Saved successfully"
-                                                    </div>
-                                                }.into_any(),
-                                                Err(e) => view! {
-                                                    <div class="mt-2 text-xs text-red-400 text-center">
-                                                        {format!("Error: {}", e)}
-                                                    </div>
-                                                }.into_any(),
-                                            }
-                                        })
-                                    }}
-
-                                    // Delete button
-                                    <button
-                                        class="w-full px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed mt-4"
-                                        on:click=move |_| { delete_action.dispatch(()); }
-                                        disabled=move || delete_action.pending().get()
-                                    >
-                                        {move || if delete_action.pending().get() {
-                                            "Deleting..."
-                                        } else {
-                                            "Delete Connection"
+                                        // Show save result
+                                        {move || {
+                                            save_action.value().get().map(|result| {
+                                                match result {
+                                                    Ok(_) => view! {
+                                                        <div class="mt-2 text-xs text-green-400 text-center">
+                                                            "✓ Saved successfully"
+                                                        </div>
+                                                    }.into_any(),
+                                                    Err(e) => view! {
+                                                        <div class="mt-2 text-xs text-red-400 text-center">
+                                                            {format!("Error: {}", e)}
+                                                        </div>
+                                                    }.into_any(),
+                                                }
+                                            })
                                         }}
-                                    </button>
+                                    </div>
+
+                                    // Delete button group
+                                    <div>
+                                        <button
+                                            class="w-full px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                            on:click=move |_| { delete_action.dispatch(()); }
+                                            disabled=move || delete_action.pending().get()
+                                        >
+                                            {move || if delete_action.pending().get() {
+                                                "Deleting..."
+                                            } else {
+                                                "Delete Connection"
+                                            }}
+                                        </button>
 
                                     // Show delete result
                                     {move || {
@@ -999,6 +1008,7 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
                                             }
                                         })
                                     }}
+                                    </div>
                                 </div>
                             </div>
                         }.into_any(),

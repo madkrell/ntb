@@ -1,12 +1,12 @@
 # Network Topology Visualizer - Claude Development Notes
 
 ## Project Status
-**Current Phase:** Phase 4 IN PROGRESS - Most Features Complete! ✅
+**Current Phase:** Phase 4 NEARLY COMPLETE - All Priority 1 Features Done! ✅
 **Last Updated:** 2025-11-05
 **Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete
 **Architecture:** Regular Leptos Components (Islands removed - see notes below)
 
-### Phase 4 - IN PROGRESS
+### Phase 4 - NEARLY COMPLETE ✅
 
 **✅ COMPLETED (Priority 1 - Core 3D Features):**
 1. ✅ **3D node rotation controls** - Full X/Y/Z rotation with database storage, UI sliders, and viewport rendering
@@ -18,17 +18,23 @@
    - ViewportVisibility struct pattern prevents context collision for same-typed signals
    - Independent toggles for Grid Floor, X Axis (Red), Y Axis (Green), Z Axis (Blue)
    - Z-axis extremely transparent (alpha=25), all axes thinned to 0.006
+7. ✅ **Connection creation mode** (2025-11-05) - Click two nodes to create connection between them
+   - "Connect Nodes" button with visual feedback (button color changes)
+   - Three-state mode: Disabled → SelectingFirstNode → SelectingSecondNode
+   - Creates connections via create_connection() server function
+   - Deselects on second node click to trigger viewport refresh
 
 **✅ COMPLETED (Priority 2 - Visual Polish):**
-7. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
-8. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc.
-9. ✅ **Connection rendering improvements** (2025-11-05) - Thin cylindrical lines (0.012 thickness) using ColorMaterial
-
-**⏳ REMAINING (Priority 1 - Core 3D Features):**
-10. ⏳ **Connection creation mode** - Click two nodes to create connection between them
+8. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
+9. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc.
+10. ✅ **Connection rendering improvements** (2025-11-05) - Thin cylindrical lines (0.012 thickness) using ColorMaterial
+11. ✅ **Connection selection** (2025-11-05) - Click to select connections in viewport
+    - Ray-cylinder intersection algorithm for accurate 3D picking
+    - Visual feedback with yellow/orange highlighting for selected connections
+    - Properties panel shows connection details (type, bandwidth, status)
+    - Critical fix: Mutable storage pattern for event handlers to access fresh data
 
 **⏳ REMAINING (Priority 2 - Visual Polish):**
-11. ⏳ **Connection selection** - Click to select connections in viewport
 12. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
 13. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
 
@@ -348,7 +354,90 @@ wasm-bindgen = { version = "=0.2.101", optional = true }
 use wasm_bindgen::JsCast;
 ```
 
-### 7. Disposed Reactive Signals in Event Handlers
+### 7. Event Handler Stale Closures and Duplicate Handlers (CRITICAL - 2025-11-05)
+**Issue:** After refetch, newly created data (nodes/connections) couldn't be selected and disappeared on viewport interaction
+**Root Cause:** Event handlers captured data and render functions at initialization time, never updated after refetches
+**Symptoms:**
+- Multiple event handlers firing for same click (duplicate handlers created on each refetch)
+- Event handlers referencing old data even after fresh data loaded
+- Render function not updating when called from event handlers
+
+**Solution - Three-Part Fix:**
+
+**Part 1: Prevent Duplicate Event Handlers**
+```rust
+// Track initialization state
+let already_initialized = RwSignal::new(false);
+
+// Only set up handlers once
+if !already_initialized.get_untracked() {
+    initialize_threed_viewport(
+        /* ...params */
+        true  // skip_event_handlers = false on first call
+    )?;
+    already_initialized.set(true);
+} else {
+    initialize_threed_viewport(
+        /* ...params */
+        true  // skip_event_handlers = true on refetch
+    )?;
+}
+```
+
+**Part 2: Mutable Storage for Data**
+```rust
+// Component level: Create mutable storage containers
+#[cfg(feature = "hydrate")]
+let nodes_data_storage: Rc<RefCell<Vec<NodeData>>> = Rc::new(RefCell::new(Vec::new()));
+#[cfg(feature = "hydrate")]
+let connections_data_storage: Rc<RefCell<Vec<ConnectionData>>> = Rc::new(RefCell::new(Vec::new()));
+
+// Update storage on each initialization
+*nodes_data_storage.borrow_mut() = nodes_data;
+*connections_data_storage.borrow_mut() = connections_data;
+
+// Pass storage to event handler setup
+setup_orbit_controls(
+    &canvas,
+    camera_state,
+    render_fn_storage,
+    nodes_data_storage,  // Pass storage, not captured data
+    connections_data_storage,
+    /* ...other params */
+)?;
+
+// Event handlers borrow from storage on each interaction
+let nodes_borrow = nodes_data.borrow();
+let connections_borrow = connections_data.borrow();
+// ... use borrowed data ...
+```
+
+**Part 3: Render Function Storage**
+```rust
+// Component level: Create render function storage
+let render_fn_storage: Rc<RefCell<Option<Rc<dyn Fn(CameraState)>>>>
+    = Rc::new(RefCell::new(None));
+
+// Store render function after creation
+*render_fn_storage.borrow_mut() = Some(render_scene.clone());
+
+// Event handlers borrow render function on each call
+if let Some(render_fn) = render_fn_storage.borrow().as_ref() {
+    render_fn(*camera_state_snapshot.lock().unwrap());
+}
+```
+
+**Key Lessons:**
+1. **Event handlers capture at creation time** - They won't automatically see updated data
+2. **Use Rc<RefCell<>> for mutable shared data** - Allows event handlers to borrow fresh data
+3. **Store render functions in RefCell** - Enables updating the function reference after initialization
+4. **Track initialization state** - Prevents duplicate event handler setup on refetch
+5. **Deselect triggers Effects** - Clicking empty space to deselect forces viewport re-render with latest data
+
+**Why This Matters:**
+Without this pattern, event handlers become "frozen in time" at their creation, referencing stale data and old render functions even after the component refetches fresh data from the server.
+
+### 8. Disposed Reactive Signals in Event Handlers
 **Issue:** Event handlers with `.forget()` panic when accessing reactive signals after component is disposed
 ```
 panicked at reactive_graph-0.2.9/src/traits.rs:361:29:
