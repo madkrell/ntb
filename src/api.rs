@@ -2,6 +2,7 @@ use crate::models::{
     Topology, CreateTopology, TopologyFull,
     Node, CreateNode, UpdateNode,
     Connection, CreateConnection, UpdateConnection,
+    UISettings, UpdateUISettings,
 };
 use leptos::prelude::*;
 
@@ -294,34 +295,34 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
         // Simpler approach: just update all fields that are provided
         query_str.push_str("updated_at = CURRENT_TIMESTAMP");
 
-        if let Some(ref name) = data.name {
+        if data.name.is_some() {
             query_str.push_str(", name = ?");
         }
-        if let Some(ref node_type) = data.node_type {
+        if data.node_type.is_some() {
             query_str.push_str(", node_type = ?");
         }
-        if let Some(ref ip) = data.ip_address {
+        if data.ip_address.is_some() {
             query_str.push_str(", ip_address = ?");
         }
-        if let Some(_) = data.position_x {
+        if data.position_x.is_some() {
             query_str.push_str(", position_x = ?");
         }
-        if let Some(_) = data.position_y {
+        if data.position_y.is_some() {
             query_str.push_str(", position_y = ?");
         }
-        if let Some(_) = data.position_z {
+        if data.position_z.is_some() {
             query_str.push_str(", position_z = ?");
         }
-        if let Some(_) = data.rotation_x {
+        if data.rotation_x.is_some() {
             query_str.push_str(", rotation_x = ?");
         }
-        if let Some(_) = data.rotation_y {
+        if data.rotation_y.is_some() {
             query_str.push_str(", rotation_y = ?");
         }
-        if let Some(_) = data.rotation_z {
+        if data.rotation_z.is_some() {
             query_str.push_str(", rotation_z = ?");
         }
-        if let Some(ref metadata) = data.metadata {
+        if data.metadata.is_some() {
             query_str.push_str(", metadata = ?");
         }
 
@@ -596,6 +597,123 @@ pub async fn delete_connection(id: i64) -> Result<(), ServerFnError> {
             .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
 
         Ok(())
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}
+
+// ============================================================================
+// UI Settings Functions
+// ============================================================================
+
+/// Get UI settings (single row, id=1)
+#[server(GetUISettings, "/api")]
+pub async fn get_ui_settings() -> Result<UISettings, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+
+        let Extension(pool) = extract::<Extension<SqlitePool>>()
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+        let settings = sqlx::query_as::<_, UISettings>(
+            "SELECT id, show_grid, show_x_axis, show_y_axis, show_z_axis,
+                    ambient_intensity, key_light_intensity, fill_light_intensity, rim_light_intensity,
+                    created_at, updated_at
+             FROM ui_settings WHERE id = 1"
+        )
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+        Ok(settings)
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}
+
+/// Update UI settings (only updates provided fields)
+#[server(UpdateUISettingsFn, "/api")]
+pub async fn update_ui_settings(data: UpdateUISettings) -> Result<UISettings, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+
+        let Extension(pool) = extract::<Extension<SqlitePool>>()
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+        // Build dynamic UPDATE query
+        let mut updates = Vec::new();
+        let mut values: Vec<String> = Vec::new();
+
+        if let Some(show_grid) = data.show_grid {
+            updates.push("show_grid = ?");
+            values.push(if show_grid { "1" } else { "0" }.to_string());
+        }
+
+        if let Some(show_x_axis) = data.show_x_axis {
+            updates.push("show_x_axis = ?");
+            values.push(if show_x_axis { "1" } else { "0" }.to_string());
+        }
+
+        if let Some(show_y_axis) = data.show_y_axis {
+            updates.push("show_y_axis = ?");
+            values.push(if show_y_axis { "1" } else { "0" }.to_string());
+        }
+
+        if let Some(show_z_axis) = data.show_z_axis {
+            updates.push("show_z_axis = ?");
+            values.push(if show_z_axis { "1" } else { "0" }.to_string());
+        }
+
+        if let Some(ambient_intensity) = data.ambient_intensity {
+            updates.push("ambient_intensity = ?");
+            values.push(ambient_intensity.to_string());
+        }
+
+        if let Some(key_light_intensity) = data.key_light_intensity {
+            updates.push("key_light_intensity = ?");
+            values.push(key_light_intensity.to_string());
+        }
+
+        if let Some(fill_light_intensity) = data.fill_light_intensity {
+            updates.push("fill_light_intensity = ?");
+            values.push(fill_light_intensity.to_string());
+        }
+
+        if let Some(rim_light_intensity) = data.rim_light_intensity {
+            updates.push("rim_light_intensity = ?");
+            values.push(rim_light_intensity.to_string());
+        }
+
+        if updates.is_empty() {
+            return Err(ServerFnError::new("No fields to update"));
+        }
+
+        let query = format!("UPDATE ui_settings SET {} WHERE id = 1", updates.join(", "));
+
+        let mut query_builder = sqlx::query(&query);
+        for value in &values {
+            query_builder = query_builder.bind(value);
+        }
+
+        query_builder
+            .execute(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+        // Fetch and return updated settings
+        get_ui_settings().await
     }
 
     #[cfg(not(feature = "ssr"))]

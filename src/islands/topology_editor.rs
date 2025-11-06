@@ -1,7 +1,8 @@
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use crate::islands::TopologyViewport;
-use crate::api::{get_node, update_node, get_connection, update_connection, create_node, delete_node, delete_connection, get_topologies, delete_topology, create_connection};
-use crate::models::{UpdateNode, UpdateConnection, CreateNode, CreateConnection};
+use crate::api::{get_node, update_node, get_connection, update_connection, create_node, delete_node, delete_connection, get_topologies, delete_topology, get_ui_settings, update_ui_settings};
+use crate::models::{UpdateNode, UpdateConnection, CreateNode, UpdateUISettings};
 
 /// Connection creation mode state
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -18,6 +19,31 @@ pub struct ViewportVisibility {
     pub show_x_axis: RwSignal<bool>,
     pub show_y_axis: RwSignal<bool>,
     pub show_z_axis: RwSignal<bool>,
+}
+
+/// Lighting settings for the 3D viewport
+#[derive(Clone, Copy)]
+pub struct LightingSettings {
+    pub ambient_intensity: RwSignal<f32>,
+    pub key_light_intensity: RwSignal<f32>,
+    pub fill_light_intensity: RwSignal<f32>,
+    pub rim_light_intensity: RwSignal<f32>,
+}
+
+/// Camera preset for quick navigation
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CameraPreset {
+    Top,
+    Front,
+    Side,
+    Isometric,
+    Reset,
+}
+
+/// Camera control commands
+#[derive(Clone, Copy)]
+pub struct CameraControls {
+    pub preset_trigger: RwSignal<Option<CameraPreset>>,
 }
 
 /// Professional topology editor layout with panels
@@ -38,11 +64,26 @@ pub fn TopologyEditor(
     let connection_mode = RwSignal::new(ConnectionMode::Disabled);
 
     // Grid and axes visibility controls (wrapped in struct to avoid context collision)
+    // Initialize with defaults, will be updated from database
     let viewport_visibility = ViewportVisibility {
         show_grid: RwSignal::new(true),
         show_x_axis: RwSignal::new(true),
         show_y_axis: RwSignal::new(true),
         show_z_axis: RwSignal::new(true),
+    };
+
+    // Lighting settings (wrapped in struct to avoid context collision)
+    // Initialize with defaults, will be updated from database
+    let lighting_settings = LightingSettings {
+        ambient_intensity: RwSignal::new(0.4),
+        key_light_intensity: RwSignal::new(1.5),
+        fill_light_intensity: RwSignal::new(0.6),
+        rim_light_intensity: RwSignal::new(0.3),
+    };
+
+    // Camera controls (wrapped in struct to avoid context collision)
+    let camera_controls = CameraControls {
+        preset_trigger: RwSignal::new(None),
     };
 
     // Provide signals via context so islands can access them
@@ -52,6 +93,88 @@ pub fn TopologyEditor(
     provide_context(current_topology_id);
     provide_context(connection_mode);
     provide_context(viewport_visibility);
+    provide_context(lighting_settings);
+    provide_context(camera_controls);
+
+    // Load UI settings from database and update signals
+    let ui_settings_resource = Resource::new(
+        || (),
+        |_| async move {
+            get_ui_settings().await.ok()
+        }
+    );
+
+    // Effect: Update signals when settings load from database
+    Effect::new(move || {
+        if let Some(Some(settings)) = ui_settings_resource.get() {
+            // Update viewport visibility
+            viewport_visibility.show_grid.set(settings.show_grid);
+            viewport_visibility.show_x_axis.set(settings.show_x_axis);
+            viewport_visibility.show_y_axis.set(settings.show_y_axis);
+            viewport_visibility.show_z_axis.set(settings.show_z_axis);
+
+            // Update lighting settings
+            lighting_settings.ambient_intensity.set(settings.ambient_intensity as f32);
+            lighting_settings.key_light_intensity.set(settings.key_light_intensity as f32);
+            lighting_settings.fill_light_intensity.set(settings.fill_light_intensity as f32);
+            lighting_settings.rim_light_intensity.set(settings.rim_light_intensity as f32);
+
+            // Trigger viewport refresh to apply loaded settings
+            refetch_trigger.update(|v| *v += 1);
+        }
+    });
+
+    // Effect: Save viewport visibility settings when they change
+    Effect::new(move || {
+        // Track all visibility signals
+        let grid = viewport_visibility.show_grid.get();
+        let x = viewport_visibility.show_x_axis.get();
+        let y = viewport_visibility.show_y_axis.get();
+        let z = viewport_visibility.show_z_axis.get();
+
+        // Skip save on initial mount (settings just loaded)
+        if ui_settings_resource.get().is_some() {
+            spawn_local(async move {
+                let data = UpdateUISettings {
+                    show_grid: Some(grid),
+                    show_x_axis: Some(x),
+                    show_y_axis: Some(y),
+                    show_z_axis: Some(z),
+                    ambient_intensity: None,
+                    key_light_intensity: None,
+                    fill_light_intensity: None,
+                    rim_light_intensity: None,
+                };
+                let _ = update_ui_settings(data).await;
+            });
+        }
+    });
+
+    // Effect: Save lighting settings when they change
+    Effect::new(move || {
+        // Track all lighting signals
+        let ambient = lighting_settings.ambient_intensity.get();
+        let key = lighting_settings.key_light_intensity.get();
+        let fill = lighting_settings.fill_light_intensity.get();
+        let rim = lighting_settings.rim_light_intensity.get();
+
+        // Skip save on initial mount (settings just loaded)
+        if ui_settings_resource.get().is_some() {
+            spawn_local(async move {
+                let data = UpdateUISettings {
+                    show_grid: None,
+                    show_x_axis: None,
+                    show_y_axis: None,
+                    show_z_axis: None,
+                    ambient_intensity: Some(ambient as f64),
+                    key_light_intensity: Some(key as f64),
+                    fill_light_intensity: Some(fill as f64),
+                    rim_light_intensity: Some(rim as f64),
+                };
+                let _ = update_ui_settings(data).await;
+            });
+        }
+    });
 
     view! {
         <div class="topology-editor w-full h-screen flex flex-col bg-gray-900 text-gray-100">
@@ -200,11 +323,13 @@ fn DevicePalette() -> impl IntoView {
     let connection_mode = use_context::<RwSignal<ConnectionMode>>().expect("connection_mode context");
 
     // Grid and axes visibility controls - extract from struct
-    let viewport_visibility = use_context::<ViewportVisibility>().expect("viewport_visibility context");
-    let show_grid = viewport_visibility.show_grid;
-    let show_x_axis = viewport_visibility.show_x_axis;
-    let show_y_axis = viewport_visibility.show_y_axis;
-    let show_z_axis = viewport_visibility.show_z_axis;
+    let _viewport_visibility = use_context::<ViewportVisibility>().expect("viewport_visibility context");
+
+    // Lighting settings - extract from struct
+    let _lighting_settings = use_context::<LightingSettings>().expect("lighting_settings context");
+
+    // Camera controls - extract from struct
+    let _camera_controls = use_context::<CameraControls>().expect("camera_controls context");
 
     // Counter for generating unique names and positions
     let node_counter = RwSignal::new(0u32);
@@ -271,15 +396,15 @@ fn DevicePalette() -> impl IntoView {
     });
 
     view! {
-        <div class="w-64 bg-gray-800 border-r border-gray-700 flex flex-col">
-            <div class="h-12 border-b border-gray-700 flex items-center px-4">
+        <div class="w-48 bg-gray-800 border-r border-gray-700 flex flex-col">
+            <div class="h-12 border-b border-gray-700 flex items-center px-3">
                 <h2 class="text-sm font-semibold text-gray-300">"Device Palette"</h2>
             </div>
 
             // Connection creation button
-            <div class="p-3 border-b border-gray-700">
+            <div class="p-2 border-b border-gray-700">
                 <button
-                    class="w-full p-3 rounded border transition flex items-center gap-3 text-left"
+                    class="w-full p-2 rounded border transition flex items-center gap-2 text-left"
                     class:bg-purple-600=move || connection_mode.get() != ConnectionMode::Disabled
                     class:hover:bg-purple-700=move || connection_mode.get() != ConnectionMode::Disabled
                     class:border-purple-500=move || connection_mode.get() != ConnectionMode::Disabled
@@ -295,10 +420,10 @@ fn DevicePalette() -> impl IntoView {
                         }
                     }
                 >
-                    <span class="text-2xl">"🔗"</span>
+                    <span class="text-lg">"🔗"</span>
                     <div class="flex-1">
-                        <div class="text-sm font-medium">"Connect Nodes"</div>
-                        <div class="text-xs text-gray-400">
+                        <div class="text-xs font-medium">"Connect Nodes"</div>
+                        <div class="text-[10px] text-gray-400">
                             {move || {
                                 match connection_mode.get() {
                                     ConnectionMode::Disabled => "Click to activate",
@@ -311,23 +436,23 @@ fn DevicePalette() -> impl IntoView {
                 </button>
             </div>
 
-            <div class="flex-1 overflow-y-auto p-3 space-y-2">
+            <div class="flex-1 overflow-y-auto p-2 space-y-2">
                 {device_types.into_iter().map(|(display_name, icon, type_id, name_prefix)| {
                     let type_id_clone = type_id.to_string();
                     let name_prefix_clone = name_prefix.to_string();
 
                     view! {
                         <button
-                            class="w-full p-3 bg-gray-700 hover:bg-gray-600 rounded border border-gray-600 hover:border-blue-500 transition flex items-center gap-3 text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                            class="w-full p-2 bg-gray-700 hover:bg-gray-600 rounded border border-gray-600 hover:border-blue-500 transition flex items-center gap-2 text-left disabled:opacity-50 disabled:cursor-not-allowed"
                             on:click=move |_| {
                                 create_node_action.dispatch((type_id_clone.clone(), name_prefix_clone.clone()));
                             }
                             disabled=move || create_node_action.pending().get()
                         >
-                            <span class="text-2xl">{icon}</span>
+                            <span class="text-lg">{icon}</span>
                             <div class="flex-1">
-                                <div class="text-sm font-medium">{display_name}</div>
-                                <div class="text-xs text-gray-400">
+                                <div class="text-xs font-medium">{display_name}</div>
+                                <div class="text-[10px] text-gray-400">
                                     {move || {
                                         if create_node_action.pending().get() {
                                             "Adding..."
@@ -343,82 +468,23 @@ fn DevicePalette() -> impl IntoView {
             </div>
 
             // Show feedback for the last action
-            <div class="px-3 py-2 border-t border-gray-700">
+            <div class="px-2 py-2 border-t border-gray-700">
                 {move || {
                     create_node_action.value().get().map(|result| {
                         match result {
                             Ok(node) => view! {
-                                <div class="text-xs text-green-400">
+                                <div class="text-[10px] text-green-400">
                                     {format!("✓ Added: {}", node.name)}
                                 </div>
                             }.into_any(),
                             Err(e) => view! {
-                                <div class="text-xs text-red-400">
+                                <div class="text-[10px] text-red-400">
                                     {format!("Error: {}", e)}
                                 </div>
                             }.into_any(),
                         }
                     })
                 }}
-            </div>
-
-            // Grid and Axes visibility controls
-            <div class="p-3 border-t border-gray-700">
-                <div class="text-xs font-semibold text-gray-300 mb-2">"View Controls"</div>
-                <div class="space-y-2">
-                    <div class="flex items-center gap-2 text-xs text-gray-300">
-                        <button
-                            class="px-2 py-1 rounded text-xs border transition"
-                            class:bg-blue-600=move || show_grid.get()
-                            class:border-blue-500=move || show_grid.get()
-                            class:bg-gray-700=move || !show_grid.get()
-                            class:border-gray-600=move || !show_grid.get()
-                            on:click=move |_| show_grid.update(|v| *v = !*v)
-                        >
-                            "Grid Floor"
-                        </button>
-                    </div>
-                    <div class="flex items-center gap-2 text-xs text-gray-300">
-                        <button
-                            class="px-2 py-1 rounded text-xs border transition"
-                            class:bg-red-600=move || show_x_axis.get()
-                            class:border-red-500=move || show_x_axis.get()
-                            class:bg-gray-700=move || !show_x_axis.get()
-                            class:border-gray-600=move || !show_x_axis.get()
-                            on:click=move |_| show_x_axis.update(|v| *v = !*v)
-                        >
-                            "X Axis (Red)"
-                        </button>
-                    </div>
-                    <div class="flex items-center gap-2 text-xs text-gray-300">
-                        <button
-                            class="px-2 py-1 rounded text-xs border transition"
-                            class:bg-green-600=move || show_y_axis.get()
-                            class:border-green-500=move || show_y_axis.get()
-                            class:bg-gray-700=move || !show_y_axis.get()
-                            class:border-gray-600=move || !show_y_axis.get()
-                            on:click=move |_| show_y_axis.update(|v| *v = !*v)
-                        >
-                            "Y Axis (Green)"
-                        </button>
-                    </div>
-                    <div class="flex items-center gap-2 text-xs text-gray-300">
-                        <button
-                            class="px-2 py-1 rounded text-xs border transition"
-                            class:bg-blue-600=move || show_z_axis.get()
-                            class:border-blue-500=move || show_z_axis.get()
-                            class:bg-gray-700=move || !show_z_axis.get()
-                            class:border-gray-600=move || !show_z_axis.get()
-                            on:click=move |_| show_z_axis.update(|v| *v = !*v)
-                        >
-                            "Z Axis (Blue)"
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="p-3 border-t border-gray-700 text-xs text-gray-400">
-                "Nodes are added in a grid pattern at the origin"
             </div>
         </div>
     }
@@ -429,29 +495,207 @@ fn DevicePalette() -> impl IntoView {
 fn PropertiesPanel(
     selected_item: RwSignal<Option<SelectedItem>>,
 ) -> impl IntoView {
+    // Collapsible section states
+    let view_controls_open = RwSignal::new(false);
+    let lighting_controls_open = RwSignal::new(false);
+
+    // Get context for controls
+    let viewport_visibility = use_context::<ViewportVisibility>().expect("viewport_visibility context");
+    let show_grid = viewport_visibility.show_grid;
+    let show_x_axis = viewport_visibility.show_x_axis;
+    let show_y_axis = viewport_visibility.show_y_axis;
+    let show_z_axis = viewport_visibility.show_z_axis;
+
+    let lighting_settings = use_context::<LightingSettings>().expect("lighting_settings context");
+    let ambient_intensity = lighting_settings.ambient_intensity;
+    let key_light_intensity = lighting_settings.key_light_intensity;
+    let fill_light_intensity = lighting_settings.fill_light_intensity;
+    let rim_light_intensity = lighting_settings.rim_light_intensity;
+
     view! {
-        <div class="w-80 bg-gray-800 border-l border-gray-700 flex flex-col">
-            <div class="h-12 border-b border-gray-700 flex items-center px-4">
+        <div class="w-60 bg-gray-800 border-l border-gray-700 flex flex-col">
+            <div class="h-12 border-b border-gray-700 flex items-center px-3">
                 <h2 class="text-sm font-semibold text-gray-300">"Properties"</h2>
             </div>
 
-            <div class="flex-1 overflow-y-auto p-4">
-                {move || {
-                    match selected_item.get() {
-                        Some(SelectedItem::Node(id)) => view! {
-                            <NodeProperties node_id=id />
-                        }.into_any(),
-                        Some(SelectedItem::Connection(id)) => view! {
-                            <ConnectionProperties connection_id=id />
-                        }.into_any(),
-                        None => view! {
-                            <div class="text-center text-gray-500 mt-8">
-                                <div class="text-4xl mb-2">"📋"</div>
-                                <p class="text-sm">"Select a node or connection to view properties"</p>
-                            </div>
-                        }.into_any(),
-                    }
-                }}
+            <div class="flex-1 overflow-y-auto">
+                // Main properties section (dominant)
+                <div class="p-4 border-b border-gray-700">
+                    {move || {
+                        match selected_item.get() {
+                            Some(SelectedItem::Node(id)) => view! {
+                                <NodeProperties node_id=id />
+                            }.into_any(),
+                            Some(SelectedItem::Connection(id)) => view! {
+                                <ConnectionProperties connection_id=id />
+                            }.into_any(),
+                            None => view! {
+                                <div class="text-center text-gray-500 mt-8">
+                                    <div class="text-4xl mb-2">"📋"</div>
+                                    <p class="text-sm">"Select a node or connection to view properties"</p>
+                                </div>
+                            }.into_any(),
+                        }
+                    }}
+                </div>
+
+                // Collapsible View Controls
+                <div class="border-b border-gray-700">
+                    <button
+                        class="w-full px-3 py-2 text-left text-xs font-semibold text-gray-300 hover:bg-gray-750 flex items-center justify-between"
+                        on:click=move |_| view_controls_open.update(|v| *v = !*v)
+                    >
+                        "View Controls"
+                        <span class="text-gray-500">{move || if view_controls_open.get() { "▼" } else { "▶" }}</span>
+                    </button>
+                    {move || {
+                        if view_controls_open.get() {
+                            view! {
+                                <div class="p-2 space-y-1.5">
+                                    <button
+                                        class="w-full px-2 py-1 rounded text-[10px] border transition text-left"
+                                        class:bg-gray-600=move || show_grid.get()
+                                        class:border-gray-500=move || show_grid.get()
+                                        class:bg-gray-700=move || !show_grid.get()
+                                        class:border-gray-600=move || !show_grid.get()
+                                        on:click=move |_| show_grid.update(|v| *v = !*v)
+                                    >
+                                        "Grid"
+                                    </button>
+                                    <button
+                                        class="w-full px-2 py-1 rounded text-[10px] border transition text-left text-red-300"
+                                        class:bg-red-600=move || show_x_axis.get()
+                                        class:border-red-500=move || show_x_axis.get()
+                                        class:bg-gray-700=move || !show_x_axis.get()
+                                        class:border-gray-600=move || !show_x_axis.get()
+                                        on:click=move |_| show_x_axis.update(|v| *v = !*v)
+                                    >
+                                        "X Axis"
+                                    </button>
+                                    <button
+                                        class="w-full px-2 py-1 rounded text-[10px] border transition text-left text-green-300"
+                                        class:bg-green-600=move || show_y_axis.get()
+                                        class:border-green-500=move || show_y_axis.get()
+                                        class:bg-gray-700=move || !show_y_axis.get()
+                                        class:border-gray-600=move || !show_y_axis.get()
+                                        on:click=move |_| show_y_axis.update(|v| *v = !*v)
+                                    >
+                                        "Y Axis"
+                                    </button>
+                                    <button
+                                        class="w-full px-2 py-1 rounded text-[10px] border transition text-left text-blue-300"
+                                        class:bg-blue-600=move || show_z_axis.get()
+                                        class:border-blue-500=move || show_z_axis.get()
+                                        class:bg-gray-700=move || !show_z_axis.get()
+                                        class:border-gray-600=move || !show_z_axis.get()
+                                        on:click=move |_| show_z_axis.update(|v| *v = !*v)
+                                    >
+                                        "Z Axis"
+                                    </button>
+                                </div>
+                            }.into_any()
+                        } else {
+                            view! { <div></div> }.into_any()
+                        }
+                    }}
+                </div>
+
+                // Collapsible Lighting Controls
+                <div class="border-b border-gray-700">
+                    <button
+                        class="w-full px-3 py-2 text-left text-xs font-semibold text-gray-300 hover:bg-gray-750 flex items-center justify-between"
+                        on:click=move |_| lighting_controls_open.update(|v| *v = !*v)
+                    >
+                        "Lighting Controls"
+                        <span class="text-gray-500">{move || if lighting_controls_open.get() { "▼" } else { "▶" }}</span>
+                    </button>
+                    {move || {
+                        if lighting_controls_open.get() {
+                            view! {
+                                <div class="p-2 space-y-2">
+                                    <div>
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-xs text-gray-400">"Ambient"</label>
+                                            <span class="text-xs text-gray-500">{move || format!("{:.1}", ambient_intensity.get())}</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min="0.0"
+                                            max="1.0"
+                                            step="0.1"
+                                            class="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                                            prop:value=move || ambient_intensity.get().to_string()
+                                            on:input=move |ev| {
+                                                if let Ok(val) = event_target_value(&ev).parse::<f32>() {
+                                                    ambient_intensity.set(val);
+                                                }
+                                            }
+                                        />
+                                    </div>
+                                    <div>
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-xs text-gray-400">"Key Light"</label>
+                                            <span class="text-xs text-gray-500">{move || format!("{:.1}", key_light_intensity.get())}</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min="0.0"
+                                            max="3.0"
+                                            step="0.1"
+                                            class="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                                            prop:value=move || key_light_intensity.get().to_string()
+                                            on:input=move |ev| {
+                                                if let Ok(val) = event_target_value(&ev).parse::<f32>() {
+                                                    key_light_intensity.set(val);
+                                                }
+                                            }
+                                        />
+                                    </div>
+                                    <div>
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-xs text-gray-400">"Fill Light"</label>
+                                            <span class="text-xs text-gray-500">{move || format!("{:.1}", fill_light_intensity.get())}</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min="0.0"
+                                            max="2.0"
+                                            step="0.1"
+                                            class="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                                            prop:value=move || fill_light_intensity.get().to_string()
+                                            on:input=move |ev| {
+                                                if let Ok(val) = event_target_value(&ev).parse::<f32>() {
+                                                    fill_light_intensity.set(val);
+                                                }
+                                            }
+                                        />
+                                    </div>
+                                    <div>
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="text-xs text-gray-400">"Rim Light"</label>
+                                            <span class="text-xs text-gray-500">{move || format!("{:.1}", rim_light_intensity.get())}</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min="0.0"
+                                            max="2.0"
+                                            step="0.1"
+                                            class="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                                            prop:value=move || rim_light_intensity.get().to_string()
+                                            on:input=move |ev| {
+                                                if let Ok(val) = event_target_value(&ev).parse::<f32>() {
+                                                    rim_light_intensity.set(val);
+                                                }
+                                            }
+                                        />
+                                    </div>
+                                </div>
+                            }.into_any()
+                        } else {
+                            view! { <div></div> }.into_any()
+                        }
+                    }}
+                </div>
             </div>
         </div>
     }
@@ -607,12 +851,12 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                     />
                                 </div>
 
-                                <div class="grid grid-cols-3 gap-2">
+                                <div class="grid grid-cols-3 gap-1">
                                     <div>
-                                        <label class="block text-xs font-medium text-red-400 mb-1">"Position X"</label>
+                                        <label class="block text-[10px] font-medium text-red-400 mb-0.5">"Pos X"</label>
                                         <input
                                             type="number"
-                                            class="w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                            class="w-full px-1.5 py-1 bg-gray-700 border border-gray-600 rounded text-xs focus:outline-none focus:border-blue-500"
                                             step="0.1"
                                             prop:value=move || position_x.get()
                                             on:input=move |ev| {
@@ -623,10 +867,10 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                         />
                                     </div>
                                     <div>
-                                        <label class="block text-xs font-medium text-green-400 mb-1">"Position Y"</label>
+                                        <label class="block text-[10px] font-medium text-green-400 mb-0.5">"Pos Y"</label>
                                         <input
                                             type="number"
-                                            class="w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                            class="w-full px-1.5 py-1 bg-gray-700 border border-gray-600 rounded text-xs focus:outline-none focus:border-blue-500"
                                             step="0.1"
                                             prop:value=move || position_y.get()
                                             on:input=move |ev| {
@@ -637,10 +881,10 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                         />
                                     </div>
                                     <div>
-                                        <label class="block text-xs font-medium text-blue-400 mb-1">"Position Z"</label>
+                                        <label class="block text-[10px] font-medium text-blue-400 mb-0.5">"Pos Z"</label>
                                         <input
                                             type="number"
-                                            class="w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                            class="w-full px-1.5 py-1 bg-gray-700 border border-gray-600 rounded text-xs focus:outline-none focus:border-blue-500"
                                             step="0.1"
                                             prop:value=move || position_z.get()
                                             on:input=move |ev| {
@@ -652,12 +896,12 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                     </div>
                                 </div>
 
-                                <div class="grid grid-cols-3 gap-2">
+                                <div class="grid grid-cols-3 gap-1">
                                     <div>
-                                        <label class="block text-xs font-medium text-red-400 mb-1">"Rotation X"</label>
+                                        <label class="block text-[10px] font-medium text-red-400 mb-0.5">"Rot X"</label>
                                         <input
                                             type="number"
-                                            class="w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                            class="w-full px-1.5 py-1 bg-gray-700 border border-gray-600 rounded text-xs focus:outline-none focus:border-blue-500"
                                             step="1"
                                             min="-180"
                                             max="180"
@@ -670,10 +914,10 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                         />
                                     </div>
                                     <div>
-                                        <label class="block text-xs font-medium text-green-400 mb-1">"Rotation Y"</label>
+                                        <label class="block text-[10px] font-medium text-green-400 mb-0.5">"Rot Y"</label>
                                         <input
                                             type="number"
-                                            class="w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                            class="w-full px-1.5 py-1 bg-gray-700 border border-gray-600 rounded text-xs focus:outline-none focus:border-blue-500"
                                             step="1"
                                             min="-180"
                                             max="180"
@@ -686,10 +930,10 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                         />
                                     </div>
                                     <div>
-                                        <label class="block text-xs font-medium text-blue-400 mb-1">"Rotation Z"</label>
+                                        <label class="block text-[10px] font-medium text-blue-400 mb-0.5">"Rot Z"</label>
                                         <input
                                             type="number"
-                                            class="w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                            class="w-full px-1.5 py-1 bg-gray-700 border border-gray-600 rounded text-xs focus:outline-none focus:border-blue-500"
                                             step="1"
                                             min="-180"
                                             max="180"

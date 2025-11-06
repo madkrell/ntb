@@ -28,7 +28,15 @@
       "Bash(cargo build:*)",
       "Bash(sqlite3:*)",
       "WebFetch(domain:docs.rs)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(cargo search:*)",
+      "Bash(pkill:*)",
+      "Bash(cargo check:*)",
+      "Bash(kill:*)",
+      "Bash(xargs:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(grep:*)",
+      "Bash(git reset:*)"
     ],
     "deny": [],
     "ask": []

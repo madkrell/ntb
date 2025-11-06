@@ -1,12 +1,12 @@
 # Network Topology Visualizer - Claude Development Notes
 
 ## Project Status
-**Current Phase:** Phase 4 NEARLY COMPLETE - All Priority 1 Features Done! ✅
-**Last Updated:** 2025-11-05
-**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete
+**Current Phase:** Phase 4 COMPLETE! ✅
+**Last Updated:** 2025-11-06
+**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete
 **Architecture:** Regular Leptos Components (Islands removed - see notes below)
 
-### Phase 4 - NEARLY COMPLETE ✅
+### Phase 4 - COMPLETE! ✅
 
 **✅ COMPLETED (Priority 1 - Core 3D Features):**
 1. ✅ **3D node rotation controls** - Full X/Y/Z rotation with database storage, UI sliders, and viewport rendering
@@ -33,10 +33,35 @@
     - Visual feedback with yellow/orange highlighting for selected connections
     - Properties panel shows connection details (type, bandwidth, status)
     - Critical fix: Mutable storage pattern for event handlers to access fresh data
+12. ✅ **Improved Lighting and Materials** (2025-11-06) - Professional three-point lighting system with PBR materials
+    - Key light (warm, from above-front), Fill light (cool, from side), Rim light (subtle, from behind)
+    - User-adjustable lighting controls with 4 intensity sliders (Ambient, Key, Fill, Rim)
+    - PBR materials with metallic/roughness properties varying by device type
+    - Metallic nodes (router, firewall) vs matte nodes (server, client)
+13. ✅ **Better Camera Controls** (2025-11-06) - Preset views with smooth animations
+    - 4 camera presets: Top, Front, Side, Isometric
+    - Smooth lerp animation with ease-in-out easing (600ms transitions)
+    - Reset button to return to default isometric view
+    - Compact viewport overlay controls (2×2 grid, top-right corner)
+    - Camera state sync enables dragging from preset positions
 
-**⏳ REMAINING (Priority 2 - Visual Polish):**
-12. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
-13. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
+**✅ COMPLETED (Phase 4 Additions - UI/UX Polish):**
+14. ✅ **UI Space Optimization** (2025-11-06) - Maximized viewport space
+    - Device Palette narrowed to 75% (256px → 192px)
+    - Properties Panel narrowed to 75% (320px → 240px)
+    - Position/rotation controls made compact (smaller text, reduced padding)
+    - View Controls color-coded (X=red, Y=green, Z=blue)
+    - Camera controls moved to viewport overlay
+15. ✅ **Settings Persistence** (2025-11-06) - UI state survives page refresh/restart
+    - Database table: ui_settings (single row, id=1)
+    - Persists all View Controls (show_grid, show_x/y/z_axis)
+    - Persists all Lighting Controls (ambient, key, fill, rim intensities)
+    - Auto-save on any control change
+    - Auto-load on application startup
+16. ✅ **Code Quality** (2025-11-06) - Clean, warning-free codebase
+    - All compiler warnings fixed
+    - Clippy-clean code
+    - Proper #[allow(unused_variables)] for false positives in reactive closures
 
 ### Phase 3 - COMPLETE ✅
 - ✅ Professional 3-panel layout (device palette, viewport, properties)

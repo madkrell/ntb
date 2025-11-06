@@ -9,47 +9,37 @@ I'm continuing work on the Network Topology Visualizer project at:
 /Users/mattearp/Documents/CodeProjects/ntv/
 
 Please read these files to understand the current state:
-1. CLAUDE.md - Complete architecture, Phases 1-3 status, all learnings
+1. CLAUDE.md - Complete architecture, all phases, all learnings
 2. This file (SESSION-GUIDE.md) - Quick context
 
-Current Status: Phase 4 NEARLY COMPLETE - All Priority 1 Features Done! ✅
+Current Status: Phase 4 COMPLETE! ✅ Ready for Phase 5 or 6
 
-**✅ Phase 3 Complete:**
-- Professional 3-panel UI layout working perfectly
-- Node selection with visual feedback (yellow highlight)
-- Click empty space to deselect
-- Full CRUD server functions for nodes and connections
-- Properties panel loads and saves real data
-- Real-time viewport updates (no refresh needed!)
-- Suspense components eliminating hydration warnings
+**✅ Phase 4 Complete (2025-11-06):**
+ALL core 3D features, visual polish, UI optimization, and settings persistence implemented:
 
-**✅ Phase 4 Priority 1 - ALL COMPLETE:**
-- 3D node rotation controls (X/Y/Z in degrees with default rotation_x=90°)
-- Model Selection UI (loads correct glTF/GLB for each node type: router, switch, server, firewall, load_balancer, cloud)
-- 3D Grid and Axes (Blender-style reference grid)
-- Topology Switching Control (dropdown selector with 2 sample topologies)
-- **Device Palette buttons functional** (all 6 device types create nodes with grid positioning) ✅
-- **Grid/Axes visibility toggles** - Show/hide grid and individual axes independently ✅
-- **Connection creation mode** (2025-11-05) - Click two nodes to create connection ✅
-  - Three-state mode: Disabled → SelectingFirstNode → SelectingSecondNode
-  - Visual button feedback showing current mode
-  - Creates connections via server function with real-time updates
+**Core 3D Features:**
+- 3D node rotation controls (X/Y/Z in degrees)
+- Model Selection UI (glTF/GLB for all 6 node types)
+- 3D Grid and Axes (Blender-style reference)
+- Topology Switching Control (dropdown selector)
+- Device Palette buttons functional (all 6 types create nodes)
+- Grid/Axes visibility toggles (independent controls)
+- Connection creation mode (click two nodes)
 
-**✅ Phase 4 Priority 2 - MOSTLY COMPLETE:**
-- Node Labels/Tooltips (show node name on hover)
-- Color-Coded Nodes by Type (router=blue, switch=green, server=orange, etc.)
-- **Connection rendering improved** (thin cylindrical lines, 0.012 thickness) ✅
-- **Connection selection** (2025-11-05) - Click to select connections in viewport ✅
-  - Ray-cylinder intersection algorithm for accurate 3D picking
-  - Visual feedback with yellow/orange highlighting
-  - Properties panel shows connection details
-  - **Critical fix:** Mutable storage pattern for event handlers to access fresh data
+**Visual Polish:**
+- Node Labels/Tooltips (hover to see name)
+- Color-Coded Nodes by Type
+- Connection rendering (thin cylinders)
+- Connection selection (ray-cylinder picking)
+- **Improved Lighting** - Three-point lighting (key, fill, rim) with user controls
+- **Camera Controls** - 4 presets (Top, Front, Side, Isometric) with smooth animations
 
-**⏳ Remaining Phase 4 Tasks (Priority 2):**
-- Improved Lighting and Materials
-- Better Camera Controls (presets, bookmarks, reset view)
+**UI/UX Enhancements:**
+- **Space Optimization** - Panels narrowed 25% to maximize viewport
+- **Settings Persistence** - All View/Lighting controls saved to database
+- **Code Quality** - Zero compiler warnings, clippy-clean
 
-Next: Priority 2 polish OR Phase 5 Export features OR Phase 6 Traffic Monitoring
+Next: Phase 5 (Export features) OR Phase 6 (Traffic Monitoring)
 ```
 
 ## 📊 Current Project State
@@ -81,7 +71,7 @@ Next: Priority 2 polish OR Phase 5 Export features OR Phase 6 Traffic Monitoring
 - ✅ Save changes from properties panel with instant viewport updates
 - ✅ Refetch mechanism using context-shared trigger signal
 
-**Phase 4 - Visual Enhancements & 3D Interaction (IN PROGRESS)**
+**Phase 4 - Visual Enhancements & 3D Interaction (Git tag: v0.1.0-phase4-complete) ✅ COMPLETE**
 
 ✅ **COMPLETED - Priority 1 (Core 3D Features):**
 1. ✅ **3D node rotation controls** (2025-11-04)
@@ -100,8 +90,6 @@ Next: Priority 2 polish OR Phase 5 Export features OR Phase 6 Traffic Monitoring
    - 2 sample topologies in database
    - Dynamic loading on selection change
    - Critical fix: Disposed signal access in event handlers using non-reactive snapshot pattern
-
-✅ **COMPLETED - Priority 1 (Core 3D Features):**
 5. ✅ **Enable Device Palette buttons** (2025-11-05) - All 6 device types functional
    - Create nodes via create_node() server function
    - Grid positioning to avoid overlap (5-column layout)
@@ -124,111 +112,77 @@ Next: Priority 2 polish OR Phase 5 Export features OR Phase 6 Traffic Monitoring
     - Visual feedback with yellow/orange highlighting
     - Properties panel shows connection details (type, bandwidth, status)
     - Critical mutable storage pattern fix for event handler data access
+12. ✅ **Improved Lighting and Materials** (2025-11-06) - Three-point lighting system
+    - Key light (warm, from above-front), Fill light (cool, from side), Rim light (subtle, from behind)
+    - User-adjustable lighting controls (4 intensity sliders: Ambient, Key, Fill, Rim)
+    - PBR materials with metallic/roughness properties varying by device type
+    - Metallic nodes (router, firewall) vs matte nodes (server, client)
+13. ✅ **Better Camera Controls** (2025-11-06) - Preset views with smooth animations
+    - 4 camera presets: Top, Front, Side, Isometric
+    - Smooth lerp animation with ease-in-out easing (600ms transitions)
+    - Reset button to return to default isometric view
+    - Compact viewport overlay controls (2×2 grid, top-right corner)
+    - Camera state sync enables dragging from preset positions
 
-⏳ **REMAINING - Priority 2 (Visual Polish):**
-12. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
-13. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
+✅ **COMPLETED - Additional Polish (2025-11-06):**
+14. ✅ **UI Space Optimization** - Maximized viewport space
+    - Device Palette narrowed to 75% (256px → 192px)
+    - Properties Panel narrowed to 75% (320px → 240px)
+    - Position/rotation controls made compact
+    - View Controls color-coded (X=red, Y=green, Z=blue)
+15. ✅ **Settings Persistence** - UI state survives page refresh/restart
+    - Database table: ui_settings
+    - Persists View Controls and Lighting Controls
+    - Auto-save on change, auto-load on startup
+16. ✅ **Code Quality** - Clean, warning-free codebase
+    - All compiler warnings fixed
+    - Clippy-clean code
 
 ### 🔄 What to Work On Next
 
-**Phase 4 - Priority 1: ALL COMPLETE! ✅**
-All core 3D features are now implemented and working:
-- Connection creation mode ✅
-- Device palette buttons ✅
-- Grid/axes visibility controls ✅
-- All other Priority 1 features ✅
+**Phase 4: COMPLETE! ✅** (2025-11-06)
+All Priority 1 and Priority 2 features implemented:
+- All core 3D features ✅
+- All visual polish features ✅
+- UI optimization ✅
+- Settings persistence ✅
+- Code quality improvements ✅
 
-**Phase 4 - Priority 2: MOSTLY COMPLETE! ✅**
-Visual polish features implemented:
-- Connection selection ✅
-- Node labels/tooltips ✅
-- Color-coded nodes ✅
-- Connection rendering improvements ✅
+**Git Tag:** Ready to create `v0.1.0-phase4-complete`
+
+**Next Phase Options:**
+1. **Phase 5 - Export & Finalization** (Recommended next)
+   - Export topology as PNG image
+   - Export/import topology as JSON data
+   - UI polish and optimizations
+   - Documentation
+
+2. **Phase 6 - Traffic Monitoring** (Future)
+   - Real-time traffic visualization
+   - Streaming data via Leptos WebSocket server functions
+   - Animated connections based on throughput
+   - Traffic metrics dashboard
 
 ---
 
 ## 📋 Next Steps (In Order)
 
-### Phase 4 - Priority 2 (Visual Polish)
+### ✅ Phase 4 - COMPLETE (All tasks finished 2025-11-06)
 
-#### Task #12: Improved Lighting and Materials
-**Goal:** Better 3D scene lighting and realistic rendering
+#### ✅ Task #12: Improved Lighting and Materials - COMPLETE
+**Status:** Implemented with three-point lighting system and PBR materials
+- Three-point lighting (key, fill, rim lights)
+- User-adjustable intensity controls (4 sliders)
+- PBR materials with metallic/roughness properties
+- Different material properties per node type
 
-**Current State:**
-- Single ambient light
-- Single directional light
-- Basic PhysicalMaterial on nodes
-- No shadows
-- Flat appearance
-
-**Implementation Steps:**
-1. Add multiple light sources:
-   - Key light (main directional light from above-front)
-   - Fill light (softer light from side, reduces harsh shadows)
-   - Rim/back light (highlights edges, adds depth)
-2. Configure light intensities and colors:
-   - Warm key light (slight yellow tint)
-   - Cool fill light (slight blue tint)
-   - Subtle rim light for edge definition
-3. Improve material properties:
-   - Add metallic/roughness properties to PhysicalMaterial
-   - Different materials for different node types (metal for routers, matte for servers, etc.)
-   - Adjust reflectivity and shininess
-4. Enable shadows:
-   - Configure three-d shadow mapping
-   - Cast shadows from nodes onto grid
-   - Soft shadow edges for realism
-5. Add ambient occlusion if supported:
-   - Darkening in crevices and corners
-   - Enhances depth perception
-
-**Expected Outcome:**
-- More realistic 3D appearance
-- Better depth perception
-- Professional lighting setup
-- Nodes look less flat
-
----
-
-#### Task #13: Better Camera Controls
-**Goal:** Enhanced camera control features for easier navigation
-
-**Current State:**
-- Orbit controls (drag to rotate, scroll to zoom)
-- Manual camera positioning
-- No camera presets or saved views
-
-**Implementation Steps:**
-1. Camera preset buttons in top toolbar:
-   - **Top View** - Look straight down (0, Y, 0 looking at origin)
-   - **Front View** - Look from front (0, 0, Z looking at origin)
-   - **Side View** - Look from side (X, 0, 0 looking at origin)
-   - **Isometric View** - 45° angle (X, Y, Z balanced for isometric)
-   - Smooth animated transitions between presets (not instant jumps)
-2. Reset View button:
-   - Return to default camera position
-   - Default: distance=18, azimuth=π/4, elevation=π/6
-   - Animated transition
-3. Camera bookmarks system:
-   - "Save Bookmark" button - stores current camera position
-   - Dropdown list of saved bookmarks
-   - "Load Bookmark" - animate to saved position
-   - "Delete Bookmark" option
-   - Store in localStorage for persistence across sessions
-4. Camera animation helper:
-   - Smooth lerp/slerp between camera positions
-   - Duration: ~500-800ms for good UX
-   - Easing function (ease-in-out)
-5. UI additions:
-   - Camera controls section in toolbar
-   - Preset buttons with icons
-   - Bookmark management UI
-
-**Expected Outcome:**
-- Quick navigation to standard views
-- Save custom viewpoints
-- Professional camera control UX
-- Easier to showcase topology from specific angles
+#### ✅ Task #13: Better Camera Controls - COMPLETE
+**Status:** Implemented with 4 presets and smooth animations
+- 4 camera presets (Top, Front, Side, Isometric)
+- Smooth lerp animation with ease-in-out easing (600ms)
+- Reset button to default view
+- Compact viewport overlay controls (2×2 grid)
+- Camera state sync for dragging from presets
 
 ---
 

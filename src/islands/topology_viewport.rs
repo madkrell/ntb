@@ -14,11 +14,23 @@ use std::rc::Rc;
 
 /// Camera state for orbit controls
 #[cfg(feature = "hydrate")]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct CameraState {
     distance: f32,
     azimuth: f32,   // horizontal rotation (radians)
     elevation: f32, // vertical rotation (radians)
+}
+
+#[cfg(feature = "hydrate")]
+impl CameraState {
+    /// Linearly interpolate between two camera states
+    fn lerp(&self, other: &CameraState, t: f32) -> CameraState {
+        CameraState {
+            distance: self.distance + (other.distance - self.distance) * t,
+            azimuth: self.azimuth + (other.azimuth - self.azimuth) * t,
+            elevation: self.elevation + (other.elevation - self.elevation) * t,
+        }
+    }
 }
 
 #[cfg(feature = "hydrate")]
@@ -32,6 +44,106 @@ impl Default for CameraState {
     }
 }
 
+/// Get camera state for a given preset
+#[cfg(feature = "hydrate")]
+fn get_camera_preset(preset: crate::islands::topology_editor::CameraPreset) -> CameraState {
+    use std::f32::consts::PI;
+    match preset {
+        crate::islands::topology_editor::CameraPreset::Top => CameraState {
+            distance: 18.0,
+            azimuth: 0.0,
+            elevation: 0.01, // Near zero elevation = looking down Z axis (top view in Z-up system)
+        },
+        crate::islands::topology_editor::CameraPreset::Front => CameraState {
+            distance: 18.0,
+            azimuth: 0.0,
+            elevation: PI / 2.0 - 0.01, // Near 90° elevation = looking along Y axis (front view)
+        },
+        crate::islands::topology_editor::CameraPreset::Side => CameraState {
+            distance: 18.0,
+            azimuth: PI / 2.0, // 90 degrees horizontal rotation
+            elevation: 0.01,   // Same low elevation as top view = horizon level, looking from X axis
+        },
+        crate::islands::topology_editor::CameraPreset::Isometric => CameraState {
+            distance: 18.0,
+            azimuth: PI / 4.0,  // 45 degrees
+            elevation: 0.615,   // ~35.26 degrees (classic isometric angle)
+        },
+        crate::islands::topology_editor::CameraPreset::Reset => CameraState::default(),
+    }
+}
+
+/// Animate camera from start to target position using smooth interpolation
+#[cfg(feature = "hydrate")]
+fn animate_camera(
+    camera_state: RwSignal<CameraState>,
+    start: CameraState,
+    target: CameraState,
+    render_fn: Rc<RefCell<Option<Rc<dyn Fn(CameraState)>>>>,
+) {
+    use wasm_bindgen::prelude::*;
+    use wasm_bindgen::JsCast;
+
+    let duration = 600.0; // Animation duration in milliseconds
+    let start_time = js_sys::Date::now();
+
+    // Create animation closure
+    let animation_closure = Rc::new(RefCell::new(None::<Closure<dyn FnMut()>>));
+    let animation_closure_clone = animation_closure.clone();
+
+    let animate = Closure::wrap(Box::new(move || {
+        let elapsed = js_sys::Date::now() - start_time;
+        let progress = (elapsed / duration).min(1.0) as f32;
+
+        // Ease-in-out function for smooth animation
+        let t = if progress < 0.5 {
+            2.0 * progress * progress
+        } else {
+            -1.0 + (4.0 - 2.0 * progress) * progress
+        };
+
+        // Interpolate camera state
+        let current = start.lerp(&target, t);
+        camera_state.set(current);
+
+        // Render with new camera state
+        if let Some(render) = render_fn.borrow().as_ref() {
+            render(current);
+        }
+
+        // Continue animation if not finished
+        if progress < 1.0 {
+            let window = web_sys::window().expect("no global window");
+            window
+                .request_animation_frame(
+                    animation_closure_clone
+                        .borrow()
+                        .as_ref()
+                        .unwrap()
+                        .as_ref()
+                        .unchecked_ref(),
+                )
+                .expect("should register animation frame");
+        }
+    }) as Box<dyn FnMut()>);
+
+    // Store closure for self-reference
+    *animation_closure.borrow_mut() = Some(animate);
+
+    // Start animation
+    let window = web_sys::window().expect("no global window");
+    window
+        .request_animation_frame(
+            animation_closure
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .as_ref()
+                .unchecked_ref(),
+        )
+        .expect("should register animation frame");
+}
+
 /// 3D Network Topology Viewport using three-d rendering
 #[component]
 pub fn TopologyViewport(
@@ -43,17 +155,32 @@ pub fn TopologyViewport(
 
     // Get shared state from context (provided by TopologyEditor)
     let selected_node_id = use_context::<RwSignal<Option<i64>>>().expect("selected_node_id context");
+    #[allow(unused_variables)]
     let selected_item = use_context::<RwSignal<Option<crate::islands::topology_editor::SelectedItem>>>().expect("selected_item context");
 
     // Get connection mode from context (optional - may not exist)
+    #[allow(unused_variables)]
     let connection_mode = use_context::<RwSignal<crate::islands::topology_editor::ConnectionMode>>();
 
     // Get grid/axes visibility controls from context (optional - may not exist)
     let viewport_visibility = use_context::<crate::islands::topology_editor::ViewportVisibility>();
+    #[allow(unused_variables)]
     let (show_grid, show_x_axis, show_y_axis, show_z_axis) = match viewport_visibility {
         Some(vis) => (vis.show_grid, vis.show_x_axis, vis.show_y_axis, vis.show_z_axis),
         None => (RwSignal::new(true), RwSignal::new(true), RwSignal::new(true), RwSignal::new(true)),
     };
+
+    // Get lighting settings from context (optional - may not exist)
+    let lighting_settings = use_context::<crate::islands::topology_editor::LightingSettings>();
+    #[allow(unused_variables)]
+    let (ambient_intensity, key_light_intensity, fill_light_intensity, rim_light_intensity) = match lighting_settings {
+        Some(settings) => (settings.ambient_intensity, settings.key_light_intensity, settings.fill_light_intensity, settings.rim_light_intensity),
+        None => (RwSignal::new(0.3), RwSignal::new(1.8), RwSignal::new(0.6), RwSignal::new(0.4)),
+    };
+
+    // Get camera controls from context (optional - may not exist)
+    let camera_controls = use_context::<crate::islands::topology_editor::CameraControls>();
+    let preset_trigger = camera_controls.map(|c| c.preset_trigger);
 
     let canvas_ref = NodeRef::<Canvas>::new();
     let error_signal = RwSignal::new(None::<String>);
@@ -63,6 +190,7 @@ pub fn TopologyViewport(
     let tooltip_data = RwSignal::new(None::<(String, String, f64, f64)>);
 
     // Create signal for topology_id (needed for connection creation)
+    #[allow(unused_variables)]
     let current_topology_id = RwSignal::new(topology_id.unwrap_or(1));
 
     // Camera state as signals for reactivity (client-side only)
@@ -84,6 +212,7 @@ pub fn TopologyViewport(
 
     // Fetch topology data if topology_id is provided
     // Also refetch when refetch_trigger changes
+    #[allow(unused_variables)]
     let topology_data = Resource::new(
         move || (topology_id, refetch_trigger.map(|t| t.get())),
         |(id, _trigger)| async move {
@@ -137,6 +266,10 @@ pub fn TopologyViewport(
                     let show_x_val = show_x_axis.get_untracked();
                     let show_y_val = show_y_axis.get_untracked();
                     let show_z_val = show_z_axis.get_untracked();
+                    let ambient_val = ambient_intensity.get_untracked();
+                    let key_light_val = key_light_intensity.get_untracked();
+                    let fill_light_val = fill_light_intensity.get_untracked();
+                    let rim_light_val = rim_light_intensity.get_untracked();
 
                     wasm_bindgen_futures::spawn_local(async move {
                         match initialize_threed_viewport(
@@ -153,6 +286,10 @@ pub fn TopologyViewport(
                             show_x_val,
                             show_y_val,
                             show_z_val,
+                            ambient_val,
+                            key_light_val,
+                            fill_light_val,
+                            rim_light_val,
                             connection_mode,
                             refetch_trigger,
                             Some(current_topology_id),
@@ -239,6 +376,54 @@ pub fn TopologyViewport(
         }
     }
 
+    // Component-level Effect to trigger re-initialization when lighting changes
+    #[cfg(feature = "hydrate")]
+    {
+        if let Some(refetch_trigger) = refetch_trigger {
+            // Track if this is the first run to avoid triggering on initial mount
+            let is_first_run = RwSignal::new(true);
+
+            let _effect = Effect::new(move || {
+                // Track lighting intensity signals
+                let _ambient = ambient_intensity.get();
+                let _key = key_light_intensity.get();
+                let _fill = fill_light_intensity.get();
+                let _rim = rim_light_intensity.get();
+
+                // Skip the first run (initial mount)
+                if is_first_run.get_untracked() {
+                    is_first_run.set(false);
+                    return;
+                }
+
+                // Trigger viewport re-initialization
+                refetch_trigger.update(|v| *v += 1);
+            });
+        }
+    }
+
+    // Component-level Effect to handle camera preset triggers
+    #[cfg(feature = "hydrate")]
+    {
+        if let Some(preset_signal) = preset_trigger {
+            let render_fn = render_fn.clone();
+
+            let _effect = Effect::new(move || {
+                if let Some(preset) = preset_signal.get() {
+                    // Clear trigger
+                    preset_signal.set(None);
+
+                    // Get target camera state from preset
+                    let target_state = get_camera_preset(preset);
+                    let start_state = camera_state.get_untracked();
+
+                    // Animate camera to target position
+                    animate_camera(camera_state, start_state, target_state, render_fn.clone());
+                }
+            });
+        }
+    }
+
     view! {
         <div class="topology-viewport-container w-full h-full flex flex-col relative">
             <canvas
@@ -285,6 +470,57 @@ pub fn TopologyViewport(
                         </div>
                     }
                 })
+            }}
+
+            // Camera controls overlay - top right corner (compact 2x2 grid)
+            {move || {
+                if let Some(trigger) = preset_trigger {
+                    view! {
+                        <div class="absolute top-3 right-3 flex flex-col gap-1" style="z-index: 100;">
+                            // 2x2 grid for preset views
+                            <div class="grid grid-cols-2 gap-1">
+                                <button
+                                    class="w-6 h-6 bg-gray-800 bg-opacity-90 hover:bg-opacity-100 border border-gray-600 hover:border-blue-500 rounded flex items-center justify-center text-[10px] font-bold text-gray-300 hover:text-blue-400 transition shadow-lg"
+                                    on:click=move |_| trigger.set(Some(crate::islands::topology_editor::CameraPreset::Top))
+                                    title="Top View"
+                                >
+                                    "T"
+                                </button>
+                                <button
+                                    class="w-6 h-6 bg-gray-800 bg-opacity-90 hover:bg-opacity-100 border border-gray-600 hover:border-blue-500 rounded flex items-center justify-center text-[10px] font-bold text-gray-300 hover:text-blue-400 transition shadow-lg"
+                                    on:click=move |_| trigger.set(Some(crate::islands::topology_editor::CameraPreset::Front))
+                                    title="Front View"
+                                >
+                                    "F"
+                                </button>
+                                <button
+                                    class="w-6 h-6 bg-gray-800 bg-opacity-90 hover:bg-opacity-100 border border-gray-600 hover:border-blue-500 rounded flex items-center justify-center text-[10px] font-bold text-gray-300 hover:text-blue-400 transition shadow-lg"
+                                    on:click=move |_| trigger.set(Some(crate::islands::topology_editor::CameraPreset::Side))
+                                    title="Side View"
+                                >
+                                    "S"
+                                </button>
+                                <button
+                                    class="w-6 h-6 bg-gray-800 bg-opacity-90 hover:bg-opacity-100 border border-gray-600 hover:border-blue-500 rounded flex items-center justify-center text-[10px] font-bold text-gray-300 hover:text-blue-400 transition shadow-lg"
+                                    on:click=move |_| trigger.set(Some(crate::islands::topology_editor::CameraPreset::Isometric))
+                                    title="Isometric View"
+                                >
+                                    "I"
+                                </button>
+                            </div>
+                            // Reset button - matches width of 2 buttons
+                            <button
+                                class="w-full h-6 bg-blue-700 bg-opacity-90 hover:bg-opacity-100 border border-blue-600 hover:border-blue-500 rounded flex items-center justify-center text-[10px] font-bold text-blue-100 hover:text-white transition shadow-lg"
+                                on:click=move |_| trigger.set(Some(crate::islands::topology_editor::CameraPreset::Reset))
+                                title="Reset View"
+                            >
+                                "↺"
+                            </button>
+                        </div>
+                    }.into_any()
+                } else {
+                    view! { <div></div> }.into_any()
+                }
             }}
         </div>
     }
@@ -394,6 +630,10 @@ async fn initialize_threed_viewport(
     show_x_axis: bool,
     show_y_axis: bool,
     show_z_axis: bool,
+    ambient_intensity: f32,
+    key_light_intensity: f32,
+    fill_light_intensity: f32,
+    rim_light_intensity: f32,
     connection_mode: Option<RwSignal<crate::islands::topology_editor::ConnectionMode>>,
     refetch_trigger: Option<RwSignal<u32>>,
     current_topology_id: Option<RwSignal<i64>>,
@@ -473,10 +713,13 @@ async fn initialize_threed_viewport(
     let sphere_cpu_mesh = CpuMesh::sphere(16);
 
     // Selected material (yellow/orange) - same for all nodes
+    // Use slightly metallic, medium roughness for visual interest
     let selected_material = PhysicalMaterial::new_opaque(
         &context,
         &CpuMaterial {
             albedo: Srgba::new(255, 200, 50, 255), // Yellow/orange for selected nodes
+            metallic: 0.3,
+            roughness: 0.4,
             ..Default::default()
         },
     );
@@ -518,12 +761,15 @@ async fn initialize_threed_viewport(
                         // tri_mesh is a TriMesh, which is the same as CpuMesh!
                         // Just pass it directly to Mesh::new()
 
-                        // Create materials with color based on node type
+                        // Create materials with color and properties based on node type
                         let node_color = get_node_color(&node.node_type);
+                        let (metallic, roughness) = get_node_material_properties(&node.node_type);
                         let normal_material = PhysicalMaterial::new_opaque(
                             &context,
                             &CpuMaterial {
                                 albedo: node_color,
+                                metallic,
+                                roughness,
                                 ..Default::default()
                             },
                         );
@@ -564,12 +810,15 @@ async fn initialize_threed_viewport(
         } else {
             // Render nodes without 3D models as colored spheres (fallback)
             let node_color = get_node_color(&node.node_type);
+            let (metallic, roughness) = get_node_material_properties(&node.node_type);
 
-            // Create material for this node type
+            // Create material for this node type with PBR properties
             let normal_material = PhysicalMaterial::new_opaque(
                 &context,
                 &CpuMaterial {
                     albedo: node_color,
+                    metallic,
+                    roughness,
                     ..Default::default()
                 },
             );
@@ -661,13 +910,35 @@ async fn initialize_threed_viewport(
         }
     }
 
-    // Create lights
-    let ambient = Rc::new(AmbientLight::new(&context, 0.5, Srgba::WHITE));
-    let directional = Rc::new(DirectionalLight::new(
+    // Create professional three-point lighting setup with user-controlled intensities
+    // Ambient light - base illumination
+    let ambient = Rc::new(AmbientLight::new(&context, ambient_intensity, Srgba::WHITE));
+
+    // Key light - Main directional light from above-front with warm tone
+    // Direction: from upper-front-right toward origin
+    let key_light = Rc::new(DirectionalLight::new(
         &context,
-        1.5,
-        Srgba::WHITE,
-        vec3(-1.0, -1.0, -1.0),
+        key_light_intensity,
+        Srgba::new(255, 248, 240, 255), // Warm white (slight yellow tint)
+        vec3(-0.5, -0.3, -1.0),
+    ));
+
+    // Fill light - Softer light from the side with cool tone to reduce harsh shadows
+    // Direction: from left side
+    let fill_light = Rc::new(DirectionalLight::new(
+        &context,
+        fill_light_intensity,
+        Srgba::new(200, 220, 255, 255), // Cool white (slight blue tint)
+        vec3(1.0, 0.5, -0.3),
+    ));
+
+    // Rim/back light - Subtle light from behind to highlight edges and add depth
+    // Direction: from behind and below
+    let rim_light = Rc::new(DirectionalLight::new(
+        &context,
+        rim_light_intensity,
+        Srgba::new(220, 230, 255, 255), // Subtle cool highlight
+        vec3(0.3, 0.8, 0.5),
     ));
 
     // Update storage containers with new data (for event handlers to reference)
@@ -694,7 +965,9 @@ async fn initialize_threed_viewport(
         let connection_meshes = connection_meshes.clone();
         let grid_axes_meshes = grid_axes_meshes.clone();
         let ambient = ambient.clone();
-        let directional = directional.clone();
+        let key_light = key_light.clone();
+        let fill_light = fill_light.clone();
+        let rim_light = rim_light.clone();
         let canvas = canvas.clone();
         let selected_node_id_signal = selected_node_id_signal; // Capture signal for render closure
         let selected_item_signal = selected_item_signal; // Capture signal for connection selection
@@ -756,7 +1029,8 @@ async fn initialize_threed_viewport(
                 } else {
                     normal_mesh
                 };
-                target.render(&camera, mesh_to_render, &[&*ambient, &*directional]);
+                // Render with three-point lighting setup
+                target.render(&camera, mesh_to_render, &[&*ambient, &*key_light, &*fill_light, &*rim_light]);
             }
         }
     };
@@ -786,7 +1060,6 @@ async fn initialize_threed_viewport(
             refetch_trigger,
             current_topology_id,
         )?;
-    } else {
     }
 
     Ok(())
@@ -823,13 +1096,15 @@ fn initialize_threed_viewport_test(
     let context = Context::from_gl_context(std::sync::Arc::new(gl))
         .map_err(|e| format!("Failed to create three-d Context: {:?}", e))?;
 
-    // Create test cube mesh
+    // Create test cube mesh with PBR material
     let cube = Rc::new(RefCell::new(Gm::new(
         Mesh::new(&context, &CpuMesh::cube()),
         PhysicalMaterial::new_opaque(
             &context,
             &CpuMaterial {
                 albedo: Srgba::new(100, 200, 255, 255),
+                metallic: 0.5,
+                roughness: 0.4,
                 ..Default::default()
             },
         ),
@@ -844,13 +1119,25 @@ fn initialize_threed_viewport_test(
     canvas.set_width(canvas_width);
     canvas.set_height(canvas_height);
 
-    // Create lights
-    let ambient = Rc::new(AmbientLight::new(&context, 0.4, Srgba::WHITE));
-    let directional = Rc::new(DirectionalLight::new(
+    // Create professional three-point lighting setup (same as main viewport)
+    let ambient = Rc::new(AmbientLight::new(&context, 0.3, Srgba::WHITE));
+    let key_light = Rc::new(DirectionalLight::new(
         &context,
-        2.0,
-        Srgba::WHITE,
-        vec3(-1.0, -1.0, -1.0),
+        1.8,
+        Srgba::new(255, 248, 240, 255),
+        vec3(-0.5, -0.3, -1.0),
+    ));
+    let fill_light = Rc::new(DirectionalLight::new(
+        &context,
+        0.6,
+        Srgba::new(200, 220, 255, 255),
+        vec3(1.0, 0.5, -0.3),
+    ));
+    let rim_light = Rc::new(DirectionalLight::new(
+        &context,
+        0.4,
+        Srgba::new(220, 230, 255, 255),
+        vec3(0.3, 0.8, 0.5),
     ));
 
     // Render function that uses current camera state
@@ -858,7 +1145,9 @@ fn initialize_threed_viewport_test(
         let context = context.clone();
         let cube = cube.clone();
         let ambient = ambient.clone();
-        let directional = directional.clone();
+        let key_light = key_light.clone();
+        let fill_light = fill_light.clone();
+        let rim_light = rim_light.clone();
         let canvas = canvas.clone();
 
         move |state: CameraState| {
@@ -887,7 +1176,7 @@ fn initialize_threed_viewport_test(
 
             RenderTarget::screen(&context, width, height)
                 .clear(clear_state)
-                .render(&camera, &*cube.borrow(), &[&*ambient, &*directional]);
+                .render(&camera, &*cube.borrow(), &[&*ambient, &*key_light, &*fill_light, &*rim_light]);
         }
     };
 
@@ -930,7 +1219,7 @@ fn setup_orbit_controls(
 
     // Generate unique handler ID for debugging
     static HANDLER_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let handler_id = HANDLER_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let _handler_id = HANDLER_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
     let is_dragging = Rc::new(RefCell::new(false));
     let last_mouse_pos = Rc::new(RefCell::new((0.0, 0.0)));
@@ -952,6 +1241,7 @@ fn setup_orbit_controls(
         let mouse_down_pos = mouse_down_pos.clone();
         let total_mouse_movement = total_mouse_movement.clone();
         let canvas_clone = canvas.clone();
+        let camera_state_snapshot = camera_state_snapshot.clone();
 
         let mousedown = leptos::wasm_bindgen::closure::Closure::wrap(Box::new(move |e: MouseEvent| {
             let pos = (e.client_x() as f32, e.client_y() as f32);
@@ -959,6 +1249,10 @@ fn setup_orbit_controls(
             *last_mouse_pos.borrow_mut() = pos;
             *mouse_down_pos.borrow_mut() = pos; // Remember where we started
             *total_mouse_movement.borrow_mut() = 0.0; // Reset movement counter
+
+            // Sync camera snapshot from current signal value - allows dragging from preset positions
+            *camera_state_snapshot.lock().unwrap() = camera_state.get_untracked();
+
             canvas_clone.set_attribute("style", "cursor: grabbing; border: 1px solid #ccc; display: block; background-color: #1a1a1a;").ok();
         }) as Box<dyn FnMut(_)>);
 
@@ -1153,7 +1447,7 @@ fn setup_orbit_controls(
                                             };
 
                                             match create_connection(data).await {
-                                                Ok(conn) => {
+                                                Ok(_conn) => {
                                                     // Stay in connection mode - reset to SelectingFirstNode so user can create more connections
                                                     mode_signal.set(crate::islands::topology_editor::ConnectionMode::SelectingFirstNode);
                                                     // Trigger viewport refetch to show new connection
@@ -1523,6 +1817,21 @@ fn get_node_color(node_type: &str) -> three_d::Srgba {
         "load_balancer" => Srgba::new(180, 100, 200, 255), // Purple - load distribution
         "host" | "client" => Srgba::new(150, 150, 150, 255), // Gray - generic host
         _ => Srgba::new(120, 120, 120, 255),         // Dark gray - unknown type
+    }
+}
+
+/// Get material properties (metallic, roughness) based on node type
+/// Returns (metallic, roughness) tuple
+#[cfg(feature = "hydrate")]
+fn get_node_material_properties(node_type: &str) -> (f32, f32) {
+    match node_type.to_lowercase().as_str() {
+        "router" => (0.6, 0.3),       // Metallic and smooth - metal enclosure
+        "switch" => (0.5, 0.4),       // Slightly metallic, medium roughness
+        "server" => (0.2, 0.6),       // Less metallic, more matte - server chassis
+        "firewall" => (0.7, 0.2),     // Very metallic and smooth - hardened hardware
+        "load_balancer" => (0.4, 0.5), // Medium metallic, medium roughness
+        "host" | "client" => (0.3, 0.7), // Low metallic, rough - desktop/laptop
+        _ => (0.4, 0.5),              // Default: medium values
     }
 }
 

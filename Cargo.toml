@@ -33,6 +33,7 @@ serde_json = "1"
 wasm-bindgen = { version = "=0.2.101", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
+js-sys = { version = "0.3", optional = true }
 web-sys = { version = "0.3", features = ["HtmlCanvasElement", "WebGl2RenderingContext", "WebGlBuffer", "WebGlProgram", "WebGlShader", "WebGlUniformLocation", "console", "Window", "Location"], optional = true }
 
 # Logging
@@ -50,6 +51,7 @@ hydrate = [
     "dep:console_error_panic_hook",
     "dep:wasm-bindgen",
     "dep:wasm-bindgen-futures",
+    "dep:js-sys",
     "dep:web-sys",
     "dep:three-d",
     "dep:three-d-asset",
