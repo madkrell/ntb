@@ -15,7 +15,7 @@ Please read these files to understand the current state:
 Current Status: Phase 4 COMPLETE! ✅ Ready for Phase 5 or 6
 
 **✅ Phase 4 Complete (2025-11-06):**
-ALL core 3D features, visual polish, UI optimization, and settings persistence implemented:
+ALL core 3D features, visual polish, UI optimization, customization, and settings persistence implemented:
 
 **Core 3D Features:**
 - 3D node rotation controls (X/Y/Z in degrees)
@@ -39,7 +39,13 @@ ALL core 3D features, visual polish, UI optimization, and settings persistence i
 - **Settings Persistence** - All View/Lighting controls saved to database
 - **Code Quality** - Zero compiler warnings, clippy-clean
 
-Next: Phase 5 (Export features) OR Phase 6 (Traffic Monitoring)
+**Export & Customization:**
+- **PNG Export** - High-quality image export with transparency support
+- **Node Scale Control** - Per-node size adjustment (0.1-5.0 range)
+- **Background Color Control** - 6 presets + transparent option for exports
+- **Connection Color Control** - 13 presets + full color palette picker
+
+Next: Phase 5 (More export features, JSON import/export) OR Phase 6 (Traffic Monitoring)
 ```
 
 ## 📊 Current Project State
@@ -137,31 +143,69 @@ Next: Phase 5 (Export features) OR Phase 6 (Traffic Monitoring)
 16. ✅ **Code Quality** - Clean, warning-free codebase
     - All compiler warnings fixed
     - Clippy-clean code
+17. ✅ **PNG Export Functionality** - High-quality image export
+    - Export dropdown menu in toolbar with PNG/JSON options
+    - WebGL2 context with preserveDrawingBuffer enabled
+    - Transparent background support for clean exports
+    - Fixed dropdown z-index for proper overlay visibility
+18. ✅ **Node Scale Control** - Per-node size adjustment
+    - Database migration: 20250106000003_add_node_scale.sql
+    - Properties panel slider (range 0.1-5.0, default 1.0)
+    - Real-time viewport rendering with scale transformation
+    - Applied to both 3D models and fallback spheres
+19. ✅ **Background Color Control** - Customizable viewport background
+    - Extended ViewportVisibility struct with background_color field
+    - 6 preset buttons: Transparent, White, Light, Gray, Dark, Black
+    - Transparent option (None) for PNG exports showing only topology
+    - Black default background (rgb(0,0,0))
+    - Real-time viewport updates via refetch_trigger
+20. ✅ **Connection Color Control** - Customizable link colors
+    - Database migration: 20250107000001_add_connection_color.sql
+    - Properties panel with 13 preset colors
+    - Full color palette picker with HTML5 color input
+    - Bidirectional hex↔RGB conversion
+    - Real-time color rendering in 3D viewport
 
 ### 🔄 What to Work On Next
 
 **Phase 4: COMPLETE! ✅** (2025-11-06)
-All Priority 1 and Priority 2 features implemented:
+All Priority 1 and Priority 2 features implemented + Export & Customization:
 - All core 3D features ✅
 - All visual polish features ✅
 - UI optimization ✅
 - Settings persistence ✅
 - Code quality improvements ✅
+- PNG export with transparency ✅
+- Node scale control ✅
+- Background color control ✅
+- Connection color control ✅
 
 **Git Tag:** Ready to create `v0.1.0-phase4-complete`
 
-**Next Phase Options:**
-1. **Phase 5 - Export & Finalization** (Recommended next)
-   - Export topology as PNG image
-   - Export/import topology as JSON data
-   - UI polish and optimizations
-   - Documentation
+**Recommended Next Steps:**
 
-2. **Phase 6 - Traffic Monitoring** (Future)
-   - Real-time traffic visualization
-   - Streaming data via Leptos WebSocket server functions
-   - Animated connections based on throughput
-   - Traffic metrics dashboard
+**Option 1: Complete Phase 5 - Export & Finalization** (Recommended)
+   - ⏳ Export/import topology as JSON data (backup, sharing, templates)
+   - ⏳ UI polish and optimizations (loading states, error handling)
+   - ⏳ User/developer documentation (README with screenshots)
+   - ⏳ Deployment guide (Docker, production build)
+   - 🎯 **Why this next?** Round out the export functionality started with PNG
+
+**Option 2: Phase 6 - Traffic Monitoring** (Advanced feature)
+   - ⏳ Real-time traffic visualization using Leptos streaming
+   - ⏳ Mock traffic generator for demo
+   - ⏳ Animated connections based on traffic load
+   - ⏳ Traffic metrics dashboard
+   - 🎯 **Why wait?** This is a major feature; better to polish what we have first
+
+**Option 3: Additional Polish & Features**
+   - ⏳ Multi-select nodes (Shift+Click to select multiple)
+   - ⏳ Multi-select connections (bulk color changes)
+   - ⏳ Undo/redo functionality
+   - ⏳ Copy/paste nodes
+   - ⏳ Keyboard shortcuts (Del to delete, Ctrl+S to save, etc.)
+   - ⏳ Node grouping/labeling
+   - 🎯 **Why consider?** These are nice-to-have UX improvements
 
 ---
 
@@ -518,47 +562,114 @@ cargo leptos watch  # Should compile without errors
 
 ## 🎬 Example Session Start Prompts
 
-### Continue with Next Phase 4 Task
+### Option 1: JSON Export/Import (Phase 5, Task #2)
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
 Read CLAUDE.md and SESSION-GUIDE.md for complete context.
 
-Current Status: Phase 4 IN PROGRESS
-- ✅ Rotation controls, grid/axes, labels, color-coding complete
-- ⏳ Next: Enable Device Palette buttons
+Current Status: Phase 4 COMPLETE! ✅
+- All core 3D features, visual polish, and customization done
+- PNG export working with transparency support
 
-Let's implement Phase 4 Priority 1, Task #3:
-Make the Device Palette buttons functional so clicking 'Router', 'Switch', etc.
-creates new nodes in the topology via the create_node() server function.
+Let's implement Phase 5, Task #2: Export/Import Topology as JSON
+
+Goals:
+1. Add "Export JSON" option to Export dropdown
+2. Serialize current topology (nodes + connections) to JSON
+3. Add "Import JSON" option to toolbar
+4. Parse and create topology from JSON file
+5. Validate JSON structure with helpful error messages
 
 Ready to start!
 ```
 
-### Work on Topology Switching
+### Option 2: Multi-Select Nodes (Polish Feature)
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
 Read CLAUDE.md and SESSION-GUIDE.md for complete context.
 
-Let's implement Phase 4 Priority 1, Task #4:
-- Add another mock topology to the database
-- Create topology selector UI in top toolbar
-- Enable switching between topologies
+Current Status: Phase 4 COMPLETE! ✅
 
-Ready to start!
-```
-
-### Jump to Specific Feature
-```
-I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
-
-Read CLAUDE.md for complete context.
-
-I want to work on [specific feature from Phase 4/5/6]:
-[describe what you want]
+Let's add multi-select functionality:
+1. Shift+Click to select multiple nodes
+2. Visual feedback (all selected nodes highlighted)
+3. Properties panel shows "Multiple nodes selected (N)"
+4. Bulk operations: delete, change type, move together
 
 How should we approach this?
+```
+
+### Option 3: Keyboard Shortcuts (UX Enhancement)
+```
+I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
+
+Read CLAUDE.md and SESSION-GUIDE.md for complete context.
+
+Current Status: Phase 4 COMPLETE! ✅
+
+Let's add keyboard shortcuts for better UX:
+- Del/Backspace: Delete selected node/connection
+- Ctrl/Cmd+S: Save changes in properties panel
+- Ctrl/Cmd+E: Export PNG
+- Esc: Deselect/cancel current mode
+- Space: Toggle grid visibility
+- 1-6: Quick add device types
+
+Ready to implement!
+```
+
+### Option 4: Traffic Monitoring (Phase 6)
+```
+I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
+
+Read CLAUDE.md and SESSION-GUIDE.md for complete context.
+
+Current Status: Phase 4 COMPLETE! ✅
+
+Let's start Phase 6 - Traffic Monitoring:
+1. Create mock traffic generator (server function)
+2. Set up Leptos WebSocket streaming
+3. Animate connections based on traffic load
+4. Color gradient: green (low) → yellow (medium) → red (high)
+
+Ready to implement real-time visualization!
+```
+
+### Option 5: Create User Documentation (Phase 5, Task #4)
+```
+I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
+
+Read CLAUDE.md and SESSION-GUIDE.md for complete context.
+
+Current Status: Phase 4 COMPLETE! ✅
+
+Let's create comprehensive user documentation:
+1. Update README.md with screenshots
+2. Feature overview with examples
+3. How to use the application (getting started guide)
+4. Keyboard shortcuts reference
+5. Tips and tricks
+
+Take screenshots from http://127.0.0.1:3000 and write clear, user-friendly docs.
+
+Ready to document!
+```
+
+### General: Ask for Guidance
+```
+I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
+
+Read CLAUDE.md and SESSION-GUIDE.md for complete context.
+
+Current Status: Phase 4 COMPLETE! ✅
+All core features implemented, PNG export working, full customization available.
+
+What should I work on next? Please review the options in SESSION-GUIDE.md and recommend the best next step based on:
+1. User value
+2. Completeness (rounding out existing features)
+3. Ease of implementation
 ```
 
 ## 💡 Pro Tips
@@ -572,8 +683,18 @@ How should we approach this?
 
 ## 🚀 You're Ready!
 
-Phase 4 is partially complete! Next up:
-1. **Enable Device Palette buttons** (Priority 1, Task #3)
-2. **Topology switching control** (Priority 1, Task #4)
+**Phase 4 is COMPLETE!** ✅ All features implemented:
+- ✅ All core 3D features (rotation, models, grid, axes, topology switching, device palette, connections)
+- ✅ All visual polish (labels, colors, rendering, selection, lighting, camera controls)
+- ✅ All UI optimization (space, persistence, code quality)
+- ✅ Export & customization (PNG export, node scale, background color, connection colors)
+
+**Recommended next steps:**
+1. **JSON Export/Import** (Phase 5, Task #2) - Round out export functionality
+2. **Multi-select nodes** (Polish feature) - Bulk operations
+3. **Keyboard shortcuts** (UX enhancement) - Power user features
+4. **User documentation** (Phase 5, Task #4) - Help users learn the app
+5. **Traffic monitoring** (Phase 6) - Advanced real-time visualization
 
 All architectural patterns are working and documented in CLAUDE.md.
+Use the example prompts above to start your next session!
