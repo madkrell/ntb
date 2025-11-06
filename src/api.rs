@@ -128,7 +128,7 @@ pub async fn get_topology_full(id: i64) -> Result<TopologyFull, ServerFnError> {
 
         // Fetch all nodes for this topology
         let nodes = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, metadata, created_at, updated_at
              FROM nodes WHERE topology_id = ? ORDER BY created_at"
         )
         .bind(id)
@@ -138,7 +138,7 @@ pub async fn get_topology_full(id: i64) -> Result<TopologyFull, ServerFnError> {
 
         // Fetch all connections for this topology
         let connections = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, metadata, created_at, updated_at
              FROM connections WHERE topology_id = ? ORDER BY created_at"
         )
         .bind(id)
@@ -176,7 +176,7 @@ pub async fn get_node(id: i64) -> Result<Node, ServerFnError> {
             .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
         let node = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, metadata, created_at, updated_at
              FROM nodes WHERE id = ?"
         )
         .bind(id)
@@ -213,10 +213,11 @@ pub async fn create_node(data: CreateNode) -> Result<Node, ServerFnError> {
         let rot_x = data.rotation_x.unwrap_or(90.0);
         let rot_y = data.rotation_y.unwrap_or(0.0);
         let rot_z = data.rotation_z.unwrap_or(0.0);
+        let scale = data.scale.unwrap_or(1.0);
 
         let result = sqlx::query(
-            "INSERT INTO nodes (topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, metadata)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO nodes (topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, metadata)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(data.topology_id)
         .bind(&data.name)
@@ -228,6 +229,7 @@ pub async fn create_node(data: CreateNode) -> Result<Node, ServerFnError> {
         .bind(rot_x)
         .bind(rot_y)
         .bind(rot_z)
+        .bind(scale)
         .bind(&data.metadata)
         .execute(&pool)
         .await
@@ -237,7 +239,7 @@ pub async fn create_node(data: CreateNode) -> Result<Node, ServerFnError> {
 
         // Fetch the created node
         let node = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, metadata, created_at, updated_at
              FROM nodes WHERE id = ?"
         )
         .bind(id)
@@ -322,6 +324,9 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
         if data.rotation_z.is_some() {
             query_str.push_str(", rotation_z = ?");
         }
+        if data.scale.is_some() {
+            query_str.push_str(", scale = ?");
+        }
         if data.metadata.is_some() {
             query_str.push_str(", metadata = ?");
         }
@@ -358,6 +363,9 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
         if let Some(rot_z) = data.rotation_z {
             query = query.bind(rot_z);
         }
+        if let Some(scale) = data.scale {
+            query = query.bind(scale);
+        }
         if let Some(ref metadata) = data.metadata {
             query = query.bind(metadata);
         }
@@ -370,7 +378,7 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
 
         // Fetch the updated node
         let node = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, metadata, created_at, updated_at
              FROM nodes WHERE id = ?"
         )
         .bind(id)
@@ -431,7 +439,7 @@ pub async fn get_connection(id: i64) -> Result<Connection, ServerFnError> {
             .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
         let connection = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, metadata, created_at, updated_at
              FROM connections WHERE id = ?"
         )
         .bind(id)
@@ -463,10 +471,11 @@ pub async fn create_connection(data: CreateConnection) -> Result<Connection, Ser
         // Use defaults if not provided
         let conn_type = data.connection_type.unwrap_or_else(|| "ethernet".to_string());
         let status = data.status.unwrap_or_else(|| "active".to_string());
+        let color = data.color.unwrap_or_else(|| "128,128,128".to_string());
 
         let result = sqlx::query(
-            "INSERT INTO connections (topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, metadata)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO connections (topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, metadata)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(data.topology_id)
         .bind(data.source_node_id)
@@ -475,6 +484,7 @@ pub async fn create_connection(data: CreateConnection) -> Result<Connection, Ser
         .bind(&data.bandwidth_mbps)
         .bind(&data.latency_ms)
         .bind(&status)
+        .bind(&color)
         .bind(&data.metadata)
         .execute(&pool)
         .await
@@ -484,7 +494,7 @@ pub async fn create_connection(data: CreateConnection) -> Result<Connection, Ser
 
         // Fetch the created connection
         let connection = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, metadata, created_at, updated_at
              FROM connections WHERE id = ?"
         )
         .bind(id)
@@ -528,6 +538,9 @@ pub async fn update_connection(id: i64, data: UpdateConnection) -> Result<Connec
         if let Some(_) = data.status {
             query_str.push_str(", status = ?");
         }
+        if let Some(_) = data.color {
+            query_str.push_str(", color = ?");
+        }
         if let Some(_) = data.metadata {
             query_str.push_str(", metadata = ?");
         }
@@ -549,6 +562,9 @@ pub async fn update_connection(id: i64, data: UpdateConnection) -> Result<Connec
         if let Some(ref status) = data.status {
             query = query.bind(status);
         }
+        if let Some(ref color) = data.color {
+            query = query.bind(color);
+        }
         if let Some(ref metadata) = data.metadata {
             query = query.bind(metadata);
         }
@@ -561,7 +577,7 @@ pub async fn update_connection(id: i64, data: UpdateConnection) -> Result<Connec
 
         // Fetch the updated connection
         let connection = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, metadata, created_at, updated_at
              FROM connections WHERE id = ?"
         )
         .bind(id)

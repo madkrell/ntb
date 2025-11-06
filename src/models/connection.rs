@@ -15,6 +15,7 @@ pub struct Connection {
     pub bandwidth_mbps: Option<i64>,
     pub latency_ms: Option<f64>,
     pub status: String,
+    pub color: String, // RGB color as "R,G,B" format (e.g., "128,128,128")
     pub metadata: Option<String>, // JSON string
     pub created_at: i64,
     pub updated_at: i64,
@@ -30,6 +31,7 @@ pub struct CreateConnection {
     pub bandwidth_mbps: Option<i64>,
     pub latency_ms: Option<f64>,
     pub status: Option<String>,
+    pub color: Option<String>,
     pub metadata: Option<String>,
 }
 
@@ -40,6 +42,7 @@ pub struct UpdateConnection {
     pub bandwidth_mbps: Option<i64>,
     pub latency_ms: Option<f64>,
     pub status: Option<String>,
+    pub color: Option<String>,
     pub metadata: Option<String>,
 }
 

@@ -19,6 +19,8 @@ pub struct ViewportVisibility {
     pub show_x_axis: RwSignal<bool>,
     pub show_y_axis: RwSignal<bool>,
     pub show_z_axis: RwSignal<bool>,
+    /// Background color as RGB (None = transparent)
+    pub background_color: RwSignal<Option<(u8, u8, u8)>>,
 }
 
 /// Lighting settings for the 3D viewport
@@ -70,6 +72,7 @@ pub fn TopologyEditor(
         show_x_axis: RwSignal::new(true),
         show_y_axis: RwSignal::new(true),
         show_z_axis: RwSignal::new(true),
+        background_color: RwSignal::new(Some((0, 0, 0))), // Black default
     };
 
     // Lighting settings (wrapped in struct to avoid context collision)
@@ -306,12 +309,256 @@ fn TopToolbar() -> impl IntoView {
             // Spacer
             <div class="flex-1"></div>
 
-            // Future action buttons (disabled for now)
-            <button class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-medium transition opacity-50 cursor-not-allowed" disabled=true>
-                "Export"
-            </button>
+            // Export dropdown menu
+            <ExportDropdown />
         </div>
     }
+}
+
+/// Export dropdown menu with format and resolution options
+#[component]
+fn ExportDropdown() -> impl IntoView {
+    let show_dropdown = RwSignal::new(false);
+    let export_format = RwSignal::new(String::from("png"));
+    let export_resolution = RwSignal::new(1);
+
+    // Close dropdown when clicking outside
+    #[cfg(feature = "hydrate")]
+    {
+        use wasm_bindgen::JsCast;
+        use web_sys::MouseEvent;
+
+        let show_dropdown_clone = show_dropdown;
+        Effect::new(move || {
+            if show_dropdown_clone.get() {
+                let window = web_sys::window().expect("no window");
+                let document = window.document().expect("no document");
+
+                let closure = wasm_bindgen::prelude::Closure::wrap(Box::new(move |_: MouseEvent| {
+                    show_dropdown_clone.set(false);
+                }) as Box<dyn Fn(MouseEvent)>);
+
+                document.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref()).ok();
+                closure.forget();
+            }
+        });
+    }
+
+    // Export action
+    let export_action = Action::new(move |(format, resolution): &(String, u32)| {
+        #[allow(unused_variables)]
+        let format = format.clone();
+        #[allow(unused_variables)]
+        let resolution = *resolution;
+        async move {
+            #[cfg(feature = "hydrate")]
+            {
+                export_canvas(&format, resolution).await;
+            }
+        }
+    });
+
+    view! {
+        <div class="relative">
+            <button
+                class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition flex items-center gap-2"
+                on:click=move |e| {
+                    e.stop_propagation();
+                    show_dropdown.update(|v| *v = !*v);
+                }
+            >
+                "Export"
+                <span class="text-xs">"▼"</span>
+            </button>
+
+            {move || {
+                if show_dropdown.get() {
+                    Some(view! {
+                        <div
+                            class="absolute right-0 mt-2 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-[9999]"
+                            on:click=move |e| e.stop_propagation()
+                        >
+                            <div class="p-3 space-y-3">
+                                // Format selection
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-400 mb-1.5">"Format"</label>
+                                    <select
+                                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                        on:change=move |ev| {
+                                            export_format.set(event_target_value(&ev));
+                                        }
+                                        prop:value=move || export_format.get()
+                                    >
+                                        <option value="png">"PNG (High Quality)"</option>
+                                        <option value="jpeg">"JPEG (Smaller Size)"</option>
+                                    </select>
+                                </div>
+
+                                // Resolution selection
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-400 mb-1.5">"Resolution"</label>
+                                    <select
+                                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                        on:change=move |ev| {
+                                            let value = event_target_value(&ev);
+                                            if let Ok(res) = value.parse::<u32>() {
+                                                export_resolution.set(res);
+                                            }
+                                        }
+                                        prop:value=move || export_resolution.get().to_string()
+                                    >
+                                        <option value="1">"1x (Current)"</option>
+                                        <option value="2">"2x (High Quality)"</option>
+                                        <option value="4">"4x (Print Quality)"</option>
+                                    </select>
+                                </div>
+
+                                // Export button
+                                <button
+                                    class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition"
+                                    on:click=move |_| {
+                                        export_action.dispatch((export_format.get_untracked().to_string(), export_resolution.get_untracked()));
+                                        show_dropdown.set(false);
+                                    }
+                                    disabled=move || export_action.pending().get()
+                                >
+                                    {move || if export_action.pending().get() {
+                                        "Exporting..."
+                                    } else {
+                                        "Export Image"
+                                    }}
+                                </button>
+                            </div>
+                        </div>
+                    })
+                } else {
+                    None
+                }
+            }}
+        </div>
+    }
+}
+
+/// Export the canvas to an image file
+#[cfg(feature = "hydrate")]
+async fn export_canvas(format: &str, resolution_multiplier: u32) {
+    use wasm_bindgen::JsCast;
+    use web_sys::{HtmlCanvasElement, CanvasRenderingContext2d};
+
+    let window = match web_sys::window() {
+        Some(w) => w,
+        None => {
+            web_sys::console::error_1(&"No window available".into());
+            return;
+        }
+    };
+
+    let document = match window.document() {
+        Some(d) => d,
+        None => {
+            web_sys::console::error_1(&"No document available".into());
+            return;
+        }
+    };
+
+    // Find the canvas element
+    let canvas = match document.query_selector("canvas") {
+        Ok(Some(element)) => match element.dyn_into::<HtmlCanvasElement>() {
+            Ok(c) => c,
+            Err(_) => {
+                web_sys::console::error_1(&"Canvas element is not an HtmlCanvasElement".into());
+                return;
+            }
+        },
+        _ => {
+            web_sys::console::error_1(&"Canvas element not found".into());
+            return;
+        }
+    };
+
+    // Get current canvas dimensions
+    let width = canvas.width();
+    let height = canvas.height();
+
+    // Create a temporary canvas at higher resolution if needed
+    let export_canvas = if resolution_multiplier > 1 {
+        let temp_canvas = match document.create_element("canvas") {
+            Ok(element) => match element.dyn_into::<HtmlCanvasElement>() {
+                Ok(c) => c,
+                Err(_) => {
+                    web_sys::console::error_1(&"Failed to create temporary canvas".into());
+                    return;
+                }
+            },
+            Err(_) => {
+                web_sys::console::error_1(&"Failed to create canvas element".into());
+                return;
+            }
+        };
+
+        temp_canvas.set_width(width * resolution_multiplier);
+        temp_canvas.set_height(height * resolution_multiplier);
+
+        // Get 2D context and draw the original canvas scaled up
+        let context = match temp_canvas.get_context("2d") {
+            Ok(Some(ctx)) => match ctx.dyn_into::<CanvasRenderingContext2d>() {
+                Ok(c) => c,
+                Err(_) => {
+                    web_sys::console::error_1(&"Failed to get 2D context".into());
+                    return;
+                }
+            },
+            _ => {
+                web_sys::console::error_1(&"Failed to get canvas context".into());
+                return;
+            }
+        };
+
+        // Scale and draw
+        context.scale(resolution_multiplier as f64, resolution_multiplier as f64).ok();
+        context.draw_image_with_html_canvas_element(&canvas, 0.0, 0.0).ok();
+
+        temp_canvas
+    } else {
+        canvas
+    };
+
+    // Convert to data URL
+    let mime_type = if format == "jpeg" {
+        "image/jpeg"
+    } else {
+        "image/png"
+    };
+
+    let data_url = match export_canvas.to_data_url_with_type(mime_type) {
+        Ok(url) => url,
+        Err(_) => {
+            web_sys::console::error_1(&"Failed to convert canvas to data URL".into());
+            return;
+        }
+    };
+
+    // Create download link
+    let a = match document.create_element("a") {
+        Ok(element) => element,
+        Err(_) => {
+            web_sys::console::error_1(&"Failed to create anchor element".into());
+            return;
+        }
+    };
+
+    let extension = if format == "jpeg" { "jpg" } else { "png" };
+    let filename = format!("topology-export.{}", extension);
+
+    a.set_attribute("href", &data_url).ok();
+    a.set_attribute("download", &filename).ok();
+
+    // Trigger download
+    if let Some(html_element) = a.dyn_ref::<web_sys::HtmlElement>() {
+        html_element.click();
+    }
+
+    web_sys::console::log_1(&format!("Exported as {} at {}x resolution", format, resolution_multiplier).into());
 }
 
 /// Left device palette/toolbar
@@ -380,6 +627,7 @@ fn DevicePalette() -> impl IntoView {
                 rotation_x: None, // Will use default 90°
                 rotation_y: None, // Will use default 0°
                 rotation_z: None, // Will use default 0°
+                scale: None, // Will use default 1.0
                 metadata: None,
             };
 
@@ -496,7 +744,7 @@ fn PropertiesPanel(
     selected_item: RwSignal<Option<SelectedItem>>,
 ) -> impl IntoView {
     // Collapsible section states
-    let view_controls_open = RwSignal::new(false);
+    let view_controls_open = RwSignal::new(true);
     let lighting_controls_open = RwSignal::new(false);
 
     // Get context for controls
@@ -592,6 +840,66 @@ fn PropertiesPanel(
                                     >
                                         "Z Axis"
                                     </button>
+
+                                    // Background color controls
+                                    <div class="mt-3 pt-2 border-t border-gray-600">
+                                        <div class="text-[10px] text-gray-400 mb-1.5 px-1">"Background"</div>
+                                        <div class="grid grid-cols-3 gap-1">
+                                            <button
+                                                class="px-2 py-1 rounded text-[10px] border transition"
+                                                class:bg-gray-600=move || viewport_visibility.background_color.get() == None
+                                                class:border-gray-500=move || viewport_visibility.background_color.get() == None
+                                                class:bg-gray-700=move || viewport_visibility.background_color.get() != None
+                                                class:border-gray-600=move || viewport_visibility.background_color.get() != None
+                                                on:click=move |_| viewport_visibility.background_color.set(None)
+                                            >
+                                                "Transparent"
+                                            </button>
+                                            <button
+                                                class="px-2 py-1 rounded text-[10px] border border-gray-600 bg-white text-gray-800 transition hover:bg-gray-100"
+                                                class:ring-2=move || viewport_visibility.background_color.get() == Some((255, 255, 255))
+                                                class:ring-blue-400=move || viewport_visibility.background_color.get() == Some((255, 255, 255))
+                                                on:click=move |_| viewport_visibility.background_color.set(Some((255, 255, 255)))
+                                            >
+                                                "White"
+                                            </button>
+                                            <button
+                                                class="px-2 py-1 rounded text-[10px] border border-gray-600 text-gray-800 transition hover:bg-gray-200"
+                                                style="background-color: rgb(220, 220, 225);"
+                                                class:ring-2=move || viewport_visibility.background_color.get() == Some((220, 220, 225))
+                                                class:ring-blue-400=move || viewport_visibility.background_color.get() == Some((220, 220, 225))
+                                                on:click=move |_| viewport_visibility.background_color.set(Some((220, 220, 225)))
+                                            >
+                                                "Light"
+                                            </button>
+                                            <button
+                                                class="px-2 py-1 rounded text-[10px] border border-gray-600 transition hover:bg-gray-600"
+                                                style="background-color: rgb(100, 100, 105);"
+                                                class:ring-2=move || viewport_visibility.background_color.get() == Some((100, 100, 105))
+                                                class:ring-blue-400=move || viewport_visibility.background_color.get() == Some((100, 100, 105))
+                                                on:click=move |_| viewport_visibility.background_color.set(Some((100, 100, 105)))
+                                            >
+                                                "Gray"
+                                            </button>
+                                            <button
+                                                class="px-2 py-1 rounded text-[10px] border border-gray-600 transition hover:bg-gray-900"
+                                                style="background-color: rgb(30, 30, 35);"
+                                                class:ring-2=move || viewport_visibility.background_color.get() == Some((30, 30, 35))
+                                                class:ring-blue-400=move || viewport_visibility.background_color.get() == Some((30, 30, 35))
+                                                on:click=move |_| viewport_visibility.background_color.set(Some((30, 30, 35)))
+                                            >
+                                                "Dark"
+                                            </button>
+                                            <button
+                                                class="px-2 py-1 rounded text-[10px] border border-gray-500 bg-black transition hover:bg-gray-900"
+                                                class:ring-2=move || viewport_visibility.background_color.get() == Some((0, 0, 0))
+                                                class:ring-blue-400=move || viewport_visibility.background_color.get() == Some((0, 0, 0))
+                                                on:click=move |_| viewport_visibility.background_color.set(Some((0, 0, 0)))
+                                            >
+                                                "Black"
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             }.into_any()
                         } else {
@@ -728,6 +1036,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
     let rotation_x = RwSignal::new(0.0);
     let rotation_y = RwSignal::new(0.0);
     let rotation_z = RwSignal::new(0.0);
+    let scale = RwSignal::new(1.0);
 
     // Populate signals when data loads
     // NOTE: Swap Y and Z to match Blender convention in UI
@@ -744,6 +1053,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
             rotation_x.set(node.rotation_x);
             rotation_y.set(node.rotation_y);
             rotation_z.set(node.rotation_z);
+            scale.set(node.scale);
         }
     });
 
@@ -762,6 +1072,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
             rotation_x: Some(rotation_x.get_untracked()),
             rotation_y: Some(rotation_y.get_untracked()),
             rotation_z: Some(rotation_z.get_untracked()),
+            scale: Some(scale.get_untracked()),
             metadata: None,
         };
 
@@ -947,6 +1258,24 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                     </div>
                                 </div>
 
+                                // Scale control
+                                <div class="mb-3">
+                                    <label class="block text-xs font-medium text-gray-400 mb-1.5">"Scale"</label>
+                                    <input
+                                        type="number"
+                                        class="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-xs focus:outline-none focus:border-blue-500"
+                                        step="0.1"
+                                        min="0.1"
+                                        max="5.0"
+                                        prop:value=move || scale.get()
+                                        on:input=move |ev| {
+                                            if let Ok(val) = event_target_value(&ev).parse::<f64>() {
+                                                scale.set(val.max(0.1).min(5.0));
+                                            }
+                                        }
+                                    />
+                                </div>
+
                                 <div class="pt-4 border-t border-gray-700">
                                     // Save button group
                                     <div class="mb-4">
@@ -1052,6 +1381,7 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
     let bandwidth_mbps = RwSignal::new(0i64);
     let latency_ms = RwSignal::new(0.0f64);
     let status = RwSignal::new(String::new());
+    let color = RwSignal::new(String::from("128,128,128")); // Default gray
 
     // Populate signals when data loads
     Effect::new(move || {
@@ -1060,6 +1390,7 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
             bandwidth_mbps.set(connection.bandwidth_mbps.unwrap_or(0));
             latency_ms.set(connection.latency_ms.unwrap_or(0.0));
             status.set(connection.status);
+            color.set(connection.color);
         }
     });
 
@@ -1070,6 +1401,7 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
             bandwidth_mbps: Some(bandwidth_mbps.get_untracked()).filter(|&v| v > 0),
             latency_ms: Some(latency_ms.get_untracked()).filter(|&v| v > 0.0),
             status: Some(status.get_untracked()),
+            color: Some(color.get_untracked()),
             metadata: None,
         };
 
@@ -1185,6 +1517,83 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
                                         <option value="inactive">"Inactive"</option>
                                         <option value="error">"Error"</option>
                                     </select>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-400 mb-1.5">"Color Presets"</label>
+                                    <div class="grid grid-cols-6 gap-1 mb-2">
+                                        {[
+                                            ("128,128,128", "Gray"),
+                                            ("0,0,0", "Black"),
+                                            ("255,255,255", "White"),
+                                            ("59,130,246", "Blue"),
+                                            ("34,197,94", "Green"),
+                                            ("251,191,36", "Yellow"),
+                                            ("239,68,68", "Red"),
+                                            ("168,85,247", "Purple"),
+                                            ("236,72,153", "Pink"),
+                                            ("249,115,22", "Orange"),
+                                            ("14,165,233", "Cyan"),
+                                            ("132,204,22", "Lime"),
+                                            ("245,158,11", "Amber"),
+                                        ].iter().map(|(rgb, name)| {
+                                            let rgb_str = rgb.to_string();
+                                            let rgb_parts: Vec<u8> = rgb_str.split(',')
+                                                .filter_map(|s| s.parse().ok())
+                                                .collect();
+                                            let (r, g, b) = if rgb_parts.len() == 3 {
+                                                (rgb_parts[0], rgb_parts[1], rgb_parts[2])
+                                            } else {
+                                                (128, 128, 128)
+                                            };
+
+                                            view! {
+                                                <button
+                                                    type="button"
+                                                    class="w-full aspect-square rounded border-2 transition hover:scale-110"
+                                                    class:border-blue-400=move || color.get() == *rgb
+                                                    class:border-gray-600=move || color.get() != *rgb
+                                                    style=format!("background-color: rgb({},{},{})", r, g, b)
+                                                    title=*name
+                                                    on:click=move |_| color.set(rgb_str.clone())
+                                                />
+                                            }
+                                        }).collect_view()}
+                                    </div>
+
+                                    // Custom color picker
+                                    <div class="flex items-center gap-2">
+                                        <label class="text-xs text-gray-400">"Custom:"</label>
+                                        <input
+                                            type="color"
+                                            class="w-12 h-8 rounded border border-gray-600 cursor-pointer"
+                                            value=move || {
+                                                // Convert RGB string to hex for color input
+                                                let rgb_parts: Vec<u8> = color.get().split(',')
+                                                    .filter_map(|s| s.parse().ok())
+                                                    .collect();
+                                                if rgb_parts.len() == 3 {
+                                                    format!("#{:02x}{:02x}{:02x}", rgb_parts[0], rgb_parts[1], rgb_parts[2])
+                                                } else {
+                                                    "#808080".to_string()
+                                                }
+                                            }
+                                            on:input=move |ev| {
+                                                // Convert hex to RGB format
+                                                let hex = event_target_value(&ev);
+                                                if hex.starts_with('#') && hex.len() == 7 {
+                                                    if let (Ok(r), Ok(g), Ok(b)) = (
+                                                        u8::from_str_radix(&hex[1..3], 16),
+                                                        u8::from_str_radix(&hex[3..5], 16),
+                                                        u8::from_str_radix(&hex[5..7], 16),
+                                                    ) {
+                                                        color.set(format!("{},{},{}", r, g, b));
+                                                    }
+                                                }
+                                            }
+                                        />
+                                        <span class="text-xs text-gray-500 font-mono">{move || color.get()}</span>
+                                    </div>
                                 </div>
 
                                 <div class="pt-4 border-t border-gray-700">

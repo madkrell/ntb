@@ -165,9 +165,9 @@ pub fn TopologyViewport(
     // Get grid/axes visibility controls from context (optional - may not exist)
     let viewport_visibility = use_context::<crate::islands::topology_editor::ViewportVisibility>();
     #[allow(unused_variables)]
-    let (show_grid, show_x_axis, show_y_axis, show_z_axis) = match viewport_visibility {
-        Some(vis) => (vis.show_grid, vis.show_x_axis, vis.show_y_axis, vis.show_z_axis),
-        None => (RwSignal::new(true), RwSignal::new(true), RwSignal::new(true), RwSignal::new(true)),
+    let (show_grid, show_x_axis, show_y_axis, show_z_axis, background_color) = match viewport_visibility {
+        Some(vis) => (vis.show_grid, vis.show_x_axis, vis.show_y_axis, vis.show_z_axis, vis.background_color),
+        None => (RwSignal::new(true), RwSignal::new(true), RwSignal::new(true), RwSignal::new(true), RwSignal::new(Some((0, 0, 0)))),
     };
 
     // Get lighting settings from context (optional - may not exist)
@@ -249,6 +249,9 @@ pub fn TopologyViewport(
                 // Access topology_data to make Effect reactive to it
                 let data_option = topology_data.get();
 
+                // Read signal values BEFORE entering conditional branches (needed in both branches)
+                let background_color_val = background_color.get_untracked();
+
                 // Wait for topology data to load
                 if let Some(Some(topo_data)) = data_option {
                     // Check if this is a refetch (already initialized)
@@ -286,6 +289,7 @@ pub fn TopologyViewport(
                             show_x_val,
                             show_y_val,
                             show_z_val,
+                            background_color_val,
                             ambient_val,
                             key_light_val,
                             fill_light_val,
@@ -306,7 +310,7 @@ pub fn TopologyViewport(
                     });
                 } else if topology_id.is_none() {
                     // Initialize with test scene if no topology_id
-                    match initialize_threed_viewport_test(&canvas_element, camera_state, selected_node_id, selected_item, render_fn_for_effect.clone(), tooltip_data, connection_mode, refetch_trigger, Some(current_topology_id)) {
+                    match initialize_threed_viewport_test(&canvas_element, camera_state, selected_node_id, selected_item, render_fn_for_effect.clone(), tooltip_data, background_color_val, connection_mode, refetch_trigger, Some(current_topology_id)) {
                         Ok(_) => {
                             is_initialized.set(true);
                         }
@@ -363,6 +367,7 @@ pub fn TopologyViewport(
                 let _x = show_x_axis.get();
                 let _y = show_y_axis.get();
                 let _z = show_z_axis.get();
+                let _bg = background_color.get();
 
                 // Skip the first run (initial mount)
                 if is_first_run.get_untracked() {
@@ -630,6 +635,7 @@ async fn initialize_threed_viewport(
     show_x_axis: bool,
     show_y_axis: bool,
     show_z_axis: bool,
+    background_color: Option<(u8, u8, u8)>,
     ambient_intensity: f32,
     key_light_intensity: f32,
     fill_light_intensity: f32,
@@ -642,10 +648,22 @@ async fn initialize_threed_viewport(
     use web_sys::WebGl2RenderingContext as GL;
     use three_d::*;
     use std::collections::HashMap;
+    // Create WebGL2 context attributes with preserveDrawingBuffer enabled
+    // This is required for canvas.toDataURL() to work properly
+    use wasm_bindgen::JsValue;
+    use js_sys::Object;
+    use js_sys::Reflect;
 
-    // Get WebGL2 context from canvas
+    let context_options = Object::new();
+    Reflect::set(
+        &context_options,
+        &JsValue::from_str("preserveDrawingBuffer"),
+        &JsValue::from_bool(true),
+    ).map_err(|e| format!("Failed to set preserveDrawingBuffer: {:?}", e))?;
+
+    // Get WebGL2 context from canvas with options
     let webgl2_context = canvas
-        .get_context("webgl2")
+        .get_context_with_context_options("webgl2", &context_options)
         .map_err(|e| format!("Failed to get WebGL2 context: {:?}", e))?
         .ok_or("WebGL2 context is None")?
         .dyn_into::<GL>()
@@ -792,7 +810,7 @@ async fn initialize_threed_viewport(
                         let z_rotation = Mat4::from_angle_z(degrees(node.rotation_z as f32));
 
                         let transform = Mat4::from_translation(position)
-                            * Mat4::from_scale(node_radius)
+                            * Mat4::from_scale(node_radius * node.scale as f32)
                             * z_rotation
                             * y_rotation
                             * x_rotation
@@ -829,7 +847,7 @@ async fn initialize_threed_viewport(
                 normal_material,
             );
             normal_sphere.set_transformation(
-                Mat4::from_translation(position) * Mat4::from_scale(node_radius)
+                Mat4::from_translation(position) * Mat4::from_scale(node_radius * node.scale as f32)
             );
 
             // Create selected sphere (same position, different material, new mesh)
@@ -838,7 +856,7 @@ async fn initialize_threed_viewport(
                 selected_material.clone(),
             );
             selected_sphere.set_transformation(
-                Mat4::from_translation(position) * Mat4::from_scale(node_radius)
+                Mat4::from_translation(position) * Mat4::from_scale(node_radius * node.scale as f32)
             );
 
             // Store (node_id, normal_mesh, selected_mesh) tuple
@@ -875,11 +893,22 @@ async fn initialize_threed_viewport(
                 radius: 0.15, // Larger than visual radius for easier clicking
             });
 
-            // Determine connection color based on type (fiber = cyan, ethernet = light gray)
-            let normal_color = match conn.connection_type.as_str() {
-                "fiber" => Srgba::new(100, 200, 255, 255),    // Bright cyan for fiber
-                "ethernet" => Srgba::new(200, 200, 200, 255), // Light gray for ethernet
-                _ => Srgba::new(180, 180, 180, 255),          // Default gray
+            // Parse connection color from database (format: "R,G,B")
+            let normal_color = {
+                let parts: Vec<&str> = conn.color.split(',').collect();
+                if parts.len() == 3 {
+                    if let (Ok(r), Ok(g), Ok(b)) = (
+                        parts[0].parse::<u8>(),
+                        parts[1].parse::<u8>(),
+                        parts[2].parse::<u8>(),
+                    ) {
+                        Srgba::new(r, g, b, 255)
+                    } else {
+                        Srgba::new(128, 128, 128, 255) // Fallback gray
+                    }
+                } else {
+                    Srgba::new(128, 128, 128, 255) // Fallback gray
+                }
             };
 
             // Selected color - bright yellow/orange for visibility
@@ -994,7 +1023,16 @@ async fn initialize_threed_viewport(
                 1000.0,
             );
 
-            let clear_state = ClearState::color_and_depth(0.1, 0.1, 0.1, 1.0, 1.0);
+            let clear_state = match background_color {
+                Some((r, g, b)) => ClearState::color_and_depth(
+                    r as f32 / 255.0,
+                    g as f32 / 255.0,
+                    b as f32 / 255.0,
+                    1.0,  // Opaque
+                    1.0   // Depth
+                ),
+                None => ClearState::color_and_depth(0.0, 0.0, 0.0, 0.0, 1.0), // Transparent background
+            };
             let target = RenderTarget::screen(&context, width, height);
             target.clear(clear_state);
 
@@ -1074,6 +1112,7 @@ fn initialize_threed_viewport_test(
     selected_item_signal: RwSignal<Option<crate::islands::topology_editor::SelectedItem>>,
     render_fn_storage: Rc<RefCell<Option<Rc<dyn Fn(CameraState)>>>>,
     tooltip_data: RwSignal<Option<(String, String, f64, f64)>>,
+    background_color: Option<(u8, u8, u8)>,
     connection_mode: Option<RwSignal<crate::islands::topology_editor::ConnectionMode>>,
     refetch_trigger: Option<RwSignal<u32>>,
     current_topology_id: Option<RwSignal<i64>>,
@@ -1081,9 +1120,22 @@ fn initialize_threed_viewport_test(
     use web_sys::WebGl2RenderingContext as GL;
     use three_d::*;
 
-    // Get WebGL2 context from canvas
+    // Create WebGL2 context attributes with preserveDrawingBuffer enabled
+    // This is required for canvas.toDataURL() to work properly
+    use wasm_bindgen::JsValue;
+    use js_sys::Object;
+    use js_sys::Reflect;
+
+    let context_options = Object::new();
+    Reflect::set(
+        &context_options,
+        &JsValue::from_str("preserveDrawingBuffer"),
+        &JsValue::from_bool(true),
+    ).map_err(|e| format!("Failed to set preserveDrawingBuffer: {:?}", e))?;
+
+    // Get WebGL2 context from canvas with options
     let webgl2_context = canvas
-        .get_context("webgl2")
+        .get_context_with_context_options("webgl2", &context_options)
         .map_err(|e| format!("Failed to get WebGL2 context: {:?}", e))?
         .ok_or("WebGL2 context is None")?
         .dyn_into::<GL>()
@@ -1172,7 +1224,16 @@ fn initialize_threed_viewport_test(
                 1000.0,
             );
 
-            let clear_state = ClearState::color_and_depth(0.1, 0.1, 0.1, 1.0, 1.0);
+            let clear_state = match background_color {
+                Some((r, g, b)) => ClearState::color_and_depth(
+                    r as f32 / 255.0,
+                    g as f32 / 255.0,
+                    b as f32 / 255.0,
+                    1.0,  // Opaque
+                    1.0   // Depth
+                ),
+                None => ClearState::color_and_depth(0.0, 0.0, 0.0, 0.0, 1.0), // Transparent background
+            };
 
             RenderTarget::screen(&context, width, height)
                 .clear(clear_state)
@@ -1443,6 +1504,7 @@ fn setup_orbit_controls(
                                                 bandwidth_mbps: Some(1000),
                                                 latency_ms: Some(1.0),
                                                 status: Some("active".to_string()),
+                                                color: None, // Use default color
                                                 metadata: None,
                                             };
 

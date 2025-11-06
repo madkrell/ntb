@@ -62,6 +62,32 @@
     - All compiler warnings fixed
     - Clippy-clean code
     - Proper #[allow(unused_variables)] for false positives in reactive closures
+17. ✅ **PNG Export Functionality** (2025-11-06) - High-quality image export with transparency
+    - Export dropdown menu in toolbar with PNG/JSON options
+    - WebGL2 context with preserveDrawingBuffer enabled for frame capture
+    - Transparent background support for clean exports
+    - Fixed dropdown z-index for proper overlay visibility
+18. ✅ **Node Scale Control** (2025-11-06) - Per-node size adjustment
+    - Database migration: `20250106000003_add_node_scale.sql`
+    - Added `scale: f64` field to Node model (default 1.0, range 0.1-5.0)
+    - Properties panel slider for scale adjustment
+    - Real-time viewport rendering with scale transformation
+    - Scale applied to both 3D models and fallback spheres
+19. ✅ **Background Color Control** (2025-11-06) - Customizable viewport background
+    - Extended ViewportVisibility struct with background_color field
+    - 6 preset buttons: Transparent, White, Light, Gray, Dark, Black
+    - Transparent option (None) for PNG exports showing only topology
+    - Black default background (rgb(0,0,0))
+    - Real-time viewport updates via refetch_trigger
+    - ClearState implementation with alpha channel support
+20. ✅ **Connection Color Control** (2025-11-06) - Customizable link colors
+    - Database migration: `20250107000001_add_connection_color.sql`
+    - Added `color: String` field to Connection model ("R,G,B" format)
+    - Properties panel with 13 preset colors (Gray, Black, White, Blue, Green, Yellow, Red, Purple, Pink, Orange, Cyan, Lime, Amber)
+    - Full color palette picker with HTML5 color input
+    - Bidirectional hex↔RGB conversion for user-friendly color selection
+    - Real-time color rendering in 3D viewport
+    - Current color displayed as RGB text (e.g., "128,128,128")
 
 ### Phase 3 - COMPLETE ✅
 - ✅ Professional 3-panel layout (device palette, viewport, properties)
@@ -928,6 +954,152 @@ let mousemove = Closure::wrap(Box::new(move |e: MouseEvent| {
 3. **Non-reactive snapshots are the solution** - Use `Arc<Mutex<T>>` for thread-safe non-reactive state
 4. **Always guard signal updates** - Check disposal flag before every `.set()` call
 5. **Applies to all leaked closures** - Any closure using `.forget()` should use this pattern
+
+### ✅ COMPLETED: Node Scale, Background & Connection Colors (2025-11-06 Session)
+
+**Implementation Overview:**
+Added three major customization features to enhance visual control and export capabilities.
+
+#### Node Scale Control
+**Database Schema:**
+```sql
+-- Migration: 20250106000003_add_node_scale.sql
+ALTER TABLE nodes ADD COLUMN scale REAL NOT NULL DEFAULT 1.0;
+```
+
+**Model Updates:**
+```rust
+pub struct Node {
+    // ... existing fields ...
+    pub scale: f64,  // Range: 0.1 to 5.0
+}
+
+pub struct CreateNode {
+    // ... existing fields ...
+    pub scale: Option<f64>,  // Optional, defaults to 1.0
+}
+```
+
+**Viewport Rendering:**
+```rust
+// Scale applied in transformation matrix
+let transform = Mat4::from_translation(position)
+    * Mat4::from_scale(node_radius * node.scale as f32)  // ← Scale multiplication
+    * z_rotation
+    * y_rotation
+    * x_rotation
+    * primitive.transformation;
+```
+
+#### Background Color Control
+**ViewportVisibility Extension:**
+```rust
+#[derive(Clone, Copy)]
+pub struct ViewportVisibility {
+    pub show_grid: RwSignal<bool>,
+    pub show_x_axis: RwSignal<bool>,
+    pub show_y_axis: RwSignal<bool>,
+    pub show_z_axis: RwSignal<bool>,
+    pub background_color: RwSignal<Option<(u8, u8, u8)>>,  // None = transparent
+}
+```
+
+**Transparent Background for Exports:**
+```rust
+let clear_state = match background_color {
+    Some((r, g, b)) => ClearState::color_and_depth(
+        r as f32 / 255.0,
+        g as f32 / 255.0,
+        b as f32 / 255.0,
+        1.0,  // Opaque alpha
+        1.0   // Depth
+    ),
+    None => ClearState::color_and_depth(0.0, 0.0, 0.0, 0.0, 1.0),  // Transparent alpha=0.0
+};
+```
+
+**Reactivity Pattern:**
+```rust
+// Make viewport reactive to background color changes
+let _effect = Effect::new(move || {
+    let _grid = show_grid.get();
+    let _x = show_x_axis.get();
+    let _y = show_y_axis.get();
+    let _z = show_z_axis.get();
+    let _bg = background_color.get();  // ← Track background color changes
+
+    // Trigger viewport re-initialization
+    refetch_trigger.update(|v| *v += 1);
+});
+```
+
+#### Connection Color Control
+**Database Schema:**
+```sql
+-- Migration: 20250107000001_add_connection_color.sql
+ALTER TABLE connections ADD COLUMN color TEXT NOT NULL DEFAULT '128,128,128';
+```
+
+**Color Format:**
+- **Storage:** "R,G,B" text format (e.g., "255,0,0" for red)
+- **Display:** Hex format for HTML5 color picker (e.g., "#ff0000")
+- **Rendering:** Srgba(r, g, b, 255) for three-d library
+
+**Bidirectional Conversion:**
+```rust
+// RGB string → Hex for display
+let rgb_parts: Vec<u8> = color.get().split(',')
+    .filter_map(|s| s.parse().ok())
+    .collect();
+if rgb_parts.len() == 3 {
+    format!("#{:02x}{:02x}{:02x}", rgb_parts[0], rgb_parts[1], rgb_parts[2])
+}
+
+// Hex input → RGB string for storage
+let hex = event_target_value(&ev);
+if hex.starts_with('#') && hex.len() == 7 {
+    if let (Ok(r), Ok(g), Ok(b)) = (
+        u8::from_str_radix(&hex[1..3], 16),
+        u8::from_str_radix(&hex[3..5], 16),
+        u8::from_str_radix(&hex[5..7], 16),
+    ) {
+        color.set(format!("{},{},{}", r, g, b));
+    }
+}
+```
+
+**Viewport Color Parsing:**
+```rust
+// Parse "R,G,B" string into Srgba for rendering
+let parts: Vec<&str> = conn.color.split(',').collect();
+let normal_color = if parts.len() == 3 {
+    if let (Ok(r), Ok(g), Ok(b)) = (
+        parts[0].parse::<u8>(),
+        parts[1].parse::<u8>(),
+        parts[2].parse::<u8>(),
+    ) {
+        Srgba::new(r, g, b, 255)
+    } else {
+        Srgba::new(128, 128, 128, 255)  // Fallback gray
+    }
+} else {
+    Srgba::new(128, 128, 128, 255)
+};
+```
+
+**Key Design Decisions:**
+1. **RGB text storage** - Human-readable format in database, easy to parse and modify
+2. **Optional scale in CreateNode** - Allows default value of 1.0 for new nodes
+3. **None = transparent** - Clean Option<(u8, u8, u8)> pattern for background transparency
+4. **HTML5 color picker** - Native browser widget provides full palette without dependencies
+5. **Preset colors** - Quick access to common colors while maintaining full customization
+
+**Files Modified:**
+- `src/models/node.rs` - Added scale field
+- `src/models/connection.rs` - Added color field
+- `src/api.rs` - Updated CRUD operations for both models
+- `src/islands/topology_editor.rs` - Added UI controls (scale slider, color presets, color picker, background buttons)
+- `src/islands/topology_viewport.rs` - Applied scale transformations, background colors, connection colors in rendering
 
 ### Remaining Phase 4 Features
 
