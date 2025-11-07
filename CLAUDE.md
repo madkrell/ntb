@@ -1,10 +1,63 @@
 # Network Topology Visualizer - Claude Development Notes
 
 ## Project Status
-**Current Phase:** Phase 4 COMPLETE! ✅
-**Last Updated:** 2025-11-06
+**Current Phase:** Phase 4 COMPLETE! ✅ (including Phase 4.5 polish features)
+**Last Updated:** 2025-11-07
 **Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete
 **Architecture:** Regular Leptos Components (Islands removed - see notes below)
+
+### Phase 4.5 - UI/UX Polish COMPLETE! ✅ (2025-11-07)
+
+**✅ COMPLETED (Latest Session - Critical Fixes):**
+21. ✅ **Fullscreen Toggle** (2025-11-07) - Single button to hide both panels
+   - Replaced two separate panel toggles with unified fullscreen mode
+   - F key toggles fullscreen mode on/off
+   - Escape key hierarchy: Exit fullscreen first, then deselect
+   - RwSignal<bool> for fullscreen_mode state via context
+   - Layout conditionally renders panels based on fullscreen state
+
+22. ✅ **Camera Pan Controls** (2025-11-07) - Pan viewport separately from rotation
+   - Added pan_x and pan_y to CameraState struct
+   - Middle-mouse button OR Shift+drag to pan
+   - Pan speed scales with camera distance for intuitive feel
+   - Pan target becomes camera look-at point for centered view
+   - Fixes topology shifting when rotating/zooming in fullscreen
+
+23. ✅ **Viewport Centering Fix** (2025-11-07) - Topology stays centered on resize
+   - Root cause: Canvas resize didn't update viewport/projection matrix
+   - Solution: Always query canvas dimensions and update resolution on every render
+   - ```rust
+     let width = canvas.client_width() as u32;
+     let height = canvas.client_height() as u32;
+     canvas.set_width(width);
+     canvas.set_height(height);
+     ```
+   - Fixes: Fullscreen toggle, window resize, panel visibility changes
+
+24. ✅ **Zoom to Fit with Bounding Box** (2025-11-07) - Proper topology fitting
+   - Replaced fixed distance (20.0) with dynamic bounding box calculation
+   - Algorithm:
+     - Iterate all nodes to find min/max X/Y/Z coordinates
+     - Calculate bounding box dimensions
+     - Determine camera distance using FOV math: `distance = (size / 2) / tan(FOV / 2)`
+     - Center camera on bounding box center (pan offset)
+     - 10% margin factor for visual padding
+   - Special handling in camera preset Effect (accesses node data storage)
+
+25. ✅ **Node Color Customization** (2025-11-07) - Full color control per node
+   - Database migration: `20250107000002_add_node_color.sql`
+   - Added `color: String` field to Node model ("R,G,B" format, default "100,150,255")
+   - Properties panel color picker UI:
+     - 13 preset color buttons (Blue, Orange, Green, Red, Purple, Gray, Light Blue, Bright Orange, etc.)
+     - HTML5 color picker with bidirectional hex↔RGB conversion
+     - Current color displayed as RGB text
+   - Viewport rendering updated to parse and apply custom node colors
+   - Fallback to type-based colors if parse fails
+
+26. ✅ **Cloud Node Type** (2025-11-07) - Added missing device type
+   - Added "Cloud" option to Properties Panel node type dropdown
+   - Positioned between "Load Balancer" and "Database"
+   - Matches glTF/GLB model loading (blob-cloud.glb)
 
 ### Phase 4 - COMPLETE! ✅
 
@@ -26,7 +79,7 @@
 
 **✅ COMPLETED (Priority 2 - Visual Polish):**
 8. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
-9. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc.
+9. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc. (now overridden by custom colors)
 10. ✅ **Connection rendering improvements** (2025-11-05) - Thin cylindrical lines (0.012 thickness) using ColorMaterial
 11. ✅ **Connection selection** (2025-11-05) - Click to select connections in viewport
     - Ray-cylinder intersection algorithm for accurate 3D picking
@@ -99,6 +152,110 @@
 - ✅ Suspense components for proper loading states (no hydration warnings)
 - ✅ Context-based state sharing across components
 
+## Key Lessons Learned (Phase 4.5 Session)
+
+### 1. Canvas Resize and Viewport Updates
+**Issue:** Topology shifts when toggling fullscreen or resizing window
+**Root Cause:** Canvas element resizes but WebGL viewport and projection matrix don't update
+**Solution:** Always update canvas resolution on every render
+```rust
+// In render function - always get current dimensions
+let width = canvas.client_width() as u32;
+let height = canvas.client_height() as u32;
+canvas.set_width(width);
+canvas.set_height(height);
+let viewport = Viewport::new_at_origo(width, height);
+```
+**Why:** Ensures viewport and projection matrix always match actual canvas size, preventing distortion and off-center rendering
+
+### 2. Bounding Box Calculation for Smart Zoom
+**Pattern:** Dynamic camera positioning based on scene contents
+**Implementation:**
+```rust
+// Iterate nodes to find bounds
+let mut min_x/max_x/min_y/max_y/min_z/max_z = ...;
+for node in nodes { /* update bounds */ }
+
+// Calculate dimensions and center
+let width = max_x - min_x;
+let center_x = (min_x + max_x) / 2.0;
+
+// Apply margin and calculate distance
+let margin_factor = 1.1;  // 10% margin
+let max_dimension = width.max(height).max(depth) * margin_factor;
+let distance = (max_dimension / 2.0) / (fov_radians / 2.0).tan();
+```
+**Result:** Camera automatically positions to fit entire topology with consistent margin
+
+### 3. Fullscreen Toggle Pattern
+**Anti-pattern:** Two separate signals for left/right panel visibility
+- Leads to state inconsistency
+- Multiple signals of same type in context collide
+- Complex to manage
+
+**Better pattern:** Single fullscreen mode signal
+```rust
+let fullscreen_mode = RwSignal::new(false);
+provide_context(fullscreen_mode);
+
+// Layout conditionally renders both panels
+{move || {
+    if !fullscreen_mode.get() {
+        Some(view! { <DevicePalette /> })
+    } else {
+        None
+    }
+}}
+```
+**Benefits:** Simpler state, single source of truth, keyboard-friendly (F to toggle, Esc to exit)
+
+### 4. RGB Color Storage Format
+**Design Decision:** Store colors as "R,G,B" text in database
+**Rationale:**
+- Human-readable in database queries
+- Easy to parse and validate
+- Clear separation between components
+- Flexible for different color spaces
+
+**Conversion Pattern:**
+```rust
+// Parse from database
+let parts: Vec<&str> = node.color.split(',').collect();
+if parts.len() == 3 {
+    if let (Ok(r), Ok(g), Ok(b)) = (
+        parts[0].parse::<u8>(),
+        parts[1].parse::<u8>(),
+        parts[2].parse::<u8>(),
+    ) {
+        Srgba::new(r, g, b, 255)
+    }
+}
+
+// Hex for HTML5 color picker
+format!("#{:02x}{:02x}{:02x}", r, g, b)
+
+// Hex back to RGB
+let r = u8::from_str_radix(&hex[1..3], 16)?;
+```
+
+### 5. Camera Pan State Management
+**Pattern:** Pan offset changes camera look-at target
+```rust
+struct CameraState {
+    distance: f32,
+    azimuth: f32,
+    elevation: f32,
+    pan_x: f32,    // NEW: horizontal pan
+    pan_y: f32,    // NEW: vertical pan
+}
+
+// Camera calculation
+let target = vec3(state.pan_x, state.pan_y, 0.0);
+let eye = target + vec3(/* orbit offset from target */);
+let camera = Camera::new_perspective(viewport, eye, target, up, ...);
+```
+**Result:** Natural camera behavior - pan moves the view center, rotation/zoom orbit around that center
+
 ## ✅ VERIFIED Configuration (from Leptos 0.7/0.8 docs)
 
 ### Important: NO Leptos.toml Required!
@@ -156,37 +313,6 @@ pub fn hydrate() {
 }
 ```
 
-## ~~Islands vs Components vs Code Splitting~~ (NO LONGER APPLICABLE)
-
-**NOTE:** This section is kept for reference only. We removed islands architecture on 2025-11-03.
-
-**Previous approach - Islands ≠ Automatic Code Splitting!**
-
-- `#[component]` - Server-rendered HTML only, no client JS
-- `#[island]` - Interactive WASM component with full Leptos reactivity (hydrates on-demand)
-- `#[lazy]` - Code-splits island into separate WASM bundle (ONLY works with simple async functions)
-
-**Reality Check:**
-```rust
-// ❌ Does NOT work - complex reactive logic with Effects/signals
-#[island]
-#[lazy]
-async fn ComplexIsland() -> impl IntoView { /* Effects, Resources, etc. */ }
-
-// ✅ Works - simple async data fetching
-#[island]
-#[lazy]
-async fn SimpleIsland() -> impl IntoView {
-    let data = fetch_data().await;
-    view! { <div>{data}</div> }
-}
-```
-
-**Our Architecture:**
-- Islands provide on-demand hydration (not loaded until component renders)
-- All islands in single WASM bundle (~2.3MB with three-d)
-- `#[lazy]` only works for simple async components without reactive primitives
-
 ## Server Functions Architecture (CRITICAL DISCOVERY)
 
 **Issue:** Server functions need to be accessible from both client and server, but `#[cfg(feature = "ssr")]` gates module visibility.
@@ -204,118 +330,178 @@ pub mod api;  // ✅ NOT behind #[cfg(feature = "ssr")]
 pub mod server;  // Old implementation-specific code
 ```
 
-```rust
-// src/api.rs - Server functions accessible from client AND server
-use crate::models::{Topology, Node, Connection};
-use leptos::prelude::*;
-
-#[cfg(feature = "ssr")]
-use sqlx::SqlitePool;
-
-#[server(GetTopologyFull, "/api")]
-pub async fn get_topology_full(id: i64) -> Result<TopologyFull, ServerFnError> {
-    #[cfg(feature = "ssr")]
-    {
-        use axum::Extension;
-        use leptos_axum::extract;
-
-        let Extension(pool) = extract::<Extension<SqlitePool>>()
-            .await
-            .map_err(|e| ServerFnError::new(format!("Failed to extract: {}", e)))?;
-
-        // Database operations...
-        Ok(data)
-    }
-
-    #[cfg(not(feature = "ssr"))]
-    {
-        unreachable!("Server function called on client")
-    }
-}
-```
-
-```rust
-// src/islands/my_island.rs - Now this works!
-use crate::api::get_topology_full;  // ✅ Can import!
-
-#[island]
-pub fn MyIsland() -> impl IntoView {
-    let data = Resource::new(
-        || (),
-        |_| async move {
-            get_topology_full(1).await  // ✅ Works!
-        }
-    );
-    // ...
-}
-```
-
 **Why this works:**
 - `#[server]` macro generates client-side stub when `ssr` feature is off
 - Non-feature-gated module makes function signature visible to client
 - SSR-specific implementation is conditionally compiled
 - Leptos handles the HTTP request/response serialization
 
-## Server Functions & Streaming (VERIFIED)
-```rust
-// Regular server function
-#[server(FunctionName)]
-pub async fn function_name(...) -> Result<T, ServerFnError> {
-    #[cfg(feature = "ssr")]
-    {
-        let pool = extract::<Extension<SqlitePool>>().await?.0;
-        // Database operations...
-    }
-}
+## Database Migrations
 
-// ✅ NATIVE SSE/STREAMING (no Axum SSE needed!)
-#[server(protocol = Websocket<JsonEncoding, JsonEncoding>)]
-async fn stream_data(
-    input: BoxedStream<Message, ServerFnError>
-) -> Result<BoxedStream<Message, ServerFnError>, ServerFnError> {
-    Ok(input.into())
-}
+### Phase 4 Migrations
+- `20250102000002_add_node_rotations.sql` - rotation_x/y/z (REAL, default 0.0, stored in degrees)
+- `20250106000003_add_node_scale.sql` - scale (REAL, default 1.0, range 0.1-5.0)
+- `20250107000001_add_connection_color.sql` - color (TEXT, default '128,128,128', format "R,G,B")
+- `20250107000002_add_node_color.sql` - color (TEXT, default '100,150,255', format "R,G,B")
 
-// Client side: create signal from stream
-let signal = Signal::from_stream(my_stream);
-```
+## Phase 5 - Export & JSON Import/Export (NEXT)
 
-## Browser Console Logging from WASM
+### Planned Features
+1. ✅ Export topology as PNG image (COMPLETE in Phase 4)
+2. ⏳ Export topology as JSON data - Full topology backup
+3. ⏳ Import topology from JSON - Restore or share topologies
+4. ⏳ UI polish and optimizations - Loading states, error handling
+5. ⏳ Documentation - User guide with screenshots
 
-**Issue:** `tracing` logs don't appear in browser console from WASM
+## Phase 6 - Traffic Monitoring (MOST IMPACTFUL FEATURE)
 
-**Solution:** Use `web_sys::console` directly:
-```rust
-// Add to Cargo.toml web-sys features
-web-sys = { version = "0.3", features = ["console", "HtmlCanvasElement", ...] }
+### Overview
+This is probably the most exciting next phase! Real-time traffic visualization transforms the static 3D network diagram into a live monitoring tool.
 
-// In your code
-web_sys::console::log_1(&"Hello from WASM!".into());
-web_sys::console::log_1(&format!("Value: {}", x).into());
-web_sys::console::error_1(&format!("Error: {}", e).into());
-```
+### Planned Features
 
-## Project Initialization (VERIFIED)
-```bash
-# Install cargo-leptos
-cargo install --locked cargo-leptos
+#### 1. Real-Time Traffic Visualization
+- **Animated connections:** Flowing particles/pulses moving along connection paths
+- **Direction indicators:** Particles move from source to target showing data flow direction
+- **Speed variation:** Faster particles = higher throughput
+- **Particle density:** More particles = more active connection
 
-# Create project from template
-cargo leptos new --git leptos-rs/start-axum
+#### 2. Live Traffic Metrics
+- **Per-connection metrics:**
+  - Throughput (Mbps) - Current data rate
+  - Packet count - Packets per second
+  - Latency (ms) - Round-trip time
+  - Packet loss (%) - Dropped packets
+- **Display options:**
+  - Hover tooltip shows current metrics
+  - Always-on labels for selected connections
+  - Dashboard panel with detailed stats
 
-# OR manual setup with correct structure
-cargo new --lib my-project
-# Configure Cargo.toml as shown above
-```
+#### 3. Color-Coded Status
+- **Traffic load visualization:**
+  - Green (0-30% utilization) - Healthy, light load
+  - Yellow (30-70% utilization) - Moderate, warning threshold
+  - Orange (70-90% utilization) - Heavy load approaching capacity
+  - Red (90-100% utilization) - Critical, at or over capacity
+- **Status indicators:**
+  - Connection color changes based on current load
+  - Pulsing/flashing for alerts
+  - Thickness variation based on bandwidth utilization
 
-## Verified Working Dependencies
-- leptos = "0.8.0" (with "ssr" and "islands" features)
-- leptos_axum = "0.8.0"
-- cargo-leptos = latest
-- sqlx = "0.7" (with sqlite, macros, migrate)
-- wasm-bindgen = "0.2.101" (matching installed CLI)
-- web-sys = "0.3" (WebGL2, console features)
-- **three-d = "0.17.1" ✅ VERIFIED** - Works with custom WebGL2 context
+#### 4. Traffic Dashboard
+- **Metrics panel (right sidebar or bottom panel):**
+  - Top connections by traffic volume
+  - Total network throughput
+  - Average latency across all connections
+  - Packet loss summary
+- **Historical data:**
+  - Time-series charts showing traffic over time
+  - Sparklines for quick trend visualization
+  - Configurable time windows (1min, 5min, 15min, 1hour)
+- **Alerts panel:**
+  - List of current warnings/errors
+  - Connection health scores
+  - Anomaly detection (sudden spikes/drops)
+
+#### 5. Streaming Data Architecture
+- **Leptos Native WebSocket:**
+  ```rust
+  #[server(protocol = Websocket<JsonEncoding, JsonEncoding>)]
+  async fn stream_traffic_data(
+      input: BoxedStream<TrafficRequest, ServerFnError>
+  ) -> Result<BoxedStream<TrafficUpdate, ServerFnError>, ServerFnError> {
+      // Server streams traffic updates every 100-500ms
+      Ok(traffic_stream)
+  }
+
+  // Client side
+  let traffic_signal = Signal::from_stream(traffic_stream);
+  ```
+- **Data structure:**
+  ```rust
+  struct TrafficUpdate {
+      connection_id: i64,
+      timestamp: i64,
+      throughput_mbps: f64,
+      packets_per_sec: u64,
+      latency_ms: f64,
+      packet_loss_pct: f64,
+      utilization_pct: f64,  // 0-100
+  }
+  ```
+
+#### 6. Mock Traffic Generator (for Demo)
+- **Server-side generator:**
+  - Simulates realistic network traffic patterns
+  - Varies by time of day (higher during business hours)
+  - Random bursts and quiet periods
+  - Connection-specific patterns (servers busier than switches)
+- **Configuration options:**
+  - Enable/disable mock data
+  - Adjust traffic intensity (low/medium/high)
+  - Trigger specific scenarios (DDoS, link failure, congestion)
+
+#### 7. Animation Implementation
+- **Particle system in three-d:**
+  - Small sphere instances moving along connection paths
+  - Interpolate position from source to target
+  - Recycle particles at target (spawn new at source)
+- **Performance optimization:**
+  - Limit particle count per connection (max 5-10)
+  - Update positions in requestAnimationFrame
+  - Use instanced rendering for efficiency
+- **Visual effects:**
+  - Motion blur for speed impression
+  - Glow effect around particles
+  - Trail effect showing path history
+
+### Implementation Plan
+
+**Phase 6.1 - Backend & Data Streaming:**
+1. Create mock traffic generator (server function)
+2. Set up WebSocket streaming server function
+3. Test data flow client→server→client
+4. Database schema for traffic_metrics (already exists)
+
+**Phase 6.2 - Basic Visualization:**
+1. Color connections based on traffic load
+2. Update connection colors in real-time from stream
+3. Add traffic metrics to connection tooltips
+4. Test with mock data
+
+**Phase 6.3 - Animation System:**
+1. Implement particle system in three-d
+2. Spawn particles at source node
+3. Animate particles along connection path
+4. Vary speed/density based on throughput
+
+**Phase 6.4 - Dashboard & Metrics:**
+1. Create traffic metrics panel component
+2. Display current stats for all connections
+3. Add time-series charts (optional)
+4. Top connections list sorted by traffic
+
+**Phase 6.5 - Polish & Configuration:**
+1. Enable/disable traffic visualization
+2. Adjust animation speed/density
+3. Configure alert thresholds
+4. Save preferences to database
+
+### Expected Outcomes
+- **Visual impact:** Instantly see network activity and hotspots
+- **Monitoring:** Identify bottlenecks and congestion in real-time
+- **Professional tool:** Transforms prototype into production-ready network monitoring solution
+- **Demo appeal:** Animated traffic makes presentations much more engaging
+
+### Technical Challenges
+1. **Performance:** Animating many particles while maintaining 60fps
+   - Solution: Use three-d instanced rendering, limit particle count
+2. **Data rate:** WebSocket bandwidth for many connections
+   - Solution: Aggregate updates, send diffs only, configurable refresh rate
+3. **State management:** Keeping traffic data in sync with topology
+   - Solution: Use same mutable storage pattern as event handlers
+4. **Visual clutter:** Too many particles/metrics overwhelming
+   - Solution: Progressive disclosure, filters, focus mode
 
 ## Build Commands (VERIFIED)
 
@@ -341,789 +527,17 @@ cargo leptos build --release
 ls -lh target/site/pkg/*.wasm
 ```
 
-## Styling with Tailwind CSS v4
-- **No Node.js required** - Using standalone Tailwind CLI
-- **CSS-first configuration** - No `tailwind.config.js` file needed
-- **Auto content detection** - Scans `src/**/*.rs` for classes
-- **Apply classes directly** in Leptos `view!` macros: `<div class="text-blue-600 font-bold">`
-- **See [TAILWIND.md](TAILWIND.md)** for complete setup guide
-
-## Bundle Sizes (Actual)
-- **Current WASM bundle:** 2.3MB (dev build, includes three-d + all islands)
-- Release build with optimizations will be significantly smaller
-- Islands hydrate on-demand but share single WASM bundle (no #[lazy] splitting)
-
-## Known Issues & Solutions
-
-### 1. Server Functions Database Access
-**Issue:** `use_context::<SqlitePool>()` returns None in server functions
-**Solution:** Use `leptos_axum::extract()` instead
-```rust
-use leptos_axum::extract;
-use axum::Extension;
-
-let Extension(pool) = extract::<Extension<SqlitePool>>()
-    .await
-    .map_err(|e| ServerFnError::new(format!("Failed to extract: {}", e)))?;
-```
-
-### 2. Server Functions Not Accessible from Islands
-**Issue:** `use crate::server::my_function` fails with "unresolved import" from client code
-**Solution:** Create non-feature-gated `api.rs` module (see "Server Functions Architecture" above)
-
-### 3. SQLite Database Creation
-**Issue:** "unable to open database file" on first run
-**Solution:** Use `SqliteConnectOptions` with `create_if_missing(true)`
-```rust
-use sqlx::sqlite::SqliteConnectOptions;
-use std::str::FromStr;
-
-let options = SqliteConnectOptions::from_str(&database_url)?
-    .create_if_missing(true);
-let pool = SqlitePoolOptions::new()
-    .connect_with(options)
-    .await?;
-```
-
-### 4. Islands Code Splitting with #[lazy]
-**Issue:** `#[lazy]` attribute fails with "trait bounds not satisfied" for reactive islands
-**Root Cause:** `#[lazy]` requires simple async functions; doesn't work with Effects, Resources, or complex reactive logic
-**Solution:** Accept single WASM bundle or simplify island to pure async data fetching
-
-### 5. wasm-bindgen Version Mismatch
-**Issue:** "Wasm file schema version: 0.2.105, binary schema version: 0.2.101"
-**Solution:** Pin wasm-bindgen to match installed CLI version in Cargo.toml:
-```toml
-wasm-bindgen = { version = "=0.2.101", optional = true }
-```
-
-### 6. JsCast Import Not Found
-**Issue:** `use leptos::wasm_bindgen::JsCast` fails or `unchecked_ref()` not available
-**Solution:** Import directly from wasm_bindgen crate:
-```rust
-#[cfg(feature = "hydrate")]
-use wasm_bindgen::JsCast;
-```
-
-### 7. Event Handler Stale Closures and Duplicate Handlers (CRITICAL - 2025-11-05)
-**Issue:** After refetch, newly created data (nodes/connections) couldn't be selected and disappeared on viewport interaction
-**Root Cause:** Event handlers captured data and render functions at initialization time, never updated after refetches
-**Symptoms:**
-- Multiple event handlers firing for same click (duplicate handlers created on each refetch)
-- Event handlers referencing old data even after fresh data loaded
-- Render function not updating when called from event handlers
-
-**Solution - Three-Part Fix:**
-
-**Part 1: Prevent Duplicate Event Handlers**
-```rust
-// Track initialization state
-let already_initialized = RwSignal::new(false);
-
-// Only set up handlers once
-if !already_initialized.get_untracked() {
-    initialize_threed_viewport(
-        /* ...params */
-        true  // skip_event_handlers = false on first call
-    )?;
-    already_initialized.set(true);
-} else {
-    initialize_threed_viewport(
-        /* ...params */
-        true  // skip_event_handlers = true on refetch
-    )?;
-}
-```
-
-**Part 2: Mutable Storage for Data**
-```rust
-// Component level: Create mutable storage containers
-#[cfg(feature = "hydrate")]
-let nodes_data_storage: Rc<RefCell<Vec<NodeData>>> = Rc::new(RefCell::new(Vec::new()));
-#[cfg(feature = "hydrate")]
-let connections_data_storage: Rc<RefCell<Vec<ConnectionData>>> = Rc::new(RefCell::new(Vec::new()));
-
-// Update storage on each initialization
-*nodes_data_storage.borrow_mut() = nodes_data;
-*connections_data_storage.borrow_mut() = connections_data;
-
-// Pass storage to event handler setup
-setup_orbit_controls(
-    &canvas,
-    camera_state,
-    render_fn_storage,
-    nodes_data_storage,  // Pass storage, not captured data
-    connections_data_storage,
-    /* ...other params */
-)?;
-
-// Event handlers borrow from storage on each interaction
-let nodes_borrow = nodes_data.borrow();
-let connections_borrow = connections_data.borrow();
-// ... use borrowed data ...
-```
-
-**Part 3: Render Function Storage**
-```rust
-// Component level: Create render function storage
-let render_fn_storage: Rc<RefCell<Option<Rc<dyn Fn(CameraState)>>>>
-    = Rc::new(RefCell::new(None));
-
-// Store render function after creation
-*render_fn_storage.borrow_mut() = Some(render_scene.clone());
-
-// Event handlers borrow render function on each call
-if let Some(render_fn) = render_fn_storage.borrow().as_ref() {
-    render_fn(*camera_state_snapshot.lock().unwrap());
-}
-```
-
-**Key Lessons:**
-1. **Event handlers capture at creation time** - They won't automatically see updated data
-2. **Use Rc<RefCell<>> for mutable shared data** - Allows event handlers to borrow fresh data
-3. **Store render functions in RefCell** - Enables updating the function reference after initialization
-4. **Track initialization state** - Prevents duplicate event handler setup on refetch
-5. **Deselect triggers Effects** - Clicking empty space to deselect forces viewport re-render with latest data
-
-**Why This Matters:**
-Without this pattern, event handlers become "frozen in time" at their creation, referencing stale data and old render functions even after the component refetches fresh data from the server.
-
-### 8. Disposed Reactive Signals in Event Handlers
-**Issue:** Event handlers with `.forget()` panic when accessing reactive signals after component is disposed
-```
-panicked at reactive_graph-0.2.9/src/traits.rs:361:29:
-you tried to access a reactive value which has already been disposed
-```
-**Root Cause:** Event handlers outlive the component lifecycle when using `.forget()`, creating race conditions with reactive signal disposal
-
-**Solution:** Use non-reactive snapshot pattern with `Arc<Mutex<T>>`:
-```rust
-// Create non-reactive snapshot of reactive state
-let camera_state_snapshot = Arc::new(Mutex::new(camera_state.get_untracked()));
-let is_disposed = Arc::new(Mutex::new(false));
-
-// Register cleanup
-on_cleanup(move || *is_disposed.lock().unwrap() = true);
-
-// Event handlers access snapshot, not reactive signals
-let mousemove = Closure::wrap(Box::new(move |e: MouseEvent| {
-    if *is_disposed.lock().unwrap() { return; }
-
-    // Safe - no reactive signal access
-    let mut state = camera_state_snapshot.lock().unwrap();
-    state.azimuth += delta_x * 0.01;
-
-    // Conditionally sync back to reactive signal
-    if !*is_disposed.lock().unwrap() {
-        camera_state.set(*state);
-    }
-
-    render_scene(*state);
-}));
-```
-
-**Key Points:**
-- Event handlers read/write snapshot only (thread-safe, non-reactive)
-- Conditionally sync snapshot to reactive signal when not disposed
-- Always check disposal flag before signal `.set()` calls
-- Applies to all closures using `.forget()`
-
-### 8. Context Collision with Same-Typed Signals
-**Issue:** Multiple `RwSignal<bool>` values provided to context cause collisions - all signals become the same
-```rust
-// ❌ WRONG - All four signals reference the same context value
-provide_context(show_grid);      // RwSignal<bool>
-provide_context(show_x_axis);    // RwSignal<bool> - overwrites!
-provide_context(show_y_axis);    // RwSignal<bool> - overwrites!
-provide_context(show_z_axis);    // RwSignal<bool> - overwrites!
-
-// Later: all four signals are the same value
-let show_grid = use_context::<RwSignal<bool>>(); // Gets the last one set!
-```
-
-**Root Cause:** Leptos context uses type-based lookup. Multiple values of same type overwrite each other.
-
-**Solution:** Wrap related signals in a unique struct type:
-```rust
-// ✅ CORRECT - Struct provides unique type for context
-#[derive(Clone, Copy)]
-pub struct ViewportVisibility {
-    pub show_grid: RwSignal<bool>,
-    pub show_x_axis: RwSignal<bool>,
-    pub show_y_axis: RwSignal<bool>,
-    pub show_z_axis: RwSignal<bool>,
-}
-
-// Provide once
-let viewport_visibility = ViewportVisibility {
-    show_grid: RwSignal::new(true),
-    show_x_axis: RwSignal::new(true),
-    show_y_axis: RwSignal::new(true),
-    show_z_axis: RwSignal::new(true),
-};
-provide_context(viewport_visibility);
-
-// Access individual signals from struct
-let vis = use_context::<ViewportVisibility>().expect("viewport_visibility context");
-let show_grid = vis.show_grid;  // ✅ Each signal is independent!
-```
-
-**Key Pattern:** Group related same-typed signals into a struct for context sharing
-
-## Database
-- SQLite with sqlx
-- Migrations in /migrations/
-- Pool provided via Axum Extension
-- Sample data: 7 nodes (Router, Switches, Servers, Firewall), 7 connections
-
-## Key Corrections to Original Plan
-
-### ❌ INCORRECT in plan:
-1. **Leptos.toml file** - Does NOT exist in modern Leptos
-2. **Islands architecture for fully interactive apps** - Wrong! Islands are for sparse interactivity. Use regular components.
-3. **leptos::leptos_dom::HydrationCtx::stop_hydrating()** - Wrong! Use `hydrate_body()`
-4. **Axum SSE endpoints** - NOT needed! Leptos has native streaming via server functions
-5. **Manual EventSource setup** - NOT needed! Use `Signal::from_stream()`
-6. **Server functions in `#[cfg(feature = "ssr")]` module** - Wrong! Create non-gated `api.rs`
-
-### ✅ CORRECT approach:
-1. Use `cargo leptos new --git leptos-rs/start-axum` for project template
-2. Configure in `Cargo.toml` WITHOUT "islands" feature (for fully interactive apps)
-3. Use `leptos::mount::hydrate_body(app::App)` in lib.rs
-4. Use `#[server(protocol = Websocket<>)]` for streaming
-5. Use `Signal::from_stream()` for reactive SSE/streaming data
-6. Put server functions in non-feature-gated module (api.rs)
-7. Use `web_sys::console` for browser console logging from WASM
-8. Use `provide_context()` and `use_context()` for sharing state across components
-
-## IDE Configuration
-All editors should enable all Cargo features for rust-analyzer:
-```json
-// VSCode settings.json
-{
-  "rust-analyzer.cargo.features": "all"
-}
-```
-
-## ✅ Phase 1 COMPLETE - Foundation
-
-**Stack:** Leptos 0.8 + SQLite + Server Functions
+## Git Repository
 **Repo:** https://github.com/madkrell/ntv.git
-
-**Key Architecture (Updated 2025-11-03):**
-- `#[component]` = Regular Leptos component with full reactivity and hydration
-- `#[server]` = Backend API via leptos_axum::extract()
-- Database pool via Axum Extension layer
-- Context-based state sharing with `provide_context()` / `use_context()`
-
-**Database Schema:** topologies, nodes (3D x/y/z), connections, traffic_metrics
-**Git Tag:** v0.1.0-phase1-complete
-
-**Note:** Originally used islands architecture, but this was removed in Phase 3 for better interactivity.
-
-## ✅ Phase 2 COMPLETE - 3D Viewport & Rendering
-
-### Server Functions (Moved to api.rs)
-Created `src/api.rs` module (NOT feature-gated) with all server functions:
-- `get_topologies()` - List all topologies
-- `create_topology()` - Create new topology
-- `delete_topology()` - Delete topology
-- `get_topology_full()` - Get topology with all nodes and connections
-
-### 3D Viewport Implementation
-**Approach:** three-d with custom WebGL2 context (NOT three-d's Window module)
-
-**Key Discovery:** three-d can work WITHOUT event loop control!
-- three-d's Window module requires event loop (conflicts with Leptos islands)
-- **Solution:** Use `three_d::Context::from_gl_context()` with web-sys WebGL2 context
-- Leptos island controls DOM/canvas, three-d just renders to it
-
-**Implementation Pattern:**
-```rust
-#[island]
-pub fn TopologyViewport(#[prop(optional)] topology_id: Option<i64>) -> impl IntoView {
-    let canvas_ref = NodeRef::<Canvas>::new();
-    let camera_state = RwSignal::new(CameraState::default());
-
-    // Fetch topology data
-    let topology_data = Resource::new(
-        move || topology_id,
-        |id| async move {
-            match id {
-                Some(id) => get_topology_full(id).await.ok(),
-                None => None,
-            }
-        }
-    );
-
-    Effect::new(move || {
-        if let Some(canvas) = canvas_ref.get() {
-            #[cfg(feature = "hydrate")]
-            {
-                // Get WebGL2 context
-                let gl = canvas.get_context("webgl2")?.dyn_into::<WebGl2RenderingContext>()?;
-
-                // Wrap in glow (three-d uses glow internally)
-                let gl_context = three_d::context::Context::from_webgl2_context(gl);
-
-                // Create three-d Context
-                let context = Context::from_gl_context(Arc::new(gl_context))?;
-
-                // Render nodes and connections...
-            }
-        }
-    });
-
-    view! { <canvas node_ref=canvas_ref width="800" height="600" /> }
-}
-```
-
-### Camera Controls (Orbit Camera)
-**Implementation:** Spherical coordinate system
-- **Drag to rotate:** Updates azimuth (horizontal) and elevation (vertical) angles
-- **Scroll to zoom:** Adjusts camera distance
-- **Camera state:** RwSignal with distance, azimuth, elevation
-
-```rust
-#[derive(Clone, Copy)]
-struct CameraState {
-    distance: f32,     // 18.0 default (zoomed out to show all nodes)
-    azimuth: f32,      // horizontal rotation in radians
-    elevation: f32,    // vertical rotation in radians
-}
-
-// Camera position calculation
-let eye = vec3(
-    state.distance * state.elevation.cos() * state.azimuth.sin(),
-    state.distance * state.elevation.sin(),
-    state.distance * state.elevation.cos() * state.azimuth.cos(),
-);
-```
-
-### Node Rendering
-- **Nodes as spheres:** `CpuMesh::sphere(16)` with PhysicalMaterial
-- **Scale:** 0.3 (tested, prevents overlap)
-- **Color:** Blue (Srgba::new(50, 150, 255, 255))
-- **Positioning:** Uses node.position_x/y/z from database
-
-### Connection Rendering
-- **Connections as cylinders:** Rotated to align between nodes
-- **Challenge:** three-d's default cylinder is along Y-axis, needs rotation
-- **Solution:** Axis-angle rotation from direction vector
-
-```rust
-// Calculate rotation to align cylinder with connection direction
-let direction = end_pos - start_pos;
-let length = direction.magnitude();
-let normalized_dir = direction.normalize();
-let up = vec3(0.0, 1.0, 0.0);
-
-// Calculate rotation axis and angle
-if (normalized_dir - up).magnitude() < 0.001 {
-    // Already aligned
-    Mat4::identity()
-} else if (normalized_dir + up).magnitude() < 0.001 {
-    // Opposite direction (180 degrees)
-    Mat4::from_angle_x(radians(std::f32::consts::PI))
-} else {
-    // General case: axis-angle rotation
-    let axis = up.cross(normalized_dir).normalize();
-    let angle = up.dot(normalized_dir).acos();
-    Mat4::from_axis_angle(axis, radians(angle))
-}
-```
-
-### Sample Data
-Created test topology with 7 nodes and 7 connections:
-- Router-Core at origin (0,0,0)
-- Switch-A and Switch-B at (-3,2,0) and (3,2,0)
-- 3 Servers at y=4, z=-2
-- Firewall at (0,-3,0)
-- Connections between them (fiber, ethernet)
-
-### Achievements
-1. ✅ WebGL2 context initialized
-2. ✅ three-d Context created from WebGL2
-3. ✅ Test cube rendered and verified
-4. ✅ Interactive camera controls (drag + scroll)
-5. ✅ Topology data loaded from database via server function
-6. ✅ Nodes rendered as 3D spheres at correct positions
-7. ✅ Connections rendered as properly rotated cylinders
-8. ✅ Camera zoomed out to show full topology (distance 18.0)
-9. ✅ Browser console logging working
-
-### Current Status
-**Working features:**
-- Interactive 3D viewport with orbit controls
-- Topology data fetched from server and rendered
-- 7 nodes displayed as blue spheres
-- 7 connections displayed as gray cylinders
-- Proper camera positioning to view entire network
-
-**Git Tag:** v0.1.0-phase2-complete (to be created)
-
-## ✅ Phase 3 COMPLETE - UI Layout & 3D Editing Interface
-
-**Git Tag:** v0.1.0-phase3-complete (to be created)
-
-### Architecture Change
-- ✅ Removed islands architecture (2025-11-03)
-- ✅ Converted to regular Leptos components for better interactivity
-- ✅ Context-based state sharing with `provide_context()` / `use_context()`
-- ✅ Fixed hydration to use `hydrate_body()` instead of `hydrate_islands()`
-
-### UI Layout
-1. ✅ Professional 3-panel layout implemented (src/islands/topology_editor.rs)
-   - Left: Device Palette with 6 device types (Router, Switch, Server, Firewall, LoadBalancer, Database)
-   - Center: 3D Viewport (TopologyViewport component)
-   - Right: Properties Panel (updates on selection)
-2. ✅ Top toolbar with action buttons (Add Node, Connect, Delete, Save, Export)
-3. ✅ Responsive layout with Tailwind CSS styling
-
-### 3D Selection & Interaction
-1. ✅ Click detection in 3D viewport (differentiates drag vs click)
-2. ✅ Ray-sphere intersection for node selection
-3. ✅ **Visual feedback:** Selected nodes render in yellow/orange color
-4. ✅ **Click empty space to deselect:** Clicking non-node areas clears selection
-5. ✅ Properties panel updates reactively when selection changes
-6. ✅ Selection signals shared via Leptos context:
-   - `RwSignal<Option<i64>>` for selected_node_id
-   - `RwSignal<Option<SelectedItem>>` for selected_item (Node or Connection enum)
-
-### Backend & Data Management
-1. ✅ **Complete Node CRUD server functions** (src/api.rs):
-   - `get_node(id)` - Fetch single node
-   - `create_node(data)` - Create new node
-   - `update_node(id, data)` - Update node with dynamic fields
-   - `delete_node(id)` - Delete node
-2. ✅ **Complete Connection CRUD server functions** (src/api.rs):
-   - `get_connection(id)` - Fetch single connection
-   - `create_connection(data)` - Create new connection
-   - `update_connection(id, data)` - Update connection
-   - `delete_connection(id)` - Delete connection
-
-### Properties Panel Integration
-1. ✅ **NodeProperties component** loads real data via `get_node()` Resource
-2. ✅ **ConnectionProperties component** loads real data via `get_connection()` Resource
-3. ✅ **Suspense wrappers** for proper loading states (eliminates hydration warnings)
-4. ✅ **Save functionality** updates database via `update_node()`/`update_connection()`
-5. ✅ **Real-time viewport updates:** Viewport automatically refetches and re-renders when data changes
-   - Implemented via `refetch_trigger` signal shared through context
-   - No page refresh needed - updates are instant!
-
-### Implementation Highlights
-- **Ray-sphere intersection:** Accurate 3D picking with 45° FOV perspective camera
-- **Dual material rendering:** Normal (blue) and selected (yellow) materials for each node
-- **Dynamic UPDATE queries:** Server functions only update provided fields (all fields optional)
-- **Action-based saves:** Leptos Actions provide pending states and error handling
-- **Effect-based refetch:** Save success triggers viewport reload via signal increment
-
-### Key Files Modified
-- `src/islands/topology_editor.rs` - Main editor with 3-panel layout, properties components
-- `src/islands/topology_viewport.rs` - 3D rendering, selection, refetch mechanism
-- `src/api.rs` - All 8 CRUD server functions (4 nodes + 4 connections)
-
-## Phase 4 - Visual Enhancements & 3D Interaction (IN PROGRESS)
-
-### ✅ COMPLETED: 3D Model Rotation Controls (2025-11-04)
-
-**Implementation:**
-1. ✅ Database migration for rotation_x/y/z columns
-2. ✅ Updated Node model structs and DTOs with rotation fields
-3. ✅ Full CRUD API support for rotation values
-4. ✅ Properties panel UI with X/Y/Z rotation sliders
-5. ✅ Viewport rendering with rotation transformations
-6. ✅ Default rotation_x=90° for Blender glTF models
-
-**Database Changes:**
-- Migration: `20250102000002_add_node_rotations.sql`
-- Added columns: `rotation_x`, `rotation_y`, `rotation_z` (REAL, default 0.0)
-- All rotation values stored in **degrees** for user clarity
-
-**Key Files Modified:**
-- `src/models/node.rs` - Added rotation fields to Node, CreateNode, UpdateNode
-- `src/api.rs` - Updated all CRUD functions, set default rotation_x=90.0
-- `src/islands/topology_editor.rs` - Added rotation UI controls (-180° to +180° range)
-- `src/islands/topology_viewport.rs` - Applied rotations using cgmath `degrees()` function
-
-**Critical Bug Fix:**
-Initial implementation used `radians()` function incorrectly. The cgmath library has two angle wrapper functions:
-- `radians(value)` - Wraps a value that's ALREADY in radians (no conversion)
-- `degrees(value)` - Wraps a value in degrees, auto-converts to radians via Angle trait
-
-**WRONG (initial implementation):**
-```rust
-let x_rotation = Mat4::from_angle_x(radians(node.rotation_x as f32));
-// User enters 90° → treated as 90 radians → ~5156° rotation!
-```
-
-**CORRECT (fixed implementation):**
-```rust
-let x_rotation = Mat4::from_angle_x(degrees(node.rotation_x as f32));
-// User enters 90° → converted to radians properly → quarter turn
-```
-
-**Blender Coordinate System:**
-Blender uses Y-up coordinate system, while our viewport uses Z-up. To make glTF/GLB models from Blender sit flat on the grid floor, they need a 90° rotation around X-axis:
-- Default rotation for new nodes: `rotation_x = 90.0`
-- This ensures router models (and all Blender exports) are oriented correctly by default
-
-**Lessons Learned:**
-1. **Always verify unit conversions** - cgmath's function naming is subtle (radians vs degrees)
-2. **Clean rebuilds are essential** - Browser caches WASM modules; use `cargo clean` + hard refresh
-3. **Kill old processes** - Multiple cargo-leptos instances can conflict
-4. **Coordinate system defaults** - Set sensible rotation defaults based on model source
-5. **Store degrees in database** - More intuitive for users than radians
-
-**Troubleshooting Process:**
-- Issue: Topology stopped rendering after rotation implementation
-- Root cause: Browser caching old WASM + conflicting cargo-leptos processes
-- Solution: `cargo clean`, kill all processes, fresh rebuild, hard browser refresh
-
-### ✅ COMPLETED: Topology Switching Control (2025-11-04)
-
-**Implementation:**
-1. ✅ Multiple topologies in database (2 sample topologies for testing)
-2. ✅ Topology selector dropdown in top toolbar
-3. ✅ Dynamic topology loading based on selection
-4. ✅ Proper component cleanup on topology switch
-
-**Database Changes:**
-- Added second mock topology: "Data Center Network" with 5 nodes
-- First topology: "Test Network" with 7 nodes
-
-**Key Files Modified:**
-- `src/islands/topology_editor.rs` - Added topology selector dropdown, fixed topology_id passing
-- `src/islands/topology_viewport.rs` - Fixed disposed signal access in event handlers
-- `src/app.rs` - Updated to load all topologies for selector
-
-**Critical Bug Fix - Disposed Reactive Signals in Event Handlers:**
-
-**Problem:** When switching topologies, the old TopologyViewport component is disposed but event handlers (mousedown, mouseup, mousemove, wheel) persist because they use `.forget()`. These handlers tried to access disposed reactive signals (`RwSignal<CameraState>`) causing panics:
-
-```
-panicked at reactive_graph-0.2.9/src/traits.rs:361:29:
-At src/islands/topology_viewport.rs:902:46, you tried to access a reactive value
-which was defined at src/islands/topology_viewport.rs:58:24, but it has already been disposed.
-```
-
-**Initial Approach (FAILED):** Added disposal checks before signal access:
-```rust
-let is_disposed = Arc::new(Mutex::new(false));
-on_cleanup(move || *is_disposed.lock().unwrap() = true);
-
-// In event handler
-if *is_disposed.lock().unwrap() { return; }
-let state = camera_state.get_untracked();  // Still panics due to race condition!
-```
-
-**Problem with Disposal Checks:** Race condition - component could be disposed between the check and the signal access.
-
-**Final Solution (SUCCESSFUL):** Eliminate reactive signal access from event handlers entirely using a non-reactive snapshot:
-
-```rust
-// Create non-reactive camera state snapshot for safe access from event handlers
-let camera_state_snapshot = Arc::new(Mutex::new(camera_state.get_untracked()));
-
-// Event handlers only access the snapshot
-let mousemove = Closure::wrap(Box::new(move |e: MouseEvent| {
-    if *is_disposed.lock().unwrap() { return; }
-
-    // Safe - no reactive signals accessed
-    let mut state = camera_state_snapshot.lock().unwrap();
-    state.azimuth += delta_x * 0.01;
-
-    // Only update reactive signal if not disposed
-    if !*is_disposed.lock().unwrap() {
-        camera_state.set(*state);
-    }
-
-    render_scene(*state);
-}));
-```
-
-**Pattern Summary:**
-1. Create `Arc<Mutex<T>>` snapshot of reactive state at component initialization
-2. Event handlers read/write only to the snapshot (thread-safe, non-reactive)
-3. Conditionally sync snapshot back to reactive signal only when component is not disposed
-4. Register cleanup callback to set disposal flag: `on_cleanup(move || *is_disposed = true)`
-
-**Lessons Learned:**
-1. **Event handlers with `.forget()` outlive components** - They must not access reactive signals directly
-2. **Disposal checks are insufficient** - Race conditions occur between check and access
-3. **Non-reactive snapshots are the solution** - Use `Arc<Mutex<T>>` for thread-safe non-reactive state
-4. **Always guard signal updates** - Check disposal flag before every `.set()` call
-5. **Applies to all leaked closures** - Any closure using `.forget()` should use this pattern
-
-### ✅ COMPLETED: Node Scale, Background & Connection Colors (2025-11-06 Session)
-
-**Implementation Overview:**
-Added three major customization features to enhance visual control and export capabilities.
-
-#### Node Scale Control
-**Database Schema:**
-```sql
--- Migration: 20250106000003_add_node_scale.sql
-ALTER TABLE nodes ADD COLUMN scale REAL NOT NULL DEFAULT 1.0;
-```
-
-**Model Updates:**
-```rust
-pub struct Node {
-    // ... existing fields ...
-    pub scale: f64,  // Range: 0.1 to 5.0
-}
-
-pub struct CreateNode {
-    // ... existing fields ...
-    pub scale: Option<f64>,  // Optional, defaults to 1.0
-}
-```
-
-**Viewport Rendering:**
-```rust
-// Scale applied in transformation matrix
-let transform = Mat4::from_translation(position)
-    * Mat4::from_scale(node_radius * node.scale as f32)  // ← Scale multiplication
-    * z_rotation
-    * y_rotation
-    * x_rotation
-    * primitive.transformation;
-```
-
-#### Background Color Control
-**ViewportVisibility Extension:**
-```rust
-#[derive(Clone, Copy)]
-pub struct ViewportVisibility {
-    pub show_grid: RwSignal<bool>,
-    pub show_x_axis: RwSignal<bool>,
-    pub show_y_axis: RwSignal<bool>,
-    pub show_z_axis: RwSignal<bool>,
-    pub background_color: RwSignal<Option<(u8, u8, u8)>>,  // None = transparent
-}
-```
-
-**Transparent Background for Exports:**
-```rust
-let clear_state = match background_color {
-    Some((r, g, b)) => ClearState::color_and_depth(
-        r as f32 / 255.0,
-        g as f32 / 255.0,
-        b as f32 / 255.0,
-        1.0,  // Opaque alpha
-        1.0   // Depth
-    ),
-    None => ClearState::color_and_depth(0.0, 0.0, 0.0, 0.0, 1.0),  // Transparent alpha=0.0
-};
-```
-
-**Reactivity Pattern:**
-```rust
-// Make viewport reactive to background color changes
-let _effect = Effect::new(move || {
-    let _grid = show_grid.get();
-    let _x = show_x_axis.get();
-    let _y = show_y_axis.get();
-    let _z = show_z_axis.get();
-    let _bg = background_color.get();  // ← Track background color changes
-
-    // Trigger viewport re-initialization
-    refetch_trigger.update(|v| *v += 1);
-});
-```
-
-#### Connection Color Control
-**Database Schema:**
-```sql
--- Migration: 20250107000001_add_connection_color.sql
-ALTER TABLE connections ADD COLUMN color TEXT NOT NULL DEFAULT '128,128,128';
-```
-
-**Color Format:**
-- **Storage:** "R,G,B" text format (e.g., "255,0,0" for red)
-- **Display:** Hex format for HTML5 color picker (e.g., "#ff0000")
-- **Rendering:** Srgba(r, g, b, 255) for three-d library
-
-**Bidirectional Conversion:**
-```rust
-// RGB string → Hex for display
-let rgb_parts: Vec<u8> = color.get().split(',')
-    .filter_map(|s| s.parse().ok())
-    .collect();
-if rgb_parts.len() == 3 {
-    format!("#{:02x}{:02x}{:02x}", rgb_parts[0], rgb_parts[1], rgb_parts[2])
-}
-
-// Hex input → RGB string for storage
-let hex = event_target_value(&ev);
-if hex.starts_with('#') && hex.len() == 7 {
-    if let (Ok(r), Ok(g), Ok(b)) = (
-        u8::from_str_radix(&hex[1..3], 16),
-        u8::from_str_radix(&hex[3..5], 16),
-        u8::from_str_radix(&hex[5..7], 16),
-    ) {
-        color.set(format!("{},{},{}", r, g, b));
-    }
-}
-```
-
-**Viewport Color Parsing:**
-```rust
-// Parse "R,G,B" string into Srgba for rendering
-let parts: Vec<&str> = conn.color.split(',').collect();
-let normal_color = if parts.len() == 3 {
-    if let (Ok(r), Ok(g), Ok(b)) = (
-        parts[0].parse::<u8>(),
-        parts[1].parse::<u8>(),
-        parts[2].parse::<u8>(),
-    ) {
-        Srgba::new(r, g, b, 255)
-    } else {
-        Srgba::new(128, 128, 128, 255)  // Fallback gray
-    }
-} else {
-    Srgba::new(128, 128, 128, 255)
-};
-```
-
-**Key Design Decisions:**
-1. **RGB text storage** - Human-readable format in database, easy to parse and modify
-2. **Optional scale in CreateNode** - Allows default value of 1.0 for new nodes
-3. **None = transparent** - Clean Option<(u8, u8, u8)> pattern for background transparency
-4. **HTML5 color picker** - Native browser widget provides full palette without dependencies
-5. **Preset colors** - Quick access to common colors while maintaining full customization
-
-**Files Modified:**
-- `src/models/node.rs` - Added scale field
-- `src/models/connection.rs` - Added color field
-- `src/api.rs` - Updated CRUD operations for both models
-- `src/islands/topology_editor.rs` - Added UI controls (scale slider, color presets, color picker, background buttons)
-- `src/islands/topology_viewport.rs` - Applied scale transformations, background colors, connection colors in rendering
-
-### Remaining Phase 4 Features
-
-**Priority 1 - Core 3D Features:**
-7. ⏳ **Enable Device Palette buttons** - Make left panel buttons functional ('Router', 'Switch', etc. 'Click to Add')
-
-**Priority 2 - Visual Polish:**
-7. ⏳ **Improved Lighting and Materials** - Better 3D scene lighting
-8. ⏳ **Better Camera Controls** - Presets, bookmarks, reset view
-
-## Phase 5 - Export & Finalization (FUTURE)
-
-### Planned Features
-1. Export topology as PNG image
-2. Export topology as JSON data
-3. Import topology from JSON
-4. UI polish and optimizations
-5. Documentation and deployment
-
-## Phase 6 - Traffic Monitoring (FUTURE)
-
-### Planned Features
-1. Real-time traffic data visualization using Leptos native streaming
-2. Use `#[server(protocol = Websocket<...>)]` for streaming data
-3. Display traffic throughput on connections
-4. Color/animate connections based on traffic load
-5. Traffic metrics dashboard
+**Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete
+**Next Tag:** v0.1.0-phase5-complete (after JSON export/import)
+
+## All Known Issues & Solutions
+
+See original CLAUDE.md for complete list. Key patterns to remember:
+1. **Server Functions** - Use leptos_axum::extract() for database access
+2. **Event Handlers** - Use mutable storage (Rc<RefCell<>>) for data access
+3. **Disposed Signals** - Use Arc<Mutex<>> snapshot for event handlers with .forget()
+4. **Context Collision** - Wrap same-typed signals in unique struct
+5. **Canvas Resize** - Always update dimensions on every render
+6. **Bounding Box** - Calculate from actual node positions, not fixed values

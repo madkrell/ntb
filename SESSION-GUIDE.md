@@ -12,14 +12,14 @@ Please read these files to understand the current state:
 1. CLAUDE.md - Complete architecture, all phases, all learnings
 2. This file (SESSION-GUIDE.md) - Quick context
 
-Current Status: Phase 4 COMPLETE! ✅ Ready for Phase 5 or 6
+Current Status: Phase 4 COMPLETE! ✅ (including Phase 4.5 polish features) Ready for Phase 5 or 6
 
-**✅ Phase 4 Complete (2025-11-06):**
+**✅ Phase 4 Complete (2025-11-06 + Phase 4.5 on 2025-11-07):**
 ALL core 3D features, visual polish, UI optimization, customization, and settings persistence implemented:
 
 **Core 3D Features:**
 - 3D node rotation controls (X/Y/Z in degrees)
-- Model Selection UI (glTF/GLB for all 6 node types)
+- Model Selection UI (glTF/GLB for all 6 node types including Cloud)
 - 3D Grid and Axes (Blender-style reference)
 - Topology Switching Control (dropdown selector)
 - Device Palette buttons functional (all 6 types create nodes)
@@ -38,14 +38,25 @@ ALL core 3D features, visual polish, UI optimization, customization, and setting
 - **Space Optimization** - Panels narrowed 25% to maximize viewport
 - **Settings Persistence** - All View/Lighting controls saved to database
 - **Code Quality** - Zero compiler warnings, clippy-clean
+- **Fullscreen Toggle** - F11 key and toolbar button for immersive view
+- **Camera Pan** - Shift+Drag to pan viewport in all directions
 
 **Export & Customization:**
 - **PNG Export** - High-quality image export with transparency support
 - **Node Scale Control** - Per-node size adjustment (0.1-5.0 range)
 - **Background Color Control** - 6 presets + transparent option for exports
 - **Connection Color Control** - 13 presets + full color palette picker
+- **Node Color Control** - 13 presets + HTML5 color picker with hex↔RGB conversion
 
-Next: Phase 5 (More export features, JSON import/export) OR Phase 6 (Traffic Monitoring)
+**Phase 4.5 Polish Features (2025-11-07):**
+21. ✅ **Fullscreen Toggle** - F11 key and toolbar button for immersive viewport
+22. ✅ **Camera Pan Controls** - Shift+Drag to pan (translate) camera in viewport
+23. ✅ **Viewport Centering** - Center view on topology bounding box
+24. ✅ **Zoom to Fit** - Auto-calculate optimal camera distance (10% margin)
+25. ✅ **Node Color Control** - 13 preset colors + full palette picker (hex↔RGB)
+26. ✅ **Cloud Type in UI** - Added missing "Cloud" option to Properties Panel dropdown
+
+Next: Phase 5 (JSON export/import, documentation) OR Phase 6 (Traffic Monitoring)
 ```
 
 ## 📊 Current Project State
@@ -78,6 +89,7 @@ Next: Phase 5 (More export features, JSON import/export) OR Phase 6 (Traffic Mon
 - ✅ Refetch mechanism using context-shared trigger signal
 
 **Phase 4 - Visual Enhancements & 3D Interaction (Git tag: v0.1.0-phase4-complete) ✅ COMPLETE**
+**Phase 4.5 - Polish & Refinements (2025-11-07) ✅ COMPLETE**
 
 ✅ **COMPLETED - Priority 1 (Core 3D Features):**
 1. ✅ **3D node rotation controls** (2025-11-04)
@@ -166,10 +178,41 @@ Next: Phase 5 (More export features, JSON import/export) OR Phase 6 (Traffic Mon
     - Bidirectional hex↔RGB conversion
     - Real-time color rendering in 3D viewport
 
+✅ **COMPLETED - Phase 4.5 Polish Features (2025-11-07):**
+21. ✅ **Fullscreen Toggle** - F11 key and toolbar button
+    - RwSignal<bool> for fullscreen state
+    - Event handler for F11 keypress
+    - Toolbar button with icon/text toggle
+    - Document.requestFullscreen() / exitFullscreen()
+22. ✅ **Camera Pan Controls** - Shift+Drag to pan viewport
+    - Translate camera target without rotating
+    - Shift modifier detection in mouse handlers
+    - Updates camera_target signal for pan movement
+    - Works in all camera modes (presets + manual)
+23. ✅ **Viewport Centering** - Center view on topology
+    - Calculate bounding box of all nodes
+    - Set camera target to bounding box center
+    - Smooth transition to centered view
+24. ✅ **Zoom to Fit** - Auto-calculate optimal camera distance
+    - Bounding box calculation with 10% margin (reduced from 20%)
+    - FOV-based distance calculation: `distance = (size / 2) / tan(FOV / 2)`
+    - Smooth animation to fitted view
+    - Works with all topologies regardless of size
+25. ✅ **Node Color Control** - Per-node customization
+    - Database migration: 20250107000002_add_node_color.sql (RGB format)
+    - 13 preset color buttons in Properties Panel
+    - HTML5 color picker with bidirectional hex↔RGB conversion
+    - Real-time viewport rendering with custom colors
+    - Fallback to type-based colors if parsing fails
+26. ✅ **Cloud Type in UI** - Added missing node type
+    - "Cloud" option added to Properties Panel dropdown
+    - Already existed in model loading, just missing from UI
+    - All 6 node types now accessible
+
 ### 🔄 What to Work On Next
 
-**Phase 4: COMPLETE! ✅** (2025-11-06)
-All Priority 1 and Priority 2 features implemented + Export & Customization:
+**Phase 4 & 4.5: COMPLETE! ✅** (2025-11-06 + 2025-11-07)
+All Priority 1 and Priority 2 features implemented + Export & Customization + Polish:
 - All core 3D features ✅
 - All visual polish features ✅
 - UI optimization ✅
@@ -179,8 +222,14 @@ All Priority 1 and Priority 2 features implemented + Export & Customization:
 - Node scale control ✅
 - Background color control ✅
 - Connection color control ✅
+- Node color control ✅
+- Fullscreen toggle ✅
+- Camera pan controls ✅
+- Viewport centering ✅
+- Zoom to fit ✅
+- Cloud type in UI ✅
 
-**Git Tag:** Ready to create `v0.1.0-phase4-complete`
+**Git Tag:** v0.1.0-phase4-complete (already created), ready for phase 5 tag
 
 **Recommended Next Steps:**
 
@@ -191,12 +240,14 @@ All Priority 1 and Priority 2 features implemented + Export & Customization:
    - ⏳ Deployment guide (Docker, production build)
    - 🎯 **Why this next?** Round out the export functionality started with PNG
 
-**Option 2: Phase 6 - Traffic Monitoring** (Advanced feature)
-   - ⏳ Real-time traffic visualization using Leptos streaming
-   - ⏳ Mock traffic generator for demo
-   - ⏳ Animated connections based on traffic load
-   - ⏳ Traffic metrics dashboard
-   - 🎯 **Why wait?** This is a major feature; better to polish what we have first
+**Option 2: Phase 6 - Traffic Monitoring** (Most Impactful Feature!)
+   - ⏳ **Real-time traffic visualization** - Animated connections showing data flow with moving particles
+   - ⏳ **Live metrics** - Throughput, latency, packet loss displayed on connections and in dashboard
+   - ⏳ **Color-coded status** - Green (healthy), yellow (warning), red (critical) based on thresholds
+   - ⏳ **Traffic dashboard** - Charts showing historical metrics with real-time updates
+   - ⏳ **Streaming data** - Using Leptos' native WebSocket server functions (`#[server(protocol = Websocket<>)]`)
+   - ⏳ **Mock traffic generator** - Realistic network simulation for demo purposes
+   - 🎯 **Why this is exciting?** Brings the topology to life with real-time monitoring capabilities!
 
 **Option 3: Additional Polish & Features**
    - ⏳ Multi-select nodes (Shift+Click to select multiple)
@@ -338,35 +389,136 @@ All Priority 1 and Priority 2 features implemented + Export & Customization:
 
 ### Phase 6 - Traffic Monitoring (Real-time with Leptos Streaming)
 
-**Goal:** Real-time traffic visualization using Leptos native streaming
+**Goal:** Transform the static topology into a live network monitoring tool with real-time traffic visualization
 
-**Implementation Steps:**
-1. Database schema for traffic metrics:
-   - Already have traffic_metrics table
-   - Add indexes for efficient queries
-2. Mock traffic generator (for demo):
-   - Server function that generates random traffic data
-   - Simulates network activity on connections
-3. Streaming server function:
-   - Use `#[server(protocol = Websocket<JsonEncoding, JsonEncoding>)]`
-   - Stream traffic updates to client
-   - Update every 100-500ms for smooth animation
-4. Client-side visualization:
-   - Animate connections based on traffic load
-   - Color gradient: green (low) → yellow (medium) → red (high)
-   - Animated particles/pulses moving along connections
-   - Thickness variation based on bandwidth utilization
-5. Traffic metrics dashboard:
-   - Panel showing current traffic stats
-   - Top connections by traffic
-   - Total throughput
-   - Real-time graphs (optional)
+**Why Phase 6 is the Most Impactful Feature:**
+This brings the entire application to life! Instead of just showing a static network diagram, Phase 6 will:
+- Show live data flowing through the network with animated particles
+- Instantly identify network problems with color-coded health indicators
+- Provide professional network monitoring capabilities
+- Demonstrate the full power of Leptos streaming
+- Create a truly impressive, production-ready application
 
-**Expected Outcome:**
-- Live traffic monitoring
-- Visual representation of network load
-- Identify bottlenecks and congestion
-- Professional network monitoring tool
+**Core Features:**
+
+1. **Real-time Traffic Visualization**
+   - Animated connections showing data flow direction and volume
+   - Moving particles along connection paths (bi-directional)
+   - Particle speed based on latency (faster = lower latency)
+   - Particle density based on throughput (more particles = higher traffic)
+   - Smooth 60fps animations using requestAnimationFrame
+
+2. **Live Metrics Display**
+   - **Throughput:** Mbps/Gbps shown on each connection
+   - **Latency:** Round-trip time in milliseconds
+   - **Packet Loss:** Percentage with warning thresholds
+   - **Bandwidth Utilization:** Percentage of link capacity
+   - **Connection Status:** Up/Down/Degraded
+   - All metrics update in real-time (every 100-500ms)
+
+3. **Color-Coded Health Status**
+   - **Green (Healthy):** <70% utilization, <50ms latency, <1% packet loss
+   - **Yellow (Warning):** 70-90% utilization, 50-100ms latency, 1-5% packet loss
+   - **Red (Critical):** >90% utilization, >100ms latency, >5% packet loss
+   - Smooth color transitions as metrics change
+   - Connection thickness varies with utilization
+
+4. **Traffic Dashboard**
+   - New panel showing real-time metrics
+   - Top N busiest connections (sorted by throughput)
+   - Total network throughput aggregated
+   - Historical charts (line graphs for throughput/latency over time)
+   - Alert list for connections in warning/critical state
+   - Export metrics to CSV
+
+5. **Streaming Data Architecture**
+   - Leptos WebSocket server functions: `#[server(protocol = Websocket<JsonEncoding, JsonEncoding>)]`
+   - Client-side: `Signal::from_stream()` for reactive data binding
+   - Efficient binary encoding for minimal overhead
+   - Automatic reconnection on connection loss
+   - Backpressure handling for slow clients
+
+6. **Mock Traffic Generator** (for demo/testing)
+   - Realistic network traffic simulation
+   - Configurable traffic patterns (constant, bursty, periodic)
+   - Simulates different scenarios (normal, congestion, failures)
+   - Adjustable baseline traffic levels
+   - Random events (link failures, traffic spikes)
+
+7. **Performance Optimizations**
+   - Render only visible connections (viewport culling)
+   - Batch particle updates for efficiency
+   - Use instanced rendering for particles
+   - Throttle metric updates to avoid overwhelming UI
+   - Efficient WebSocket message batching
+
+**Implementation Plan:**
+
+**Phase 6.1 - Database & Mock Generator (1-2 hours)**
+1. Verify traffic_metrics table schema
+2. Add indexes for efficient time-range queries
+3. Create mock traffic generator server function
+   - Random but realistic traffic patterns
+   - Configurable via UI (enable/disable, traffic level)
+   - Store data in traffic_metrics table
+
+**Phase 6.2 - WebSocket Streaming (2-3 hours)**
+1. Create streaming server function:
+   ```rust
+   #[server(protocol = Websocket<JsonEncoding, JsonEncoding>)]
+   async fn stream_traffic_metrics(
+       input: BoxedStream<TrafficRequest, ServerFnError>
+   ) -> Result<BoxedStream<TrafficMetrics, ServerFnError>, ServerFnError>
+   ```
+2. Client-side signal creation:
+   ```rust
+   let traffic_signal = Signal::from_stream(traffic_stream);
+   ```
+3. Handle connection lifecycle (connect, disconnect, reconnect)
+
+**Phase 6.3 - Animated Connections (3-4 hours)**
+1. Particle system for connection animations
+   - Create particle struct (position, velocity, color)
+   - Spawn particles at source node
+   - Move particles along connection path
+   - Remove particles at destination
+2. Render particles as small spheres or sprites
+3. Update particle positions every frame (60fps)
+4. Color particles based on connection health status
+
+**Phase 6.4 - Live Metrics Display (2-3 hours)**
+1. Add metric overlays to connections in viewport
+   - Throughput label
+   - Latency badge
+   - Packet loss indicator
+2. Update connection colors based on health status
+3. Vary connection thickness based on utilization
+4. Smooth transitions for all visual changes
+
+**Phase 6.5 - Traffic Dashboard (2-3 hours)**
+1. Create new TrafficDashboard component
+2. Display aggregated metrics
+3. Top connections list (sortable)
+4. Historical charts using lightweight charting library
+5. Alert panel for critical connections
+6. Export to CSV functionality
+
+**Expected Outcomes:**
+- ✅ Live, animated network topology showing real-time traffic
+- ✅ Instant identification of network bottlenecks and issues
+- ✅ Professional-grade network monitoring capabilities
+- ✅ Impressive demo showcasing Leptos streaming
+- ✅ Production-ready network visualization tool
+
+**Technical Challenges & Solutions:**
+- **Challenge:** 60fps particle animation performance
+  - **Solution:** Use instanced rendering, batch updates, viewport culling
+- **Challenge:** WebSocket message volume
+  - **Solution:** Batch metrics, delta encoding, client-side interpolation
+- **Challenge:** Synchronizing animations with data
+  - **Solution:** Timestamp-based interpolation, buffering for smooth playback
+- **Challenge:** Handling topology changes during streaming
+  - **Solution:** Graceful reconnection, state reconciliation on reconnect
 
 ---
 
@@ -421,6 +573,58 @@ Server-1/2/3 (varying x, y=4, z=-2), Firewall (0,-3,0)
 Router connects to switches and firewall
 Switches connect to servers
 ```
+
+## 🎓 Key Lessons Learned (Phase 4.5 Session - 2025-11-07)
+
+### 1. Bounding Box Margin Calculations
+**Pattern:** FOV-based distance calculation with configurable margin
+```rust
+let margin_factor = 1.1;  // 10% margin (user preference - was 20% before)
+let max_dimension = (width.max(height).max(depth)) * margin_factor;
+let distance = (max_dimension / 2.0) / (fov_radians / 2.0).tan();
+```
+**Lesson:** Small margin changes (20% → 10%) have significant visual impact on "Zoom to Fit" tightness. User preference matters!
+
+### 2. Bidirectional Color Conversion (Hex ↔ RGB)
+**Pattern:** Database stores RGB text, UI uses hex color picker
+```rust
+// RGB → Hex (for display)
+let hex = format!("#{:02x}{:02x}{:02x}", r, g, b);
+
+// Hex → RGB (for storage)
+let r = u8::from_str_radix(&hex[1..3], 16)?;
+let g = u8::from_str_radix(&hex[3..5], 16)?;
+let b = u8::from_str_radix(&hex[5..7], 16)?;
+let rgb = format!("{},{},{}", r, g, b);
+```
+**Lesson:** Text-based RGB storage is human-readable and database-friendly. Hex format provides best UI experience with HTML5 color picker. Convert at the boundaries!
+
+### 3. Database Color Format Consistency
+**Pattern:** All color fields use "R,G,B" text format
+- Nodes: `color: String` (e.g., "100,150,255")
+- Connections: `color: String` (e.g., "128,128,128")
+- Background: `Option<(u8, u8, u8)>` in ViewportVisibility (not persisted)
+
+**Lesson:** Consistent format across all color fields simplifies parsing and reduces bugs. Text format in database makes debugging and SQL queries easier.
+
+### 4. Type-Based Fallback Colors
+**Pattern:** Custom colors with graceful fallback to type-based defaults
+```rust
+let color = if let Ok(custom_color) = parse_rgb(&node.color) {
+    custom_color
+} else {
+    get_node_color(&node.node_type)  // Fallback to type default
+};
+```
+**Lesson:** Always have a fallback! Parsing can fail (corrupted data, old records). Type-based colors ensure the viewport always renders correctly.
+
+### 5. Incremental Feature Implementation
+**Pattern:** Build on existing infrastructure rather than rewriting
+- Node color control built on connection color pattern
+- Zoom to Fit reused bounding box calculation from viewport centering
+- Cloud type was already in model loading, just needed UI dropdown update
+
+**Lesson:** Before implementing a new feature, search for similar patterns in the codebase. Often 70% of the work is already done!
 
 ## 🎓 Critical Architecture Patterns
 
@@ -620,24 +824,79 @@ Let's add keyboard shortcuts for better UX:
 Ready to implement!
 ```
 
-### Option 4: Traffic Monitoring (Phase 6)
+### Option 4: Traffic Monitoring - Phase 6.1 (Database & Mock Generator)
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
 Read CLAUDE.md and SESSION-GUIDE.md for complete context.
 
-Current Status: Phase 4 COMPLETE! ✅
+Current Status: Phase 4 & 4.5 COMPLETE! ✅
 
-Let's start Phase 6 - Traffic Monitoring:
-1. Create mock traffic generator (server function)
-2. Set up Leptos WebSocket streaming
-3. Animate connections based on traffic load
-4. Color gradient: green (low) → yellow (medium) → red (high)
+Let's start Phase 6 - Traffic Monitoring with Phase 6.1:
 
-Ready to implement real-time visualization!
+Goals (Database & Mock Generator):
+1. Verify traffic_metrics table schema has all required fields
+2. Add database indexes for efficient time-range queries
+3. Create mock traffic generator server function
+   - Random but realistic traffic patterns (throughput, latency, packet loss)
+   - Configurable traffic level (low/medium/high)
+   - Store metrics in traffic_metrics table with timestamps
+4. Add UI controls to enable/disable generator and set traffic level
+
+This sets the foundation for real-time streaming in Phase 6.2!
 ```
 
-### Option 5: Create User Documentation (Phase 5, Task #4)
+### Option 5: Traffic Monitoring - Phase 6.2 (WebSocket Streaming)
+```
+I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
+
+Read CLAUDE.md and SESSION-GUIDE.md for complete context.
+
+Current Status: Phase 6.1 COMPLETE! ✅ (Mock generator working)
+
+Let's implement Phase 6.2 - WebSocket Streaming:
+
+Goals:
+1. Create streaming server function using Leptos WebSocket protocol:
+   #[server(protocol = Websocket<JsonEncoding, JsonEncoding>)]
+2. Stream traffic metrics from database to client (every 100-500ms)
+3. Client-side: Use Signal::from_stream() for reactive data binding
+4. Handle connection lifecycle (connect, disconnect, reconnect)
+5. Test with mock generator to verify streaming works
+
+This enables real-time data flow for Phase 6.3 animations!
+```
+
+### Option 6: Traffic Monitoring - Full Phase 6 (All Sub-Phases)
+```
+I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
+
+Read CLAUDE.md and SESSION-GUIDE.md for complete context.
+
+Current Status: Phase 4 & 4.5 COMPLETE! ✅
+
+Let's implement the FULL Phase 6 - Traffic Monitoring:
+
+This is the most exciting feature! It includes:
+1. Real-time traffic visualization with animated particles
+2. Live metrics (throughput, latency, packet loss) on connections
+3. Color-coded health status (green/yellow/red)
+4. Traffic dashboard with charts and alerts
+5. WebSocket streaming using Leptos native functions
+
+Implementation order:
+- Phase 6.1: Database & Mock Generator (1-2 hours)
+- Phase 6.2: WebSocket Streaming (2-3 hours)
+- Phase 6.3: Animated Connections (3-4 hours)
+- Phase 6.4: Live Metrics Display (2-3 hours)
+- Phase 6.5: Traffic Dashboard (2-3 hours)
+
+Total estimated time: 10-14 hours for complete implementation.
+
+Ready to bring this topology to life!
+```
+
+### Option 7: Create User Documentation (Phase 5, Task #4)
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
@@ -676,25 +935,28 @@ What should I work on next? Please review the options in SESSION-GUIDE.md and re
 
 1. **Always read CLAUDE.md first** - Contains all architectural discoveries and solutions
 2. **Use Context7 MCP** - When unsure about Leptos/three-d patterns, check `/websites/book_leptos_dev`
-3. **Check git tags** - `git tag` shows v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete
+3. **Check git tags** - `git tag` shows v0.1.0-phase1-complete through v0.1.0-phase4-complete
 4. **Test in browser** - http://127.0.0.1:3000 to see current state
 5. **Console logs** - Browser console shows WASM logs from `web_sys::console`
-6. **Real-time updates work!** - Save node positions in properties panel, viewport updates instantly
+6. **Real-time updates work!** - Save node properties in properties panel, viewport updates instantly
+7. **Search before implementing** - Many patterns already exist (color pickers, bounding boxes, etc.)
+8. **User preferences matter** - Small UX tweaks (10% vs 20% margin) can significantly improve feel
 
 ## 🚀 You're Ready!
 
-**Phase 4 is COMPLETE!** ✅ All features implemented:
+**Phase 4 & 4.5 are COMPLETE!** ✅ All features implemented:
 - ✅ All core 3D features (rotation, models, grid, axes, topology switching, device palette, connections)
 - ✅ All visual polish (labels, colors, rendering, selection, lighting, camera controls)
-- ✅ All UI optimization (space, persistence, code quality)
-- ✅ Export & customization (PNG export, node scale, background color, connection colors)
+- ✅ All UI optimization (space, persistence, code quality, fullscreen, camera pan)
+- ✅ Export & customization (PNG export, node scale, background/node/connection colors)
+- ✅ Polish features (viewport centering, zoom to fit with 10% margin, cloud type in UI)
 
 **Recommended next steps:**
-1. **JSON Export/Import** (Phase 5, Task #2) - Round out export functionality
-2. **Multi-select nodes** (Polish feature) - Bulk operations
-3. **Keyboard shortcuts** (UX enhancement) - Power user features
-4. **User documentation** (Phase 5, Task #4) - Help users learn the app
-5. **Traffic monitoring** (Phase 6) - Advanced real-time visualization
+1. **Traffic Monitoring - Phase 6** (Most impactful!) - Real-time visualization with WebSocket streaming
+2. **JSON Export/Import** (Phase 5, Task #2) - Round out export functionality
+3. **Multi-select nodes** (Polish feature) - Bulk operations
+4. **Keyboard shortcuts** (UX enhancement) - Power user features
+5. **User documentation** (Phase 5, Task #4) - Help users learn the app
 
 All architectural patterns are working and documented in CLAUDE.md.
 Use the example prompts above to start your next session!
