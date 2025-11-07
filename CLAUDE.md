@@ -1,10 +1,11 @@
 # Network Topology Visualizer - Claude Development Notes
 
 ## Project Status
-**Current Phase:** Phase 4 COMPLETE! ✅ (including Phase 4.5 polish features)
+**Current Phase:** Phase 5 COMPLETE! ✅ (Export/Import + Phase 4.5 polish)
 **Last Updated:** 2025-11-07
 **Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete
 **Architecture:** Regular Leptos Components (Islands removed - see notes below)
+**Next Phase:** Phase 6 - Traffic Monitoring (Real-time visualization with WebSocket streaming)
 
 ### Phase 4.5 - UI/UX Polish COMPLETE! ✅ (2025-11-07)
 
@@ -344,14 +345,63 @@ pub mod server;  // Old implementation-specific code
 - `20250107000001_add_connection_color.sql` - color (TEXT, default '128,128,128', format "R,G,B")
 - `20250107000002_add_node_color.sql` - color (TEXT, default '100,150,255', format "R,G,B")
 
-## Phase 5 - Export & JSON Import/Export (NEXT)
+## Phase 5 - Export & JSON Import/Export ✅ COMPLETE!
 
-### Planned Features
-1. ✅ Export topology as PNG image (COMPLETE in Phase 4)
-2. ⏳ Export topology as JSON data - Full topology backup
-3. ⏳ Import topology from JSON - Restore or share topologies
-4. ⏳ UI polish and optimizations - Loading states, error handling
-5. ⏳ Documentation - User guide with screenshots
+### ✅ Completed Features
+1. ✅ **Export topology as PNG image** - COMPLETE! (Phase 4, item 17)
+   - Export dropdown menu in toolbar with PNG/JSON options
+   - WebGL2 context with preserveDrawingBuffer enabled
+   - Transparent background support for clean exports
+   - canvas.toDataURL() for high-quality image capture
+
+2. ✅ **Export topology as JSON** - COMPLETE! (topology_editor.rs:840-931)
+   - Full topology data export (nodes, connections, all properties)
+   - Pretty-formatted JSON with serde_json
+   - Automatic file download with timestamp: `topology-{name}-{timestamp}.json`
+   - Blob API for client-side file generation
+   - Preserves all node properties (position, rotation, scale, color)
+   - Preserves all connection properties (type, bandwidth, color, status)
+
+3. ✅ **Import topology from JSON** - COMPLETE! (topology_editor.rs:933-1274)
+   - File picker UI with drag-and-drop support
+   - JSON validation and parsing
+   - Creates new topology with imported data
+   - Batch node creation via server function
+   - Batch connection creation with proper node ID mapping
+   - Error handling with user-friendly messages
+   - Success notification with new topology name
+   - Automatic switch to newly imported topology
+
+**Implementation Details:**
+```rust
+// Export: Fetches topology data and creates downloadable JSON file
+async fn export_topology_json(topology_id: i64) {
+    let topology_data = get_topology_full(topology_id).await?;
+    let json_string = serde_json::to_string_pretty(&topology_data)?;
+    // Create blob and trigger download...
+}
+
+// Import: Parses JSON file and recreates topology
+async fn import_topology_json(json_content: String) -> Result<ImportResult, String> {
+    let imported: TopologyFull = serde_json::from_str(&json_content)?;
+    let new_topology_id = create_topology(CreateTopology {
+        name: format!("{} (Imported)", imported.topology.name),
+        description: imported.topology.description
+    }).await?;
+    // Batch create nodes and connections...
+}
+```
+
+**UI Integration:**
+- Export dropdown in toolbar: "Export PNG" and "Export JSON" options
+- Import button in toolbar: Opens file picker dialog
+- File validation: Checks JSON structure before import
+- Progress indication during import process
+- Error messages displayed to user if import fails
+
+**Remaining Phase 5 Items (Optional enhancements):**
+4. ⏳ UI polish and optimizations - Loading states, error handling (mostly done)
+5. ⏳ Documentation - User guide with screenshots (can be done anytime)
 
 ## Phase 6 - Traffic Monitoring (MOST IMPACTFUL FEATURE)
 

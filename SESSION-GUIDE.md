@@ -12,7 +12,7 @@ Please read these files to understand the current state:
 1. CLAUDE.md - Complete architecture, all phases, all learnings
 2. This file (SESSION-GUIDE.md) - Quick context
 
-Current Status: Phase 4 COMPLETE! ✅ (including Phase 4.5 polish features) Ready for Phase 5 or 6
+Current Status: Phase 5 COMPLETE! ✅ (Export/Import + Phase 4.5 polish) Ready for Phase 6 - Traffic Monitoring!
 
 **✅ Phase 4 Complete (2025-11-06 + Phase 4.5 on 2025-11-07):**
 ALL core 3D features, visual polish, UI optimization, customization, and settings persistence implemented:
@@ -56,7 +56,12 @@ ALL core 3D features, visual polish, UI optimization, customization, and setting
 25. ✅ **Node Color Control** - 13 preset colors + full palette picker (hex↔RGB)
 26. ✅ **Cloud Type in UI** - Added missing "Cloud" option to Properties Panel dropdown
 
-Next: Phase 5 (JSON export/import, documentation) OR Phase 6 (Traffic Monitoring)
+**✅ Phase 5 Complete (Export/Import functionality):**
+27. ✅ **Export as PNG** - High-quality image export with transparency support
+28. ✅ **Export as JSON** - Full topology backup (nodes, connections, all properties)
+29. ✅ **Import from JSON** - Restore or share topologies with validation
+
+Next: Phase 6 (Traffic Monitoring - Real-time visualization!)
 ```
 
 ## 📊 Current Project State
@@ -90,6 +95,7 @@ Next: Phase 5 (JSON export/import, documentation) OR Phase 6 (Traffic Monitoring
 
 **Phase 4 - Visual Enhancements & 3D Interaction (Git tag: v0.1.0-phase4-complete) ✅ COMPLETE**
 **Phase 4.5 - Polish & Refinements (2025-11-07) ✅ COMPLETE**
+**Phase 5 - Export & Import (JSON/PNG) ✅ COMPLETE**
 
 ✅ **COMPLETED - Priority 1 (Core 3D Features):**
 1. ✅ **3D node rotation controls** (2025-11-04)
@@ -209,9 +215,30 @@ Next: Phase 5 (JSON export/import, documentation) OR Phase 6 (Traffic Monitoring
     - Already existed in model loading, just missing from UI
     - All 6 node types now accessible
 
+✅ **COMPLETED - Phase 5 (Export/Import):**
+27. ✅ **PNG Export** (topology_editor.rs:733-838) - High-quality image export
+    - Export dropdown menu in toolbar
+    - WebGL2 context with preserveDrawingBuffer enabled
+    - canvas.toDataURL() for image capture
+    - Transparent background support
+    - Automatic download with filename timestamp
+28. ✅ **JSON Export** (topology_editor.rs:840-931) - Full topology backup
+    - Exports complete topology data (nodes, connections, all properties)
+    - Pretty-formatted JSON with serde_json
+    - Filename: `topology-{name}-{timestamp}.json`
+    - Preserves positions, rotations, scales, colors
+29. ✅ **JSON Import** (topology_editor.rs:933-1274) - Restore/share topologies
+    - File picker UI with drag-and-drop support
+    - JSON validation and parsing
+    - Creates new topology with "(Imported)" suffix
+    - Batch node and connection creation
+    - Proper node ID mapping for connections
+    - Error handling with user-friendly messages
+    - Automatic switch to imported topology
+
 ### 🔄 What to Work On Next
 
-**Phase 4 & 4.5: COMPLETE! ✅** (2025-11-06 + 2025-11-07)
+**Phases 4, 4.5, & 5: COMPLETE! ✅** (2025-11-06 + 2025-11-07)
 All Priority 1 and Priority 2 features implemented + Export & Customization + Polish:
 - All core 3D features ✅
 - All visual polish features ✅
@@ -228,19 +255,15 @@ All Priority 1 and Priority 2 features implemented + Export & Customization + Po
 - Viewport centering ✅
 - Zoom to fit ✅
 - Cloud type in UI ✅
+- PNG export ✅
+- JSON export ✅
+- JSON import ✅
 
 **Git Tag:** v0.1.0-phase4-complete (already created), ready for phase 5 tag
 
 **Recommended Next Steps:**
 
-**Option 1: Complete Phase 5 - Export & Finalization** (Recommended)
-   - ⏳ Export/import topology as JSON data (backup, sharing, templates)
-   - ⏳ UI polish and optimizations (loading states, error handling)
-   - ⏳ User/developer documentation (README with screenshots)
-   - ⏳ Deployment guide (Docker, production build)
-   - 🎯 **Why this next?** Round out the export functionality started with PNG
-
-**Option 2: Phase 6 - Traffic Monitoring** (Most Impactful Feature!)
+**Option 1: Phase 6 - Traffic Monitoring** (MOST IMPACTFUL! Ready to implement!)
    - ⏳ **Real-time traffic visualization** - Animated connections showing data flow with moving particles
    - ⏳ **Live metrics** - Throughput, latency, packet loss displayed on connections and in dashboard
    - ⏳ **Color-coded status** - Green (healthy), yellow (warning), red (critical) based on thresholds
@@ -249,7 +272,7 @@ All Priority 1 and Priority 2 features implemented + Export & Customization + Po
    - ⏳ **Mock traffic generator** - Realistic network simulation for demo purposes
    - 🎯 **Why this is exciting?** Brings the topology to life with real-time monitoring capabilities!
 
-**Option 3: Additional Polish & Features**
+**Option 2: Additional Polish & Features** (Optional enhancements)
    - ⏳ Multi-select nodes (Shift+Click to select multiple)
    - ⏳ Multi-select connections (bulk color changes)
    - ⏳ Undo/redo functionality
@@ -258,132 +281,18 @@ All Priority 1 and Priority 2 features implemented + Export & Customization + Po
    - ⏳ Node grouping/labeling
    - 🎯 **Why consider?** These are nice-to-have UX improvements
 
----
-
-## 📋 Next Steps (In Order)
-
-### ✅ Phase 4 - COMPLETE (All tasks finished 2025-11-06)
-
-#### ✅ Task #12: Improved Lighting and Materials - COMPLETE
-**Status:** Implemented with three-point lighting system and PBR materials
-- Three-point lighting (key, fill, rim lights)
-- User-adjustable intensity controls (4 sliders)
-- PBR materials with metallic/roughness properties
-- Different material properties per node type
-
-#### ✅ Task #13: Better Camera Controls - COMPLETE
-**Status:** Implemented with 4 presets and smooth animations
-- 4 camera presets (Top, Front, Side, Isometric)
-- Smooth lerp animation with ease-in-out easing (600ms)
-- Reset button to default view
-- Compact viewport overlay controls (2×2 grid)
-- Camera state sync for dragging from presets
+**Option 3: Documentation & Deployment** (Can be done anytime)
+   - ⏳ User/developer documentation (README with screenshots)
+   - ⏳ Deployment guide (Docker, production build)
+   - 🎯 **Why later?** Focus on features first, document when stable
 
 ---
 
-### Phase 5 - Export & Finalization
+## 📋 Next Steps (Ready for Phase 6!)
 
-#### Task #1: Export Topology as PNG Image
-**Implementation Steps:**
-1. Add "Export as PNG" button to top toolbar
-2. Capture current canvas content:
-   - Use canvas.toDataURL('image/png')
-   - Or render at higher resolution for better quality
-3. Trigger download:
-   - Create temporary <a> element with download attribute
-   - Set href to data URL
-   - Programmatically click to download
-4. Options dialog (optional):
-   - Image resolution (1x, 2x, 4x current viewport)
-   - Include/exclude grid and axes
-   - Background color (transparent, white, black)
+### ✅ Phases 1-5 - COMPLETE! (Foundation through Export/Import)
 
-**Expected Outcome:**
-- Users can export topology visualizations as images
-- Useful for documentation, presentations, reports
-
----
-
-#### Task #2: Export/Import Topology as JSON
-**Implementation Steps:**
-1. Export topology to JSON:
-   - Button in toolbar: "Export JSON"
-   - Fetch full topology data (nodes + connections) via get_topology_full()
-   - Serialize to JSON with pretty formatting
-   - Download as topology-{name}-{timestamp}.json
-2. Import topology from JSON:
-   - Button in toolbar: "Import JSON"
-   - File picker dialog
-   - Parse JSON and validate structure
-   - Create new topology via create_topology()
-   - Batch create nodes via create_node()
-   - Batch create connections via create_connection()
-   - Show progress indicator for large topologies
-3. JSON format validation:
-   - Check required fields
-   - Validate node positions, types
-   - Validate connection references
-   - Show clear error messages if invalid
-
-**Expected Outcome:**
-- Users can backup topologies
-- Share topology configurations
-- Migrate between environments
-- Template topologies for reuse
-
----
-
-#### Task #3: UI Polish and Optimizations
-**Implementation Steps:**
-1. UI improvements:
-   - Consistent button styling
-   - Loading states for all async operations
-   - Better error messages (user-friendly, actionable)
-   - Confirm dialogs for destructive actions (delete)
-2. Performance optimizations:
-   - Profile WASM bundle size
-   - Reduce unnecessary re-renders
-   - Optimize three-d mesh updates
-   - Lazy load 3D models
-3. Accessibility:
-   - Keyboard shortcuts for common actions
-   - ARIA labels for screen readers
-   - Focus indicators
-4. Responsive design:
-   - Test on different screen sizes
-   - Adjust panel widths for mobile/tablet
-   - Touch-friendly controls
-
-**Expected Outcome:**
-- Polished, professional UI
-- Fast, responsive interactions
-- Better user experience
-- Accessible to more users
-
----
-
-#### Task #4: Documentation
-**Implementation Steps:**
-1. User documentation:
-   - README.md with screenshots
-   - How to use the application
-   - Feature overview
-   - Keyboard shortcuts
-2. Developer documentation:
-   - Architecture overview
-   - How to add new node types
-   - How to extend the application
-   - API documentation
-3. Deployment guide:
-   - Production build instructions
-   - Environment setup
-   - Database configuration
-   - Hosting options (Docker, VPS, etc.)
-
-**Expected Outcome:**
-- Users can learn the application quickly
-- Developers can contribute easily
-- Clear deployment process
+All foundational features, 3D editing, visual polish, and export/import functionality are complete and working!
 
 ---
 
@@ -766,35 +675,13 @@ cargo leptos watch  # Should compile without errors
 
 ## 🎬 Example Session Start Prompts
 
-### Option 1: JSON Export/Import (Phase 5, Task #2)
+### Option 1: Multi-Select Nodes (Polish Feature)
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
 Read CLAUDE.md and SESSION-GUIDE.md for complete context.
 
-Current Status: Phase 4 COMPLETE! ✅
-- All core 3D features, visual polish, and customization done
-- PNG export working with transparency support
-
-Let's implement Phase 5, Task #2: Export/Import Topology as JSON
-
-Goals:
-1. Add "Export JSON" option to Export dropdown
-2. Serialize current topology (nodes + connections) to JSON
-3. Add "Import JSON" option to toolbar
-4. Parse and create topology from JSON file
-5. Validate JSON structure with helpful error messages
-
-Ready to start!
-```
-
-### Option 2: Multi-Select Nodes (Polish Feature)
-```
-I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
-
-Read CLAUDE.md and SESSION-GUIDE.md for complete context.
-
-Current Status: Phase 4 COMPLETE! ✅
+Current Status: Phase 5 COMPLETE! ✅
 
 Let's add multi-select functionality:
 1. Shift+Click to select multiple nodes
@@ -805,13 +692,13 @@ Let's add multi-select functionality:
 How should we approach this?
 ```
 
-### Option 3: Keyboard Shortcuts (UX Enhancement)
+### Option 2: Keyboard Shortcuts (UX Enhancement)
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
 Read CLAUDE.md and SESSION-GUIDE.md for complete context.
 
-Current Status: Phase 4 COMPLETE! ✅
+Current Status: Phase 5 COMPLETE! ✅
 
 Let's add keyboard shortcuts for better UX:
 - Del/Backspace: Delete selected node/connection
@@ -824,7 +711,7 @@ Let's add keyboard shortcuts for better UX:
 Ready to implement!
 ```
 
-### Option 4: Traffic Monitoring - Phase 6.1 (Database & Mock Generator)
+### Option 3: Traffic Monitoring - Phase 6.1 (Database & Mock Generator)
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
@@ -846,7 +733,7 @@ Goals (Database & Mock Generator):
 This sets the foundation for real-time streaming in Phase 6.2!
 ```
 
-### Option 5: Traffic Monitoring - Phase 6.2 (WebSocket Streaming)
+### Option 4: Traffic Monitoring - Phase 6.2 (WebSocket Streaming)
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
@@ -867,7 +754,7 @@ Goals:
 This enables real-time data flow for Phase 6.3 animations!
 ```
 
-### Option 6: Traffic Monitoring - Full Phase 6 (All Sub-Phases)
+### Option 5: Traffic Monitoring - Full Phase 6 (All Sub-Phases)
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
@@ -896,13 +783,13 @@ Total estimated time: 10-14 hours for complete implementation.
 Ready to bring this topology to life!
 ```
 
-### Option 7: Create User Documentation (Phase 5, Task #4)
+### Option 6: Create User Documentation
 ```
 I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
 
 Read CLAUDE.md and SESSION-GUIDE.md for complete context.
 
-Current Status: Phase 4 COMPLETE! ✅
+Current Status: Phase 5 COMPLETE! ✅
 
 Let's create comprehensive user documentation:
 1. Update README.md with screenshots
@@ -922,8 +809,8 @@ I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/Code
 
 Read CLAUDE.md and SESSION-GUIDE.md for complete context.
 
-Current Status: Phase 4 COMPLETE! ✅
-All core features implemented, PNG export working, full customization available.
+Current Status: Phase 5 COMPLETE! ✅
+All core features, export/import, and customization complete. Ready for Phase 6!
 
 What should I work on next? Please review the options in SESSION-GUIDE.md and recommend the best next step based on:
 1. User value
@@ -944,19 +831,23 @@ What should I work on next? Please review the options in SESSION-GUIDE.md and re
 
 ## 🚀 You're Ready!
 
-**Phase 4 & 4.5 are COMPLETE!** ✅ All features implemented:
+**Phases 1-5 are COMPLETE!** ✅ All features implemented:
 - ✅ All core 3D features (rotation, models, grid, axes, topology switching, device palette, connections)
 - ✅ All visual polish (labels, colors, rendering, selection, lighting, camera controls)
 - ✅ All UI optimization (space, persistence, code quality, fullscreen, camera pan)
-- ✅ Export & customization (PNG export, node scale, background/node/connection colors)
+- ✅ Export & customization (PNG/JSON export, JSON import, node scale, background/node/connection colors)
 - ✅ Polish features (viewport centering, zoom to fit with 10% margin, cloud type in UI)
 
-**Recommended next steps:**
-1. **Traffic Monitoring - Phase 6** (Most impactful!) - Real-time visualization with WebSocket streaming
-2. **JSON Export/Import** (Phase 5, Task #2) - Round out export functionality
-3. **Multi-select nodes** (Polish feature) - Bulk operations
-4. **Keyboard shortcuts** (UX enhancement) - Power user features
-5. **User documentation** (Phase 5, Task #4) - Help users learn the app
+**Recommended next step:**
+1. **Traffic Monitoring - Phase 6** (MOST IMPACTFUL!) - Real-time visualization with WebSocket streaming
+   - This is the flagship feature that brings the topology to life!
+   - All foundation work is complete and ready to support streaming
+
+**Optional enhancements (can do anytime):**
+2. **Multi-select nodes** (Polish feature) - Bulk operations
+3. **Keyboard shortcuts** (UX enhancement) - Power user features
+4. **User documentation** - Help users learn the app
+5. **Deployment guide** - Production deployment instructions
 
 All architectural patterns are working and documented in CLAUDE.md.
 Use the example prompts above to start your next session!
