@@ -1,11 +1,11 @@
-# Network Topology Visualizer - Session Continuation Guide
+# Network Topology Builder - Session Continuation Guide
 
 ## 🎯 Starting a New Conversation
 
 **Use this prompt to continue from where we left off:**
 
 ```
-I'm continuing work on the Network Topology Visualizer project at:
+I'm continuing work on the Network Topology Builder project at:
 /Users/mattearp/Documents/CodeProjects/ntv/
 
 Please read these files to understand the current state:

@@ -33,8 +33,11 @@ pub fn App() -> impl IntoView {
         // id=leptos means cargo-leptos will hot-reload this stylesheet
         <Stylesheet id="leptos" href="/pkg/ntv.css"/>
 
+        // favicon
+        <leptos_meta::Link rel="icon" type_="image/svg+xml" href="/ntb_logo.svg"/>
+
         // sets the document title
-        <Title text="Welcome to Leptos"/>
+        <Title text="Network Topology Builder"/>
 
         // content for this welcome page
         <Router>

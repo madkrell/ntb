@@ -532,7 +532,8 @@ fn TopToolbar() -> impl IntoView {
         <div class="h-14 bg-gray-800 border-b border-gray-700 flex items-center px-4 gap-3">
             // Logo/Title
             <div class="flex items-center gap-2 mr-6">
-                <div class="text-xl font-bold text-blue-400">"NTV"</div>
+                <img src="/ntb_logo.svg" alt="NTB Logo" class="h-8 w-8" />
+                <div class="text-xl font-bold text-blue-400">"NTB"</div>
             </div>
 
             // Topology Selector with Edit

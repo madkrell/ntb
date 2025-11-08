@@ -1,4 +1,4 @@
-# Network Topology Visualizer - Claude Development Notes
+# Network Topology Builder - Claude Development Notes
 
 ## Project Status
 **Current Phase:** Phase 5.5 COMPLETE! ✅ (Vendor-Based Model Selection)

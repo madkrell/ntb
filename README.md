@@ -1,6 +1,6 @@
-# Network Topology Visualizer
+# Network Topology Builder
 
-A web-based network topology visualization tool built entirely in **Rust** using **Leptos 0.8.11 with islands architecture**.
+A web-based network topology builder and visualization tool built entirely in **Rust** using **Leptos 0.8**.
 
 ## Features
 
