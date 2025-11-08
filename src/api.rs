@@ -1,8 +1,9 @@
 use crate::models::{
-    Topology, CreateTopology, TopologyFull,
+    Topology, CreateTopology, UpdateTopology, TopologyFull,
     Node, CreateNode, UpdateNode,
     Connection, CreateConnection, UpdateConnection,
     UISettings, UpdateUISettings,
+    VendorListResponse, VendorInfo, ModelInfo,
 };
 use leptos::prelude::*;
 
@@ -78,6 +79,63 @@ pub async fn create_topology(data: CreateTopology) -> Result<Topology, ServerFnE
     }
 }
 
+/// Update topology (name and/or description)
+#[server(UpdateTopologyFn, "/api")]
+pub async fn update_topology(id: i64, data: UpdateTopology) -> Result<Topology, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+
+        let Extension(pool) = extract::<Extension<SqlitePool>>()
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+        // Build dynamic UPDATE query
+        let mut query_str = "UPDATE topologies SET updated_at = CURRENT_TIMESTAMP".to_string();
+
+        if data.name.is_some() {
+            query_str.push_str(", name = ?");
+        }
+        if data.description.is_some() {
+            query_str.push_str(", description = ?");
+        }
+
+        query_str.push_str(" WHERE id = ?");
+
+        let mut query = sqlx::query(&query_str);
+
+        if let Some(ref name) = data.name {
+            query = query.bind(name);
+        }
+        if let Some(ref description) = data.description {
+            query = query.bind(description);
+        }
+
+        query = query.bind(id);
+
+        query.execute(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+        // Fetch and return updated topology
+        let topology = sqlx::query_as::<_, Topology>(
+            "SELECT id, name, description, created_at, updated_at FROM topologies WHERE id = ?"
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Topology not found: {}", e)))?;
+
+        Ok(topology)
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}
+
 /// Delete a topology
 #[server(DeleteTopology, "/api")]
 pub async fn delete_topology(id: i64) -> Result<(), ServerFnError> {
@@ -128,7 +186,7 @@ pub async fn get_topology_full(id: i64) -> Result<TopologyFull, ServerFnError> {
 
         // Fetch all nodes for this topology
         let nodes = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata, created_at, updated_at
              FROM nodes WHERE topology_id = ? ORDER BY created_at"
         )
         .bind(id)
@@ -176,7 +234,7 @@ pub async fn get_node(id: i64) -> Result<Node, ServerFnError> {
             .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
         let node = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata, created_at, updated_at
              FROM nodes WHERE id = ?"
         )
         .bind(id)
@@ -214,14 +272,19 @@ pub async fn create_node(data: CreateNode) -> Result<Node, ServerFnError> {
         let rot_y = data.rotation_y.unwrap_or(0.0);
         let rot_z = data.rotation_z.unwrap_or(0.0);
         let scale = data.scale.unwrap_or(1.0);
+        let color = data.color.unwrap_or_else(|| "100,150,255".to_string()); // Default blue
+        let vendor = data.vendor.unwrap_or_else(|| "generic".to_string());
+        let model_name = data.model_name.unwrap_or_else(|| format!("blob-{}", data.node_type));
 
         let result = sqlx::query(
-            "INSERT INTO nodes (topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, metadata)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO nodes (topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(data.topology_id)
         .bind(&data.name)
         .bind(&data.node_type)
+        .bind(&vendor)
+        .bind(&model_name)
         .bind(&data.ip_address)
         .bind(pos_x)
         .bind(pos_y)
@@ -230,6 +293,7 @@ pub async fn create_node(data: CreateNode) -> Result<Node, ServerFnError> {
         .bind(rot_y)
         .bind(rot_z)
         .bind(scale)
+        .bind(&color)
         .bind(&data.metadata)
         .execute(&pool)
         .await
@@ -239,7 +303,7 @@ pub async fn create_node(data: CreateNode) -> Result<Node, ServerFnError> {
 
         // Fetch the created node
         let node = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata, created_at, updated_at
              FROM nodes WHERE id = ?"
         )
         .bind(id)
@@ -303,6 +367,12 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
         if data.node_type.is_some() {
             query_str.push_str(", node_type = ?");
         }
+        if data.vendor.is_some() {
+            query_str.push_str(", vendor = ?");
+        }
+        if data.model_name.is_some() {
+            query_str.push_str(", model_name = ?");
+        }
         if data.ip_address.is_some() {
             query_str.push_str(", ip_address = ?");
         }
@@ -327,6 +397,9 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
         if data.scale.is_some() {
             query_str.push_str(", scale = ?");
         }
+        if data.color.is_some() {
+            query_str.push_str(", color = ?");
+        }
         if data.metadata.is_some() {
             query_str.push_str(", metadata = ?");
         }
@@ -341,6 +414,12 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
         }
         if let Some(ref node_type) = data.node_type {
             query = query.bind(node_type);
+        }
+        if let Some(ref vendor) = data.vendor {
+            query = query.bind(vendor);
+        }
+        if let Some(ref model_name) = data.model_name {
+            query = query.bind(model_name);
         }
         if let Some(ref ip) = data.ip_address {
             query = query.bind(ip);
@@ -366,6 +445,9 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
         if let Some(scale) = data.scale {
             query = query.bind(scale);
         }
+        if let Some(ref color) = data.color {
+            query = query.bind(color);
+        }
         if let Some(ref metadata) = data.metadata {
             query = query.bind(metadata);
         }
@@ -378,7 +460,7 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
 
         // Fetch the updated node
         let node = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata, created_at, updated_at
              FROM nodes WHERE id = ?"
         )
         .bind(id)
@@ -736,4 +818,123 @@ pub async fn update_ui_settings(data: UpdateUISettings) -> Result<UISettings, Se
     {
         unreachable!("Server function called on client")
     }
+}
+
+/// Get available vendors and models for a specific node type
+/// Scans the public/models/{node_type}/ directory for vendor folders
+#[server(GetVendorsForType, "/api")]
+pub async fn get_vendors_for_type(node_type: String) -> Result<VendorListResponse, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use std::fs;
+        use std::path::Path;
+
+        let models_path = format!("public/models/{}", node_type);
+        let models_dir = Path::new(&models_path);
+
+        if !models_dir.exists() {
+            return Ok(VendorListResponse {
+                node_type: node_type.clone(),
+                vendors: vec![],
+            });
+        }
+
+        let mut vendors = Vec::new();
+
+        // Read vendor directories
+        let entries = fs::read_dir(models_dir)
+            .map_err(|e| ServerFnError::new(format!("Failed to read models directory: {}", e)))?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| ServerFnError::new(format!("Failed to read directory entry: {}", e)))?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                let vendor_name = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                // Scan for .glb files in vendor directory
+                let mut models = Vec::new();
+
+                if let Ok(model_entries) = fs::read_dir(&path) {
+                    for model_entry in model_entries {
+                        if let Ok(model_entry) = model_entry {
+                            let model_path = model_entry.path();
+                            if let Some(ext) = model_path.extension() {
+                                if ext == "glb" {
+                                    if let Some(file_name) = model_path.file_name().and_then(|n| n.to_str()) {
+                                        // Remove .glb extension for storage
+                                        let file_name_no_ext = file_name.trim_end_matches(".glb");
+                                        let display_name = file_name_no_ext
+                                            .replace("-", " ")
+                                            .replace("_", " ");
+
+                                        models.push(ModelInfo {
+                                            file_name: file_name_no_ext.to_string(),
+                                            display_name: capitalize_words(&display_name),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Check if vendor icon exists
+                let icon_path = format!("public/icons/vendors/{}.svg", vendor_name);
+                let has_icon = Path::new(&icon_path).exists();
+
+                let display_name = capitalize_words(&vendor_name.replace("-", " ").replace("_", " "));
+
+                vendors.push(VendorInfo {
+                    name: vendor_name,
+                    display_name,
+                    has_icon,
+                    is_available: !models.is_empty(),
+                    models,
+                });
+            }
+        }
+
+        // Sort vendors: generic first, then available vendors, then unavailable
+        vendors.sort_by(|a, b| {
+            if a.name == "generic" {
+                std::cmp::Ordering::Less
+            } else if b.name == "generic" {
+                std::cmp::Ordering::Greater
+            } else if a.is_available && !b.is_available {
+                std::cmp::Ordering::Less
+            } else if !a.is_available && b.is_available {
+                std::cmp::Ordering::Greater
+            } else {
+                a.display_name.cmp(&b.display_name)
+            }
+        });
+
+        Ok(VendorListResponse {
+            node_type,
+            vendors,
+        })
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}
+
+#[cfg(feature = "ssr")]
+fn capitalize_words(s: &str) -> String {
+    s.split_whitespace()
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }

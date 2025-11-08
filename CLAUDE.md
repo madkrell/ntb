@@ -1,11 +1,68 @@
 # Network Topology Visualizer - Claude Development Notes
 
 ## Project Status
-**Current Phase:** Phase 5 COMPLETE! ✅ (Export/Import + Phase 4.5 polish)
-**Last Updated:** 2025-11-07
-**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete
+**Current Phase:** Phase 5.5 COMPLETE! ✅ (Vendor-Based Model Selection)
+**Last Updated:** 2025-11-08
+**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete, v0.1.0-phase5-complete
 **Architecture:** Regular Leptos Components (Islands removed - see notes below)
 **Next Phase:** Phase 6 - Traffic Monitoring (Real-time visualization with WebSocket streaming)
+
+### Phase 5.5 - Vendor-Based Model Selection COMPLETE! ✅ (2025-11-08)
+
+**✅ COMPLETED:**
+27. ✅ **Vendor-Based Device Palette** (2025-11-08) - Multi-vendor model selection system
+   - Database migration: `20250107000003_add_vendor_model.sql`
+   - Added `vendor` and `model_name` fields to Node model
+   - Device Palette buttons now plural: "Routers", "Switches", "Servers", etc.
+   - Added new "Applications" device type
+   - Click any device button to show vendor dropdown
+   - Auto-discovers vendors from filesystem: `public/models/{type}/{vendor}/*.glb`
+   - Auto-discovers vendor icons: `public/icons/vendors/{vendor}.svg`
+   - Generic vendor always shown first as fallback
+   - Component extraction pattern for clean Leptos closure handling
+   - Dynamic z-index layering prevents dropdown overlap issues
+
+28. ✅ **Vendor Auto-Discovery Server Function** (2025-11-08)
+   - `get_vendors_for_type()` scans filesystem for vendor folders
+   - Returns VendorListResponse with vendors and their models
+   - Model display names auto-formatted from filenames (blob-router → Blob Router)
+   - Icon detection with fallback to generic.svg
+   - Sorted: Generic first, then available vendors, then unavailable (no models)
+
+**File Structure:**
+```
+public/
+├── models/
+│   ├── router/
+│   │   ├── generic/
+│   │   │   └── blob-router.glb
+│   │   ├── cisco/
+│   │   │   ├── asr9000.glb
+│   │   │   └── catalyst.glb
+│   │   └── versa/
+│   │       └── sd-wan.glb
+│   ├── switch/
+│   │   ├── generic/
+│   │   │   └── blob-switch.glb
+│   │   └── cisco/
+│   │       └── nexus.glb
+│   └── application/
+│       ├── generic/
+│       │   └── blob-application.glb
+│       └── cisco/
+│           └── webex.glb
+└── icons/
+    └── vendors/
+        ├── generic.svg
+        ├── cisco.svg
+        └── versa.svg
+```
+
+**Adding New Vendors (Zero Configuration):**
+1. Create vendor folder: `mkdir -p public/models/router/cisco`
+2. Add models: `cp model.glb public/models/router/cisco/asr9000.glb`
+3. Add icon: `cp logo.svg public/icons/vendors/cisco.svg`
+4. Refresh browser → Cisco automatically appears in Routers dropdown!
 
 ### Phase 4.5 - UI/UX Polish COMPLETE! ✅ (2025-11-07)
 
@@ -344,6 +401,9 @@ pub mod server;  // Old implementation-specific code
 - `20250106000003_add_node_scale.sql` - scale (REAL, default 1.0, range 0.1-5.0)
 - `20250107000001_add_connection_color.sql` - color (TEXT, default '128,128,128', format "R,G,B")
 - `20250107000002_add_node_color.sql` - color (TEXT, default '100,150,255', format "R,G,B")
+
+### Phase 5.5 Migrations
+- `20250107000003_add_vendor_model.sql` - vendor (TEXT, default 'generic') and model_name (TEXT, default 'blob-{type}') for multi-vendor support
 
 ## Phase 5 - Export & JSON Import/Export ✅ COMPLETE!
 

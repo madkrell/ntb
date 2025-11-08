@@ -36,7 +36,10 @@
       "Bash(xargs:*)",
       "Bash(cargo clippy:*)",
       "Bash(grep:*)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(curl:*)",
+      "Bash(timeout 60 cargo build:*)",
+      "Bash(timeout 90 cargo build:*)"
     ],
     "deny": [],
     "ask": []

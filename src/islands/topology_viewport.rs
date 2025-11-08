@@ -19,6 +19,8 @@ struct CameraState {
     distance: f32,
     azimuth: f32,   // horizontal rotation (radians)
     elevation: f32, // vertical rotation (radians)
+    pan_x: f32,     // horizontal pan offset
+    pan_y: f32,     // vertical pan offset
 }
 
 #[cfg(feature = "hydrate")]
@@ -29,6 +31,8 @@ impl CameraState {
             distance: self.distance + (other.distance - self.distance) * t,
             azimuth: self.azimuth + (other.azimuth - self.azimuth) * t,
             elevation: self.elevation + (other.elevation - self.elevation) * t,
+            pan_x: self.pan_x + (other.pan_x - self.pan_x) * t,
+            pan_y: self.pan_y + (other.pan_y - self.pan_y) * t,
         }
     }
 }
@@ -38,6 +42,8 @@ impl Default for CameraState {
     fn default() -> Self {
         Self {
             distance: 18.0,        // Zoomed out to show full topology
+            pan_x: 0.0,           // No horizontal pan
+            pan_y: 0.0,           // No vertical pan
             azimuth: -0.785,       // ~-45 degrees (Blender default: green Y axis lower-left to upper-right)
             elevation: 1.047,      // ~60 degrees (looking down from above, Blender-style)
         }
@@ -53,23 +59,95 @@ fn get_camera_preset(preset: crate::islands::topology_editor::CameraPreset) -> C
             distance: 18.0,
             azimuth: 0.0,
             elevation: 0.01, // Near zero elevation = looking down Z axis (top view in Z-up system)
+            pan_x: 0.0,
+            pan_y: 0.0,
         },
         crate::islands::topology_editor::CameraPreset::Front => CameraState {
             distance: 18.0,
             azimuth: 0.0,
             elevation: PI / 2.0 - 0.01, // Near 90° elevation = looking along Y axis (front view)
+            pan_x: 0.0,
+            pan_y: 0.0,
         },
         crate::islands::topology_editor::CameraPreset::Side => CameraState {
             distance: 18.0,
             azimuth: PI / 2.0, // 90 degrees horizontal rotation
             elevation: 0.01,   // Same low elevation as top view = horizon level, looking from X axis
+            pan_x: 0.0,
+            pan_y: 0.0,
         },
         crate::islands::topology_editor::CameraPreset::Isometric => CameraState {
             distance: 18.0,
             azimuth: PI / 4.0,  // 45 degrees
             elevation: 0.615,   // ~35.26 degrees (classic isometric angle)
+            pan_x: 0.0,
+            pan_y: 0.0,
         },
         crate::islands::topology_editor::CameraPreset::Reset => CameraState::default(),
+        crate::islands::topology_editor::CameraPreset::ZoomToFit => {
+            // This will be handled specially in the Effect that triggers zoom to fit
+            // Return default for now - actual calculation happens with access to node data
+            CameraState::default()
+        },
+    }
+}
+
+/// Calculate bounding box of all nodes and return camera state to fit them with margin
+#[cfg(feature = "hydrate")]
+#[allow(unused_imports)]
+fn calculate_zoom_to_fit(nodes_data: &[NodeData]) -> CameraState {
+    use three_d::*;
+
+    if nodes_data.is_empty() {
+        return CameraState::default();
+    }
+
+    // Find bounding box of all nodes
+    let mut min_x = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut min_y = f32::MAX;
+    let mut max_y = f32::MIN;
+    let mut min_z = f32::MAX;
+    let mut max_z = f32::MIN;
+
+    for node in nodes_data.iter() {
+        min_x = min_x.min(node.position.x);
+        max_x = max_x.max(node.position.x);
+        min_y = min_y.min(node.position.y);
+        max_y = max_y.max(node.position.y);
+        min_z = min_z.min(node.position.z);
+        max_z = max_z.max(node.position.z);
+    }
+
+    // Calculate bounding box dimensions
+    let width = max_x - min_x;
+    let height = max_y - min_y;
+    let depth = max_z - min_z;
+
+    // Calculate center of bounding box (this will be our pan target)
+    let center_x = (min_x + max_x) / 2.0;
+    let center_y = (min_y + max_y) / 2.0;
+    let _center_z = (min_z + max_z) / 2.0; // We look at Z=0 for consistency
+
+    // Calculate the maximum dimension to determine camera distance
+    // Add 10% margin around the topology
+    let margin_factor = 1.1;
+    let max_dimension = (width.max(height).max(depth)) * margin_factor;
+
+    // Calculate camera distance needed to fit the bounding box
+    // Using 45° FOV (field of view), we need: distance = (size / 2) / tan(FOV / 2)
+    let fov_radians = 45.0_f32.to_radians();
+    let distance = (max_dimension / 2.0) / (fov_radians / 2.0).tan();
+
+    // Ensure minimum distance
+    let distance = distance.max(5.0);
+
+    CameraState {
+        distance,
+        azimuth: -0.785,
+        elevation: 1.047,
+        pan_x: center_x,
+        pan_y: center_y,
     }
 }
 
@@ -412,14 +490,23 @@ pub fn TopologyViewport(
     {
         if let Some(preset_signal) = preset_trigger {
             let render_fn = render_fn.clone();
+            let nodes_storage = nodes_data_storage.clone();
 
             let _effect = Effect::new(move || {
                 if let Some(preset) = preset_signal.get() {
                     // Clear trigger
                     preset_signal.set(None);
 
-                    // Get target camera state from preset
-                    let target_state = get_camera_preset(preset);
+                    // Get target camera state - handle ZoomToFit specially
+                    let target_state = if preset == crate::islands::topology_editor::CameraPreset::ZoomToFit {
+                        // Calculate zoom to fit based on current node data
+                        let nodes = nodes_storage.borrow();
+                        calculate_zoom_to_fit(&nodes)
+                    } else {
+                        // Use standard preset
+                        get_camera_preset(preset)
+                    };
+
                     let start_state = camera_state.get_untracked();
 
                     // Animate camera to target position
@@ -520,6 +607,14 @@ pub fn TopologyViewport(
                                 title="Reset View"
                             >
                                 "↺"
+                            </button>
+                            // Zoom to Fit button - matches width of 2 buttons
+                            <button
+                                class="w-full h-6 bg-green-700 bg-opacity-90 hover:bg-opacity-100 border border-green-600 hover:border-green-500 rounded flex items-center justify-center text-[10px] font-bold text-green-100 hover:text-white transition shadow-lg"
+                                on:click=move |_| trigger.set(Some(crate::islands::topology_editor::CameraPreset::ZoomToFit))
+                                title="Zoom to Fit All Nodes"
+                            >
+                                "⊡"
                             </button>
                         </div>
                     }.into_any()
@@ -674,17 +769,8 @@ async fn initialize_threed_viewport(
     let context = Context::from_gl_context(std::sync::Arc::new(gl))
         .map_err(|e| format!("Failed to create three-d Context: {:?}", e))?;
 
-    // Load all GLB models for different node types (async loading)
-    // Map node type to model filename
-    let model_files: Vec<(&str, &str)> = vec![
-        ("router", "blob-router.glb"),
-        ("switch", "blob-switch.glb"),
-        ("server", "blob-server.glb"),
-        ("firewall", "blob-firewall.glb"),
-        ("load_balancer", "blob-load-balancer.glb"),
-        ("cloud", "blob-cloud.glb"),
-    ];
-
+    // Load GLB models for each unique vendor/model combination (async loading)
+    // Build cache key from vendor + model_name + node_type
     let mut node_models: HashMap<String, Option<three_d_asset::Model>> = HashMap::new();
 
     {
@@ -695,27 +781,39 @@ async fn initialize_threed_viewport(
         let location = window.location();
         let origin = location.origin().expect("no origin");
 
-        // Load each model type
-        for (node_type, filename) in model_files {
-            let model_url = format!("{}/models/{}", origin, filename);
+        // Collect unique model paths from all nodes
+        let mut unique_models: std::collections::HashSet<(String, String, String, String)> = std::collections::HashSet::new();
+        for node in &topology_data.nodes {
+            unique_models.insert((
+                node.node_type.clone(),
+                node.vendor.clone(),
+                node.model_name.clone(),
+                format!("{}/{}/{}", node.node_type, node.vendor, node.model_name)
+            ));
+        }
+
+        // Load each unique model
+        for (node_type, vendor, model_name, path) in unique_models {
+            let model_url = format!("{}/models/{}.glb", origin, path);
+            let cache_key = format!("{}:{}:{}", node_type, vendor, model_name);
 
             match load_async(&[model_url.as_str()]).await {
                 Ok(mut loaded) => {
-
                     // Deserialize the GLB file to CPU model
-                    match loaded.deserialize::<three_d_asset::Model>(filename) {
+                    match loaded.deserialize::<three_d_asset::Model>(&model_name) {
                         Ok(cpu_model) => {
-                            node_models.insert(node_type.to_string(), Some(cpu_model));
+                            node_models.insert(cache_key.clone(), Some(cpu_model));
+                            web_sys::console::log_1(&format!("✓ Loaded model: {}", cache_key).into());
                         }
                         Err(e) => {
-                            web_sys::console::error_1(&format!("✗ Failed to deserialize {} GLB: {:?}", node_type, e).into());
-                            node_models.insert(node_type.to_string(), None);
+                            web_sys::console::error_1(&format!("✗ Failed to deserialize {}: {:?}", cache_key, e).into());
+                            node_models.insert(cache_key, None);
                         }
                     }
                 }
                 Err(e) => {
-                    web_sys::console::error_1(&format!("✗ Failed to load {} GLB file: {:?}", node_type, e).into());
-                    node_models.insert(node_type.to_string(), None);
+                    web_sys::console::error_1(&format!("✗ Failed to load GLB from {}: {:?}", model_url, e).into());
+                    node_models.insert(cache_key, None);
                 }
             }
         }
@@ -762,13 +860,13 @@ async fn initialize_threed_viewport(
             radius: node_radius * 2.0,  // 2x visual radius for easier clicking
         });
 
-        // Check if we have a loaded 3D model for this node type
-        let node_type_key = node.node_type.to_lowercase();
-        let has_model = node_models.get(&node_type_key).and_then(|opt| opt.as_ref()).is_some();
+        // Check if we have a loaded 3D model for this vendor/model combination
+        let model_cache_key = format!("{}:{}:{}", node.node_type, node.vendor, node.model_name);
+        let has_model = node_models.get(&model_cache_key).and_then(|opt| opt.as_ref()).is_some();
 
         if has_model {
             // Render node with loaded 3D model
-            let cpu_model = node_models.get(&node_type_key).unwrap().as_ref().unwrap();
+            let cpu_model = node_models.get(&model_cache_key).unwrap().as_ref().unwrap();
 
             // Process each primitive (sub-mesh) in the model
             for primitive in cpu_model.geometries.iter() {
@@ -779,8 +877,23 @@ async fn initialize_threed_viewport(
                         // tri_mesh is a TriMesh, which is the same as CpuMesh!
                         // Just pass it directly to Mesh::new()
 
-                        // Create materials with color and properties based on node type
-                        let node_color = get_node_color(&node.node_type);
+                        // Parse node color from database (format: "R,G,B")
+                        let node_color = {
+                            let parts: Vec<&str> = node.color.split(',').collect();
+                            if parts.len() == 3 {
+                                if let (Ok(r), Ok(g), Ok(b)) = (
+                                    parts[0].parse::<u8>(),
+                                    parts[1].parse::<u8>(),
+                                    parts[2].parse::<u8>(),
+                                ) {
+                                    Srgba::new(r, g, b, 255)
+                                } else {
+                                    get_node_color(&node.node_type) // Fallback to type-based color
+                                }
+                            } else {
+                                get_node_color(&node.node_type) // Fallback to type-based color
+                            }
+                        };
                         let (metallic, roughness) = get_node_material_properties(&node.node_type);
                         let normal_material = PhysicalMaterial::new_opaque(
                             &context,
@@ -827,7 +940,23 @@ async fn initialize_threed_viewport(
             }
         } else {
             // Render nodes without 3D models as colored spheres (fallback)
-            let node_color = get_node_color(&node.node_type);
+            // Parse node color from database (format: "R,G,B")
+            let node_color = {
+                let parts: Vec<&str> = node.color.split(',').collect();
+                if parts.len() == 3 {
+                    if let (Ok(r), Ok(g), Ok(b)) = (
+                        parts[0].parse::<u8>(),
+                        parts[1].parse::<u8>(),
+                        parts[2].parse::<u8>(),
+                    ) {
+                        Srgba::new(r, g, b, 255)
+                    } else {
+                        get_node_color(&node.node_type) // Fallback to type-based color
+                    }
+                } else {
+                    get_node_color(&node.node_type) // Fallback to type-based color
+                }
+            };
             let (metallic, roughness) = get_node_material_properties(&node.node_type);
 
             // Create material for this node type with PBR properties
@@ -1002,12 +1131,19 @@ async fn initialize_threed_viewport(
         let selected_item_signal = selected_item_signal; // Capture signal for connection selection
 
         move |state: CameraState| {
+            // Always get current canvas dimensions (handles window resize and fullscreen toggle)
             let width = canvas.client_width() as u32;
             let height = canvas.client_height() as u32;
+
+            // Update canvas resolution to match display size (prevents distortion)
+            canvas.set_width(width);
+            canvas.set_height(height);
+
             let viewport = Viewport::new_at_origo(width, height);
 
             // Calculate camera position from spherical coordinates
-            let eye = vec3(
+            let target = vec3(state.pan_x, state.pan_y, 0.0);    // look at pan offset
+            let eye = target + vec3(
                 state.distance * state.elevation.cos() * state.azimuth.sin(),
                 state.distance * state.elevation.sin(),
                 state.distance * state.elevation.cos() * state.azimuth.cos(),
@@ -1016,7 +1152,7 @@ async fn initialize_threed_viewport(
             let camera = Camera::new_perspective(
                 viewport,
                 eye,
-                vec3(0.0, 0.0, 0.0),    // look at origin
+                target,    // look at pan-adjusted target
                 vec3(0.0, 0.0, 1.0),    // up = +Z (Blender convention)
                 degrees(45.0),
                 0.1,
@@ -1203,12 +1339,19 @@ fn initialize_threed_viewport_test(
         let canvas = canvas.clone();
 
         move |state: CameraState| {
+            // Always get current canvas dimensions (handles window resize and fullscreen toggle)
             let width = canvas.client_width() as u32;
             let height = canvas.client_height() as u32;
+
+            // Update canvas resolution to match display size (prevents distortion)
+            canvas.set_width(width);
+            canvas.set_height(height);
+
             let viewport = Viewport::new_at_origo(width, height);
 
             // Calculate camera position from spherical coordinates
-            let eye = vec3(
+            let target = vec3(state.pan_x, state.pan_y, 0.0);
+            let eye = target + vec3(
                 state.distance * state.elevation.cos() * state.azimuth.sin(),
                 state.distance * state.elevation.sin(),
                 state.distance * state.elevation.cos() * state.azimuth.cos(),
@@ -1217,8 +1360,8 @@ fn initialize_threed_viewport_test(
             let camera = Camera::new_perspective(
                 viewport,
                 eye,
-                vec3(0.0, 0.0, 0.0), // look at origin
-                vec3(0.0, 1.0, 0.0), // up
+                target, // look at pan-adjusted target
+                vec3(0.0, 0.0, 1.0), // up = +Z
                 degrees(45.0),
                 0.1,
                 1000.0,
@@ -1364,12 +1507,12 @@ fn setup_orbit_controls(
 
                     // Use snapshot for raycasting (safe - no reactive signals)
                     let state = *camera_state_snapshot.lock().unwrap();
-                    let eye = vec3(
+                    let target = vec3(state.pan_x, state.pan_y, 0.0);
+                    let eye = target + vec3(
                         state.distance * state.elevation.cos() * state.azimuth.sin(),
                         state.distance * state.elevation.sin(),
                         state.distance * state.elevation.cos() * state.azimuth.cos(),
                     );
-                    let target = vec3(0.0, 0.0, 0.0);
                     let up = vec3(0.0, 0.0, 1.0);  // Z-up (Blender convention)
 
                     // Calculate camera basis vectors
@@ -1581,8 +1724,20 @@ fn setup_orbit_controls(
 
                 // Update snapshot (safe - no reactive signals)
                 let mut state = camera_state_snapshot.lock().unwrap();
-                state.azimuth += delta_x * 0.01;
-                state.elevation = (state.elevation - delta_y * 0.01).clamp(-1.5, 1.5);
+
+                // Pan mode: Middle mouse button OR Shift+drag
+                let is_pan_mode = e.button() == 1 || e.shift_key();
+
+                if is_pan_mode {
+                    // Pan camera (move target point)
+                    let pan_speed = state.distance * 0.001; // Scale with camera distance
+                    state.pan_x -= delta_x * pan_speed;
+                    state.pan_y += delta_y * pan_speed; // Invert Y (screen space -> world space)
+                } else {
+                    // Rotate camera (orbit mode)
+                    state.azimuth += delta_x * 0.01;
+                    state.elevation = (state.elevation - delta_y * 0.01).clamp(-1.5, 1.5);
+                }
 
                 // Only update reactive signal if not disposed
                 if !*is_disposed.lock().unwrap() {
@@ -1616,12 +1771,12 @@ fn setup_orbit_controls(
 
                     // Use snapshot for hover detection (safe - no reactive signals)
                     let state = *camera_state_snapshot.lock().unwrap();
-                    let eye = vec3(
+                    let target = vec3(state.pan_x, state.pan_y, 0.0);
+                    let eye = target + vec3(
                         state.distance * state.elevation.cos() * state.azimuth.sin(),
                         state.distance * state.elevation.sin(),
                         state.distance * state.elevation.cos() * state.azimuth.cos(),
                     );
-                    let target = vec3(0.0, 0.0, 0.0);
                     let up = vec3(0.0, 0.0, 1.0);
 
                     let forward = (target - eye).normalize();

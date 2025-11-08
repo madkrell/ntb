@@ -1,8 +1,14 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use crate::islands::TopologyViewport;
-use crate::api::{get_node, update_node, get_connection, update_connection, create_node, delete_node, delete_connection, get_topologies, delete_topology, get_ui_settings, update_ui_settings};
-use crate::models::{UpdateNode, UpdateConnection, CreateNode, UpdateUISettings};
+use crate::api::{get_node, update_node, get_connection, update_connection, create_node, delete_node, delete_connection, get_topologies, delete_topology, update_topology, get_ui_settings, update_ui_settings, get_vendors_for_type};
+use crate::models::{UpdateNode, UpdateConnection, CreateNode, UpdateUISettings, UpdateTopology};
+
+// Import these only when hydrating (for JSON import/export)
+#[cfg(feature = "hydrate")]
+use crate::api::{get_topology_full, create_topology, create_connection as create_connection_fn};
+#[cfg(feature = "hydrate")]
+use crate::models::{CreateTopology, CreateConnection};
 
 /// Connection creation mode state
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -40,12 +46,151 @@ pub enum CameraPreset {
     Side,
     Isometric,
     Reset,
+    ZoomToFit,
 }
 
 /// Camera control commands
 #[derive(Clone, Copy)]
 pub struct CameraControls {
     pub preset_trigger: RwSignal<Option<CameraPreset>>,
+}
+
+/// Individual vendor section component - displays one vendor and its models
+#[component]
+fn VendorSection(
+    vendor: crate::models::VendorInfo,
+    node_type: String,
+    name_prefix: String,
+    create_node_action: Action<(String, String, String, String), Result<crate::models::Node, leptos::prelude::ServerFnError>>,
+    dropdown_open: RwSignal<bool>,
+) -> impl IntoView {
+    // Clone values for use in closures
+    let vendor_name = vendor.name.clone();
+    let vendor_display = vendor.display_name.clone();
+    let is_available = vendor.is_available;
+    let has_icon = vendor.has_icon;
+    let models = vendor.models.clone();
+
+    view! {
+        <div class="border-b border-gray-700 last:border-b-0">
+            // Vendor header
+            <div class="px-3 py-1 bg-gray-750 flex items-center gap-2">
+                {if has_icon {
+                    view! {
+                        <img
+                            src=format!("/icons/vendors/{}.svg", vendor_name.clone())
+                            alt=vendor_display.clone()
+                            class="w-4 h-4"
+                        />
+                    }.into_any()
+                } else {
+                    view! {
+                        <img
+                            src="/icons/vendors/generic.svg"
+                            alt="Generic"
+                            class="w-4 h-4 opacity-50"
+                        />
+                    }.into_any()
+                }}
+                <span class="text-xs font-medium text-gray-300">{vendor_display.clone()}</span>
+                {if !is_available {
+                    view! { <span class="text-[10px] text-gray-500">"(No models)"</span> }.into_any()
+                } else {
+                    view! { <span></span> }.into_any()
+                }}
+            </div>
+
+            // Models for this vendor
+            <div class="pl-6">
+                {models.into_iter().map(|model| {
+                    let vendor_name_clone = vendor_name.clone();
+                    let model_file = model.file_name.clone();
+                    let model_display = model.display_name.clone();
+                    let node_type_clone = node_type.clone();
+                    let name_prefix_clone = name_prefix.clone();
+
+                    view! {
+                        <button
+                            class="w-full px-3 py-1.5 text-left hover:bg-gray-700 transition flex items-center gap-2"
+                            class:opacity-50=!is_available
+                            class:cursor-not-allowed=!is_available
+                            disabled=!is_available
+                            on:click=move |_| {
+                                if is_available {
+                                    create_node_action.dispatch((
+                                        node_type_clone.clone(),
+                                        name_prefix_clone.clone(),
+                                        vendor_name_clone.clone(),
+                                        model_file.clone(),
+                                    ));
+                                    dropdown_open.set(false);
+                                }
+                            }
+                        >
+                            <span class="text-xs text-gray-300">{model_display}</span>
+                        </button>
+                    }
+                }).collect_view()}
+            </div>
+        </div>
+    }
+}
+
+/// Vendor and model selection dropdown component
+#[component]
+fn VendorDropdown(
+    node_type: String,
+    name_prefix: String,
+    create_node_action: Action<(String, String, String, String), Result<crate::models::Node, leptos::prelude::ServerFnError>>,
+    dropdown_open: RwSignal<bool>,
+) -> impl IntoView {
+    // Clone for use in Resource
+    let node_type_for_resource = node_type.clone();
+
+    // Fetch vendors for this node type
+    let vendors_resource = Resource::new(
+        move || node_type_for_resource.clone(),
+        |node_type| async move {
+            get_vendors_for_type(node_type).await
+        },
+    );
+
+    view! {
+        <div class="absolute left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded shadow-lg max-h-64 overflow-y-auto z-50">
+            <Suspense fallback=move || view! {
+                <div class="p-2 text-xs text-gray-400">"Loading vendors..."</div>
+            }>
+                {move || {
+                    vendors_resource.get().and_then(|result| {
+                        result.ok().map(|vendor_list| {
+                            if vendor_list.vendors.is_empty() {
+                                view! {
+                                    <div class="p-2 text-xs text-gray-400">"No vendors available"</div>
+                                }.into_any()
+                            } else {
+                                let vendors = vendor_list.vendors.clone();
+                                view! {
+                                    <div class="py-1">
+                                        {vendors.into_iter().map(|vendor| {
+                                            view! {
+                                                <VendorSection
+                                                    vendor=vendor
+                                                    node_type=node_type.clone()
+                                                    name_prefix=name_prefix.clone()
+                                                    create_node_action=create_node_action
+                                                    dropdown_open=dropdown_open
+                                                />
+                                            }
+                                        }).collect_view()}
+                                    </div>
+                                }.into_any()
+                            }
+                        })
+                    })
+                }}
+            </Suspense>
+        </div>
+    }
 }
 
 /// Professional topology editor layout with panels
@@ -89,6 +234,69 @@ pub fn TopologyEditor(
         preset_trigger: RwSignal::new(None),
     };
 
+    // Panel visibility controls - single fullscreen toggle
+    let fullscreen_mode = RwSignal::new(false);
+
+    // Keyboard shortcuts handler
+    #[cfg(feature = "hydrate")]
+    {
+        use wasm_bindgen::prelude::*;
+        use wasm_bindgen::JsCast;
+        use web_sys::{KeyboardEvent, window};
+
+        let fullscreen_mode_kb = fullscreen_mode;
+        let selected_item_kb = selected_item;
+        let selected_node_id_kb = selected_node_id;
+
+        let keydown_handler = Closure::wrap(Box::new(move |e: KeyboardEvent| {
+            // Don't intercept keys when typing in input fields
+            if let Some(target) = e.target() {
+                if let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() {
+                    let tag_name = element.tag_name().to_lowercase();
+                    if tag_name == "input" || tag_name == "textarea" {
+                        return;
+                    }
+                }
+            }
+
+            match e.key().as_str() {
+                "f" | "F" => {
+                    e.prevent_default();
+                    fullscreen_mode_kb.update(|v| *v = !*v);
+                },
+                "Escape" => {
+                    e.prevent_default();
+                    // If in fullscreen, exit fullscreen first
+                    if fullscreen_mode_kb.get_untracked() {
+                        fullscreen_mode_kb.set(false);
+                    } else {
+                        // Otherwise deselect
+                        selected_item_kb.set(None);
+                        selected_node_id_kb.set(None);
+                    }
+                },
+                "Delete" | "Backspace" if !e.meta_key() && !e.ctrl_key() => {
+                    // Delete selected item (node or connection)
+                    if let Some(_item) = selected_item_kb.get_untracked() {
+                        e.prevent_default();
+                        // Trigger deletion via server function
+                        // (We'll implement this with actions below)
+                    }
+                },
+                _ => {}
+            }
+        }) as Box<dyn FnMut(KeyboardEvent)>);
+
+        if let Some(window) = window() {
+            window.add_event_listener_with_callback(
+                "keydown",
+                keydown_handler.as_ref().unchecked_ref()
+            ).ok();
+        }
+
+        keydown_handler.forget();
+    }
+
     // Provide signals via context so islands can access them
     provide_context(selected_node_id);
     provide_context(selected_item);
@@ -98,6 +306,7 @@ pub fn TopologyEditor(
     provide_context(viewport_visibility);
     provide_context(lighting_settings);
     provide_context(camera_controls);
+    provide_context(fullscreen_mode);
 
     // Load UI settings from database and update signals
     let ui_settings_resource = Resource::new(
@@ -186,8 +395,14 @@ pub fn TopologyEditor(
 
             // Main content area with 3 panels
             <div class="flex-1 flex overflow-hidden">
-                // Left: Device Palette
-                <DevicePalette />
+                // Left: Device Palette (hidden in fullscreen mode)
+                {move || {
+                    if !fullscreen_mode.get() {
+                        Some(view! { <DevicePalette /> })
+                    } else {
+                        None
+                    }
+                }}
 
                 // Center: 3D Viewport (main focus, takes most space)
                 <div class="flex-1 bg-gray-800 border-l border-r border-gray-700">
@@ -199,8 +414,14 @@ pub fn TopologyEditor(
                     }}
                 </div>
 
-                // Right: Properties Panel
-                <PropertiesPanel selected_item=selected_item />
+                // Right: Properties Panel (hidden in fullscreen mode)
+                {move || {
+                    if !fullscreen_mode.get() {
+                        Some(view! { <PropertiesPanel selected_item=selected_item /> })
+                    } else {
+                        None
+                    }
+                }}
             </div>
         </div>
     }
@@ -213,6 +434,29 @@ pub enum SelectedItem {
     Connection(i64),
 }
 
+/// Fullscreen mode toggle button
+#[component]
+fn PanelToggleButtons() -> impl IntoView {
+    let fullscreen_mode = use_context::<RwSignal<bool>>()
+        .expect("fullscreen_mode context");
+
+    view! {
+        <button
+            class={move || {
+                if fullscreen_mode.get() {
+                    "px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition"
+                } else {
+                    "px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm font-medium transition"
+                }
+            }}
+            on:click=move |_| fullscreen_mode.update(|v| *v = !*v)
+            title="Toggle Fullscreen Mode (F)"
+        >
+            {move || if fullscreen_mode.get() { "⛶ Exit Fullscreen" } else { "⛶ Fullscreen" }}
+        </button>
+    }
+}
+
 /// Top toolbar with action buttons
 #[component]
 fn TopToolbar() -> impl IntoView {
@@ -221,13 +465,46 @@ fn TopToolbar() -> impl IntoView {
     let refetch_trigger = use_context::<RwSignal<u32>>().expect("refetch_trigger context");
     let selected_item = use_context::<RwSignal<Option<SelectedItem>>>().expect("selected_item context");
 
-    // Load list of topologies
+    // Create a signal to trigger topology list refresh
+    let topology_list_trigger = RwSignal::new(0u32);
+
+    // Load list of topologies (reactive to topology_list_trigger)
     let topologies = Resource::new(
-        || (),
+        move || topology_list_trigger.get(),
         |_| async move {
             get_topologies().await.ok().unwrap_or_default()
         }
     );
+
+    // Provide topology list trigger to child components
+    provide_context(topology_list_trigger);
+
+    // State for editing topology name
+    let editing_name = RwSignal::new(false);
+    let edit_name_input = RwSignal::new(String::new());
+
+    // State for delete confirmation
+    let show_delete_confirm = RwSignal::new(false);
+
+    // Update topology name action
+    let update_topology_action = Action::new(move |new_name: &String| {
+        let topology_id = current_topology_id.get_untracked();
+        let name = new_name.clone();
+        async move {
+            update_topology(topology_id, UpdateTopology {
+                name: Some(name),
+                description: None,
+            }).await
+        }
+    });
+
+    // Handle successful topology name update
+    Effect::new(move || {
+        if let Some(Ok(_)) = update_topology_action.value().get() {
+            editing_name.set(false);
+            topology_list_trigger.update(|v| *v += 1);
+        }
+    });
 
     // Delete topology action
     let delete_topology_action = Action::new(move |_: &()| {
@@ -242,8 +519,8 @@ fn TopToolbar() -> impl IntoView {
         if let Some(Ok(_)) = delete_topology_action.value().get() {
             // Clear selection
             selected_item.set(None);
-            // Refetch topologies
-            topologies.refetch();
+            // Refetch topologies list
+            topology_list_trigger.update(|v| *v += 1);
             // Switch to topology 1 if available
             current_topology_id.set(1);
             // Trigger viewport refresh
@@ -258,56 +535,184 @@ fn TopToolbar() -> impl IntoView {
                 <div class="text-xl font-bold text-blue-400">"NTV"</div>
             </div>
 
-            // Topology Selector
+            // Topology Selector with Edit
             <div class="flex items-center gap-2">
                 <label class="text-sm text-gray-400">"Topology:"</label>
                 <Suspense fallback=move || view! { <div class="text-sm text-gray-500">"Loading..."</div> }>
                     {move || {
-                        topologies.get().map(|topos| {
-                            view! {
-                                <select
-                                    class="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
-                                    on:change=move |ev| {
-                                        let value = event_target_value(&ev);
-                                        if let Ok(id) = value.parse::<i64>() {
-                                            current_topology_id.set(id);
-                                            // Clear selection when switching topologies
-                                            selected_item.set(None);
-                                            // Trigger viewport refresh
-                                            refetch_trigger.update(|v| *v += 1);
+                        match topologies.get() {
+                            Some(topos) => {
+                                let is_editing = editing_name.get();
+
+                                view! {
+                                    <div class="flex items-center gap-1">
+                                        {move || {
+                                            if is_editing {
+                                            // Edit mode - show input field
+                                            view! {
+                                                <>
+                                                    <input
+                                                        type="text"
+                                                        class="px-3 py-1.5 bg-gray-700 border border-blue-500 rounded text-sm focus:outline-none focus:border-blue-400"
+                                                        prop:value=move || edit_name_input.get()
+                                                        on:input=move |ev| {
+                                                            edit_name_input.set(event_target_value(&ev));
+                                                        }
+                                                        on:keydown=move |ev| {
+                                                            if ev.key() == "Enter" {
+                                                                let name = edit_name_input.get_untracked();
+                                                                if !name.trim().is_empty() {
+                                                                    update_topology_action.dispatch(name);
+                                                                }
+                                                            } else if ev.key() == "Escape" {
+                                                                editing_name.set(false);
+                                                            }
+                                                        }
+                                                    />
+                                                    <button
+                                                        class="px-2 py-1.5 bg-green-600 hover:bg-green-700 rounded text-xs font-medium transition"
+                                                        on:click=move |_| {
+                                                            let name = edit_name_input.get_untracked();
+                                                            if !name.trim().is_empty() {
+                                                                update_topology_action.dispatch(name);
+                                                            }
+                                                        }
+                                                        disabled=move || update_topology_action.pending().get()
+                                                    >
+                                                        "✓"
+                                                    </button>
+                                                    <button
+                                                        class="px-2 py-1.5 bg-gray-600 hover:bg-gray-700 rounded text-xs font-medium transition"
+                                                        on:click=move |_| editing_name.set(false)
+                                                    >
+                                                        "✗"
+                                                    </button>
+                                                </>
+                                            }.into_any()
+                                        } else {
+                                            // Display mode - show dropdown and edit button
+                                            let current_id = current_topology_id.get();
+                                            let current_name = topos.iter()
+                                                .find(|t| t.id == current_id)
+                                                .map(|t| t.name.clone())
+                                                .unwrap_or_default();
+
+                                            view! {
+                                                <>
+                                                    <select
+                                                        class="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                                        on:change=move |ev| {
+                                                            let value = event_target_value(&ev);
+                                                            if let Ok(id) = value.parse::<i64>() {
+                                                                current_topology_id.set(id);
+                                                                // Clear selection when switching topologies
+                                                                selected_item.set(None);
+                                                                // Trigger viewport refresh
+                                                                refetch_trigger.update(|v| *v += 1);
+                                                            }
+                                                        }
+                                                        prop:value=move || current_topology_id.get().to_string()
+                                                    >
+                                                        {topos.iter().map(|topo| {
+                                                            view! {
+                                                                <option value=topo.id.to_string()>
+                                                                    {topo.name.clone()}
+                                                                </option>
+                                                            }
+                                                        }).collect_view()}
+                                                    </select>
+                                                    <button
+                                                        class="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded text-xs font-medium transition"
+                                                        on:click={
+                                                            let current_name = current_name.clone();
+                                                            move |_| {
+                                                                edit_name_input.set(current_name.clone());
+                                                                editing_name.set(true);
+                                                            }
+                                                        }
+                                                        title="Edit topology name"
+                                                    >
+                                                        "✏️"
+                                                    </button>
+                                                </>
+                                            }.into_any()
                                         }
-                                    }
-                                    prop:value=move || current_topology_id.get().to_string()
-                                >
-                                    {topos.into_iter().map(|topo| {
-                                        view! {
-                                            <option value=topo.id.to_string()>
-                                                {topo.name}
-                                            </option>
-                                        }
-                                    }).collect_view()}
-                                </select>
+                                    }}
+                                </div>
+                            }.into_any()
                             }
-                        })
+                            None => view! {
+                                <div class="flex items-center gap-1">
+                                    {move || {
+                                        view! {
+                                            <div class="text-sm text-gray-500">"No topologies found"</div>
+                                        }
+                                    }}
+                                </div>
+                            }.into_any()
+                        }
                     }}
                 </Suspense>
             </div>
 
-            // Delete Topology button
-            <button
-                class="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
-                on:click=move |_| { delete_topology_action.dispatch(()); }
-                disabled=move || delete_topology_action.pending().get()
-            >
-                {move || if delete_topology_action.pending().get() {
-                    "Deleting Topology..."
-                } else {
-                    "Delete Topology"
+            // Delete Topology button with confirmation
+            <div class="relative">
+                <button
+                    class="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    on:click=move |_| { show_delete_confirm.set(true); }
+                    disabled=move || delete_topology_action.pending().get()
+                >
+                    {move || if delete_topology_action.pending().get() {
+                        "Deleting Topology..."
+                    } else {
+                        "Delete Topology"
+                    }}
+                </button>
+
+                // Delete confirmation dialog
+                {move || {
+                    if show_delete_confirm.get() {
+                        Some(view! {
+                            <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000]">
+                                <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 max-w-md mx-4">
+                                    <h3 class="text-lg font-bold text-red-400 mb-3">"Confirm Delete"</h3>
+                                    <p class="text-gray-300 mb-4">
+                                        "Are you sure you want to delete this topology? This action cannot be undone."
+                                    </p>
+                                    <div class="flex gap-3 justify-end">
+                                        <button
+                                            class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-medium transition"
+                                            on:click=move |_| show_delete_confirm.set(false)
+                                        >
+                                            "Cancel"
+                                        </button>
+                                        <button
+                                            class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition"
+                                            on:click=move |_| {
+                                                show_delete_confirm.set(false);
+                                                delete_topology_action.dispatch(());
+                                            }
+                                        >
+                                            "Delete"
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        })
+                    } else {
+                        None
+                    }
                 }}
-            </button>
+            </div>
 
             // Spacer
             <div class="flex-1"></div>
+
+            // Panel visibility toggle buttons
+            <PanelToggleButtons />
+
+            // Import dropdown menu
+            <ImportDropdown />
 
             // Export dropdown menu
             <ExportDropdown />
@@ -318,6 +723,9 @@ fn TopToolbar() -> impl IntoView {
 /// Export dropdown menu with format and resolution options
 #[component]
 fn ExportDropdown() -> impl IntoView {
+    // Get current topology ID from context
+    let current_topology_id = use_context::<RwSignal<i64>>().expect("current_topology_id context");
+
     let show_dropdown = RwSignal::new(false);
     let export_format = RwSignal::new(String::from("png"));
     let export_resolution = RwSignal::new(1);
@@ -350,10 +758,16 @@ fn ExportDropdown() -> impl IntoView {
         let format = format.clone();
         #[allow(unused_variables)]
         let resolution = *resolution;
+        #[allow(unused_variables)]
+        let topology_id = current_topology_id.get_untracked();
         async move {
             #[cfg(feature = "hydrate")]
             {
-                export_canvas(&format, resolution).await;
+                if format == "json" {
+                    export_topology_json(topology_id).await;
+                } else {
+                    export_canvas(&format, resolution).await;
+                }
             }
         }
     });
@@ -391,27 +805,37 @@ fn ExportDropdown() -> impl IntoView {
                                     >
                                         <option value="png">"PNG (High Quality)"</option>
                                         <option value="jpeg">"JPEG (Smaller Size)"</option>
+                                        <option value="json">"JSON (Topology Data)"</option>
                                     </select>
                                 </div>
 
-                                // Resolution selection
-                                <div>
-                                    <label class="block text-xs font-medium text-gray-400 mb-1.5">"Resolution"</label>
-                                    <select
-                                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
-                                        on:change=move |ev| {
-                                            let value = event_target_value(&ev);
-                                            if let Ok(res) = value.parse::<u32>() {
-                                                export_resolution.set(res);
-                                            }
-                                        }
-                                        prop:value=move || export_resolution.get().to_string()
-                                    >
-                                        <option value="1">"1x (Current)"</option>
-                                        <option value="2">"2x (High Quality)"</option>
-                                        <option value="4">"4x (Print Quality)"</option>
-                                    </select>
-                                </div>
+                                // Resolution selection (only for image formats)
+                                {move || {
+                                    let format = export_format.get();
+                                    if format == "png" || format == "jpeg" {
+                                        view! {
+                                            <div>
+                                                <label class="block text-xs font-medium text-gray-400 mb-1.5">"Resolution"</label>
+                                                <select
+                                                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                                    on:change=move |ev| {
+                                                        let value = event_target_value(&ev);
+                                                        if let Ok(res) = value.parse::<u32>() {
+                                                            export_resolution.set(res);
+                                                        }
+                                                    }
+                                                    prop:value=move || export_resolution.get().to_string()
+                                                >
+                                                    <option value="1">"1x (Current)"</option>
+                                                    <option value="2">"2x (High Quality)"</option>
+                                                    <option value="4">"4x (Print Quality)"</option>
+                                                </select>
+                                            </div>
+                                        }.into_any()
+                                    } else {
+                                        view! { <div></div> }.into_any()
+                                    }
+                                }}
 
                                 // Export button
                                 <button
@@ -422,10 +846,17 @@ fn ExportDropdown() -> impl IntoView {
                                     }
                                     disabled=move || export_action.pending().get()
                                 >
-                                    {move || if export_action.pending().get() {
-                                        "Exporting..."
-                                    } else {
-                                        "Export Image"
+                                    {move || {
+                                        if export_action.pending().get() {
+                                            "Exporting..."
+                                        } else {
+                                            let format = export_format.get();
+                                            if format == "json" {
+                                                "Export JSON"
+                                            } else {
+                                                "Export Image"
+                                            }
+                                        }
                                     }}
                                 </button>
                             </div>
@@ -561,6 +992,379 @@ async fn export_canvas(format: &str, resolution_multiplier: u32) {
     web_sys::console::log_1(&format!("Exported as {} at {}x resolution", format, resolution_multiplier).into());
 }
 
+/// Export topology as JSON file
+#[cfg(feature = "hydrate")]
+async fn export_topology_json(topology_id: i64) {
+    use wasm_bindgen::JsCast;
+
+    // Fetch full topology data from server
+    let topology_data = match get_topology_full(topology_id).await {
+        Ok(data) => data,
+        Err(e) => {
+            web_sys::console::error_1(&format!("Failed to fetch topology data: {}", e).into());
+            return;
+        }
+    };
+
+    // Serialize to JSON with pretty formatting
+    let json_string = match serde_json::to_string_pretty(&topology_data) {
+        Ok(json) => json,
+        Err(e) => {
+            web_sys::console::error_1(&format!("Failed to serialize topology: {}", e).into());
+            return;
+        }
+    };
+
+    let window = match web_sys::window() {
+        Some(w) => w,
+        None => {
+            web_sys::console::error_1(&"No window available".into());
+            return;
+        }
+    };
+
+    let document = match window.document() {
+        Some(d) => d,
+        None => {
+            web_sys::console::error_1(&"No document available".into());
+            return;
+        }
+    };
+
+    // Create a blob with the JSON data
+    let blob_parts = js_sys::Array::new();
+    blob_parts.push(&wasm_bindgen::JsValue::from_str(&json_string));
+
+    let blob_options = web_sys::BlobPropertyBag::new();
+    blob_options.set_type("application/json");
+
+    let blob = match web_sys::Blob::new_with_str_sequence_and_options(&blob_parts, &blob_options) {
+        Ok(b) => b,
+        Err(_) => {
+            web_sys::console::error_1(&"Failed to create blob".into());
+            return;
+        }
+    };
+
+    // Create object URL for the blob
+    let url = match web_sys::Url::create_object_url_with_blob(&blob) {
+        Ok(u) => u,
+        Err(_) => {
+            web_sys::console::error_1(&"Failed to create object URL".into());
+            return;
+        }
+    };
+
+    // Create download link
+    let a = match document.create_element("a") {
+        Ok(element) => element,
+        Err(_) => {
+            web_sys::console::error_1(&"Failed to create anchor element".into());
+            return;
+        }
+    };
+
+    // Generate filename with topology name and timestamp
+    let timestamp = js_sys::Date::new_0().get_time() as i64;
+    let filename = format!("topology-{}-{}.json",
+        topology_data.topology.name.replace(" ", "_").to_lowercase(),
+        timestamp
+    );
+
+    a.set_attribute("href", &url).ok();
+    a.set_attribute("download", &filename).ok();
+
+    // Trigger download
+    if let Some(html_element) = a.dyn_ref::<web_sys::HtmlElement>() {
+        html_element.click();
+    }
+
+    // Clean up object URL
+    web_sys::Url::revoke_object_url(&url).ok();
+
+    web_sys::console::log_1(&format!("Exported topology as {}", filename).into());
+}
+
+/// Import dropdown menu for importing JSON topology data
+#[component]
+fn ImportDropdown() -> impl IntoView {
+    let show_dropdown = RwSignal::new(false);
+    let import_status = RwSignal::new(None::<Result<String, String>>);
+    let refetch_trigger = use_context::<RwSignal<u32>>().expect("refetch_trigger context");
+    let current_topology_id = use_context::<RwSignal<i64>>().expect("current_topology_id context");
+    let topology_list_trigger = use_context::<RwSignal<u32>>().expect("topology_list_trigger context");
+
+    // Close dropdown when clicking outside
+    #[cfg(feature = "hydrate")]
+    {
+        use wasm_bindgen::JsCast;
+        use web_sys::MouseEvent;
+
+        let show_dropdown_clone = show_dropdown;
+        Effect::new(move || {
+            if show_dropdown_clone.get() {
+                let window = web_sys::window().expect("no window");
+                let document = window.document().expect("no document");
+
+                let closure = wasm_bindgen::prelude::Closure::wrap(Box::new(move |_: MouseEvent| {
+                    show_dropdown_clone.set(false);
+                }) as Box<dyn Fn(MouseEvent)>);
+
+                document.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref()).ok();
+                closure.forget();
+            }
+        });
+    }
+
+    // Import action
+    let import_action = Action::new(move |file_content: &String| {
+        let content = file_content.clone();
+        async move {
+            #[cfg(feature = "hydrate")]
+            {
+                import_topology_json(content).await
+            }
+            #[cfg(not(feature = "hydrate"))]
+            {
+                let _unused = content; // Suppress unused warning
+                Err::<ImportResult, String>("Import not available on server".to_string())
+            }
+        }
+    });
+
+    // Handle import success - switch to new topology and trigger refresh
+    Effect::new(move || {
+        if let Some(Ok(result)) = import_action.value().get() {
+            import_status.set(Some(Ok(result.message.clone())));
+
+            // First, refresh the topology list dropdown
+            topology_list_trigger.update(|v| *v += 1);
+
+            // Then, after a brief delay to allow the list to update, switch to the new topology
+            let new_topology_id = result.topology_id;
+            spawn_local(async move {
+                #[cfg(feature = "hydrate")]
+                {
+                    use wasm_bindgen_futures::JsFuture;
+                    use web_sys::window;
+
+                    // Small delay using JavaScript setTimeout to ensure the topology list has refreshed
+                    let promise = js_sys::Promise::new(&mut |resolve, _| {
+                        let window = window().expect("no window");
+                        window.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 150).ok();
+                    });
+                    JsFuture::from(promise).await.ok();
+                }
+
+                // Now switch to the newly imported topology
+                current_topology_id.set(new_topology_id);
+                // Trigger viewport refresh
+                refetch_trigger.update(|v| *v += 1);
+            });
+        } else if let Some(Err(e)) = import_action.value().get() {
+            import_status.set(Some(Err(e.to_string())));
+        }
+    });
+
+    view! {
+        <div class="relative mr-2">
+            <button
+                class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded text-sm font-medium transition flex items-center gap-2"
+                on:click=move |e| {
+                    e.stop_propagation();
+                    show_dropdown.update(|v| *v = !*v);
+                    import_status.set(None); // Clear previous status
+                }
+            >
+                "Import"
+                <span class="text-xs">"▼"</span>
+            </button>
+
+            {move || {
+                if show_dropdown.get() {
+                    Some(view! {
+                        <div
+                            class="absolute right-0 mt-2 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-[9999]"
+                            on:click=move |e| e.stop_propagation()
+                        >
+                            <div class="p-3 space-y-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-400 mb-1.5">
+                                        "Import Topology from JSON"
+                                    </label>
+                                    <input
+                                        type="file"
+                                        accept="application/json,.json"
+                                        class="w-full text-xs text-gray-400 file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-gray-700 file:text-gray-300 hover:file:bg-gray-600 file:cursor-pointer"
+                                        on:change=move |_ev| {
+                                            #[cfg(feature = "hydrate")]
+                                            {
+                                                use wasm_bindgen::JsCast;
+                                                use wasm_bindgen_futures::JsFuture;
+                                                use web_sys::{File, HtmlInputElement};
+
+                                                let input = _ev.target().and_then(|t| t.dyn_into::<HtmlInputElement>().ok());
+                                                if let Some(input) = input {
+                                                    if let Some(files) = input.files() {
+                                                        if let Some(file) = files.get(0) {
+                                                            let file: File = file.into();
+                                                            spawn_local(async move {
+                                                                // Read file content
+                                                                match JsFuture::from(file.text()).await {
+                                                                    Ok(content) => {
+                                                                        if let Some(text) = content.as_string() {
+                                                                            import_action.dispatch(text);
+                                                                        }
+                                                                    }
+                                                                    Err(e) => {
+                                                                        web_sys::console::error_1(&format!("Failed to read file: {:?}", e).into());
+                                                                        import_status.set(Some(Err("Failed to read file".to_string())));
+                                                                    }
+                                                                }
+                                                            });
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    />
+                                </div>
+
+                                // Status message
+                                {move || {
+                                    if import_action.pending().get() {
+                                        view! {
+                                            <div class="text-xs text-blue-400 text-center">
+                                                "⏳ Importing topology..."
+                                            </div>
+                                        }.into_any()
+                                    } else if let Some(status) = import_status.get() {
+                                        match status {
+                                            Ok(msg) => view! {
+                                                <div class="text-xs text-green-400 text-center">
+                                                    "✓ " {msg}
+                                                </div>
+                                            }.into_any(),
+                                            Err(msg) => view! {
+                                                <div class="text-xs text-red-400 text-center">
+                                                    "✗ " {msg}
+                                                </div>
+                                            }.into_any(),
+                                        }
+                                    } else {
+                                        view! { <div></div> }.into_any()
+                                    }
+                                }}
+                            </div>
+                        </div>
+                    })
+                } else {
+                    None
+                }
+            }}
+        </div>
+    }
+}
+
+/// Result type for import operation (available in both SSR and hydrate contexts)
+#[derive(Clone, Debug)]
+struct ImportResult {
+    topology_id: i64,
+    message: String,
+}
+
+/// Import topology from JSON content
+#[cfg(feature = "hydrate")]
+async fn import_topology_json(json_content: String) -> Result<ImportResult, String> {
+    use crate::models::TopologyFull;
+
+    // Parse JSON
+    let topology_data: TopologyFull = serde_json::from_str(&json_content)
+        .map_err(|e| format!("Invalid JSON format: {}", e))?;
+
+    // Validate topology data
+    if topology_data.nodes.is_empty() {
+        return Err("Topology must contain at least one node".to_string());
+    }
+
+    // Create new topology with imported name (add "Imported" prefix to avoid conflicts)
+    let new_topology_name = format!("Imported {}", topology_data.topology.name);
+    let new_topology = CreateTopology {
+        name: new_topology_name.clone(),
+        description: topology_data.topology.description.clone(),
+    };
+
+    let created_topology = create_topology(new_topology)
+        .await
+        .map_err(|e| format!("Failed to create topology: {}", e))?;
+
+    let new_topology_id = created_topology.id;
+
+    // Create a mapping from old node IDs to new node IDs
+    let mut node_id_map = std::collections::HashMap::new();
+
+    // Import nodes
+    for node in &topology_data.nodes {
+        let create_node_data = CreateNode {
+            topology_id: new_topology_id,
+            name: node.name.clone(),
+            node_type: node.node_type.clone(),
+            ip_address: node.ip_address.clone(),
+            position_x: Some(node.position_x),
+            position_y: Some(node.position_y),
+            position_z: Some(node.position_z),
+            rotation_x: Some(node.rotation_x),
+            rotation_y: Some(node.rotation_y),
+            rotation_z: Some(node.rotation_z),
+            scale: Some(node.scale),
+            color: Some(node.color.clone()),
+            vendor: Some(node.vendor.clone()),
+            model_name: Some(node.model_name.clone()),
+            metadata: node.metadata.clone(),
+        };
+
+        let created_node = create_node(create_node_data)
+            .await
+            .map_err(|e| format!("Failed to create node '{}': {}", node.name, e))?;
+
+        node_id_map.insert(node.id, created_node.id);
+    }
+
+    // Import connections
+    for connection in &topology_data.connections {
+        // Map old node IDs to new node IDs
+        let new_source_id = node_id_map.get(&connection.source_node_id)
+            .ok_or_else(|| format!("Source node ID {} not found in mapping", connection.source_node_id))?;
+        let new_target_id = node_id_map.get(&connection.target_node_id)
+            .ok_or_else(|| format!("Target node ID {} not found in mapping", connection.target_node_id))?;
+
+        let create_conn_data = CreateConnection {
+            topology_id: new_topology_id,
+            source_node_id: *new_source_id,
+            target_node_id: *new_target_id,
+            connection_type: Some(connection.connection_type.clone()),
+            bandwidth_mbps: connection.bandwidth_mbps,
+            latency_ms: connection.latency_ms,
+            status: Some(connection.status.clone()),
+            color: Some(connection.color.clone()),
+            metadata: connection.metadata.clone(),
+        };
+
+        create_connection_fn(create_conn_data)
+            .await
+            .map_err(|e| format!("Failed to create connection: {}", e))?;
+    }
+
+    Ok(ImportResult {
+        topology_id: new_topology_id,
+        message: format!("Successfully imported '{}' with {} nodes and {} connections",
+            new_topology_name,
+            topology_data.nodes.len(),
+            topology_data.connections.len()
+        ),
+    })
+}
+
 /// Left device palette/toolbar
 #[component]
 fn DevicePalette() -> impl IntoView {
@@ -583,18 +1387,21 @@ fn DevicePalette() -> impl IntoView {
 
     // Device type configurations: (Display Name, Icon, type_id, name_prefix)
     let device_types = vec![
-        ("Router", "🔀", "router", "Router"),
-        ("Switch", "🔌", "switch", "Switch"),
-        ("Server", "🖥️", "server", "Server"),
-        ("Firewall", "🛡️", "firewall", "Firewall"),
-        ("Load Balancer", "⚖️", "load_balancer", "LoadBalancer"),
-        ("Cloud", "☁️", "cloud", "Cloud"),
+        ("Routers", "🔀", "router", "Router"),
+        ("Switches", "🔌", "switch", "Switch"),
+        ("Servers", "🖥️", "server", "Server"),
+        ("Firewalls", "🛡️", "firewall", "Firewall"),
+        ("Load Balancers", "⚖️", "load_balancer", "LoadBalancer"),
+        ("Clouds", "☁️", "cloud", "Cloud"),
+        ("Applications", "📱", "application", "Application"),
     ];
 
     // Action to create a node
-    let create_node_action = Action::new(move |(node_type, name_prefix): &(String, String)| {
+    let create_node_action = Action::new(move |(node_type, name_prefix, vendor, model_name): &(String, String, String, String)| {
         let node_type = node_type.clone();
         let name_prefix = name_prefix.clone();
+        let vendor = vendor.clone();
+        let model_name = model_name.clone();
 
         async move {
             // Get current topology_id
@@ -620,6 +1427,8 @@ fn DevicePalette() -> impl IntoView {
                 topology_id: tid,
                 name,
                 node_type,
+                vendor: Some(vendor),
+                model_name: Some(model_name),
                 ip_address: None,
                 position_x: Some(position_x),
                 position_y: Some(position_y),
@@ -628,6 +1437,7 @@ fn DevicePalette() -> impl IntoView {
                 rotation_y: None, // Will use default 0°
                 rotation_z: None, // Will use default 0°
                 scale: None, // Will use default 1.0
+                color: None, // Will use default blue
                 metadata: None,
             };
 
@@ -685,32 +1495,53 @@ fn DevicePalette() -> impl IntoView {
             </div>
 
             <div class="flex-1 overflow-y-auto p-2 space-y-2">
-                {device_types.into_iter().map(|(display_name, icon, type_id, name_prefix)| {
-                    let type_id_clone = type_id.to_string();
-                    let name_prefix_clone = name_prefix.to_string();
+                {device_types.into_iter().enumerate().map(|(index, (display_name, icon, type_id, name_prefix))| {
+                    let type_id_stored = StoredValue::new(type_id.to_string());
+                    let name_prefix_stored = StoredValue::new(name_prefix.to_string());
+
+                    // Track dropdown state for this device type
+                    let dropdown_open = RwSignal::new(false);
+                    // Higher z-index for items at the top so dropdowns appear above lower items
+                    let z_index = 60 - index;
 
                     view! {
-                        <button
-                            class="w-full p-2 bg-gray-700 hover:bg-gray-600 rounded border border-gray-600 hover:border-blue-500 transition flex items-center gap-2 text-left disabled:opacity-50 disabled:cursor-not-allowed"
-                            on:click=move |_| {
-                                create_node_action.dispatch((type_id_clone.clone(), name_prefix_clone.clone()));
-                            }
-                            disabled=move || create_node_action.pending().get()
-                        >
-                            <span class="text-lg">{icon}</span>
-                            <div class="flex-1">
-                                <div class="text-xs font-medium">{display_name}</div>
-                                <div class="text-[10px] text-gray-400">
-                                    {move || {
-                                        if create_node_action.pending().get() {
-                                            "Adding..."
-                                        } else {
-                                            "Click to add"
-                                        }
-                                    }}
+                        <div class="relative" style=format!("z-index: {}", z_index)>
+                            // Main button
+                            <button
+                                class="w-full p-2 bg-gray-700 hover:bg-gray-600 rounded border border-gray-600 hover:border-blue-500 transition flex items-center gap-2 text-left"
+                                on:click=move |_| {
+                                    dropdown_open.update(|open| *open = !*open);
+                                }
+                            >
+                                <span class="text-lg">{icon}</span>
+                                <div class="flex-1">
+                                    <div class="text-xs font-medium">{display_name}</div>
+                                    <div class="text-[10px] text-gray-400">"Select vendor"</div>
                                 </div>
-                            </div>
-                        </button>
+                                <span class="text-gray-400 text-xs">
+                                    {move || if dropdown_open.get() { "▲" } else { "▼" }}
+                                </span>
+                            </button>
+
+                            // Dropdown menu
+                            <Show
+                                when=move || dropdown_open.get()
+                                fallback=|| ()
+                            >
+                                <Suspense fallback=move || view! {
+                                    <div class="absolute left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded shadow-lg p-2 z-50">
+                                        <div class="text-xs text-gray-400">"Loading vendors..."</div>
+                                    </div>
+                                }>
+                                    <VendorDropdown
+                                        node_type=type_id_stored.get_value()
+                                        name_prefix=name_prefix_stored.get_value()
+                                        create_node_action=create_node_action
+                                        dropdown_open=dropdown_open
+                                    />
+                                </Suspense>
+                            </Show>
+                        </div>
                     }
                 }).collect_view()}
             </div>
@@ -1029,6 +1860,8 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
     // Create signals for editable fields
     let name = RwSignal::new(String::new());
     let node_type = RwSignal::new(String::new());
+    let vendor = RwSignal::new(String::from("generic"));
+    let model_name = RwSignal::new(String::from("blob-router"));
     let ip_address = RwSignal::new(String::new());
     let position_x = RwSignal::new(0.0);
     let position_y = RwSignal::new(0.0);
@@ -1037,6 +1870,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
     let rotation_y = RwSignal::new(0.0);
     let rotation_z = RwSignal::new(0.0);
     let scale = RwSignal::new(1.0);
+    let color = RwSignal::new(String::from("100,150,255")); // Default blue
 
     // Populate signals when data loads
     // NOTE: Swap Y and Z to match Blender convention in UI
@@ -1046,6 +1880,8 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
         if let Some(Some(node)) = node_data.get() {
             name.set(node.name);
             node_type.set(node.node_type);
+            vendor.set(node.vendor);
+            model_name.set(node.model_name);
             ip_address.set(node.ip_address.unwrap_or_default());
             position_x.set(node.position_x);
             position_y.set(node.position_z);  // UI Y ← DB Z (horizontal)
@@ -1054,6 +1890,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
             rotation_y.set(node.rotation_y);
             rotation_z.set(node.rotation_z);
             scale.set(node.scale);
+            color.set(node.color);
         }
     });
 
@@ -1065,6 +1902,8 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
         let update_data = UpdateNode {
             name: Some(name.get_untracked()),
             node_type: Some(node_type.get_untracked()),
+            vendor: Some(vendor.get_untracked()),
+            model_name: Some(model_name.get_untracked()),
             ip_address: Some(ip_address.get_untracked()).filter(|s| !s.is_empty()),
             position_x: Some(position_x.get_untracked()),
             position_y: Some(position_z.get_untracked()),  // DB Y ← UI Z (vertical)
@@ -1073,6 +1912,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
             rotation_y: Some(rotation_y.get_untracked()),
             rotation_z: Some(rotation_z.get_untracked()),
             scale: Some(scale.get_untracked()),
+            color: Some(color.get_untracked()),
             metadata: None,
         };
 
@@ -1147,8 +1987,33 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                         <option value="server">"Server"</option>
                                         <option value="firewall">"Firewall"</option>
                                         <option value="load_balancer">"Load Balancer"</option>
-                                        <option value="database">"Database"</option>
+                                        <option value="cloud">"Cloud"</option>
+                                        <option value="application">"Application"</option>
                                     </select>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-400 mb-1">"Vendor"</label>
+                                    <input
+                                        type="text"
+                                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                        placeholder="generic"
+                                        prop:value=move || vendor.get()
+                                        on:input=move |ev| vendor.set(event_target_value(&ev))
+                                    />
+                                    <p class="text-[10px] text-gray-500 mt-0.5">"Folder name in models/{type}/"</p>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-400 mb-1">"Model File"</label>
+                                    <input
+                                        type="text"
+                                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                        placeholder="model.glb"
+                                        prop:value=move || model_name.get()
+                                        on:input=move |ev| model_name.set(event_target_value(&ev))
+                                    />
+                                    <p class="text-[10px] text-gray-500 mt-0.5">"Filename with extension (.glb)"</p>
                                 </div>
 
                                 <div>
@@ -1274,6 +2139,84 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                             }
                                         }
                                     />
+                                </div>
+
+                                // Node Color
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-400 mb-1.5">"Color Presets"</label>
+                                    <div class="grid grid-cols-6 gap-1 mb-2">
+                                        {[
+                                            ("100,150,255", "Blue"),
+                                            ("255,140,60", "Orange"),
+                                            ("80,200,120", "Green"),
+                                            ("220,60,60", "Red"),
+                                            ("180,100,200", "Purple"),
+                                            ("150,150,150", "Gray"),
+                                            ("70,140,255", "Light Blue"),
+                                            ("249,115,22", "Bright Orange"),
+                                            ("34,197,94", "Bright Green"),
+                                            ("239,68,68", "Bright Red"),
+                                            ("236,72,153", "Pink"),
+                                            ("251,191,36", "Yellow"),
+                                            ("14,165,233", "Cyan"),
+                                        ].iter().map(|(rgb, name)| {
+                                            let rgb_str = rgb.to_string();
+                                            let rgb_parts: Vec<u8> = rgb_str.split(',')
+                                                .filter_map(|s| s.parse().ok())
+                                                .collect();
+                                            let (r, g, b) = if rgb_parts.len() == 3 {
+                                                (rgb_parts[0], rgb_parts[1], rgb_parts[2])
+                                            } else {
+                                                (100, 150, 255)
+                                            };
+
+                                            view! {
+                                                <button
+                                                    type="button"
+                                                    class="w-full aspect-square rounded border-2 transition hover:scale-110"
+                                                    class:border-blue-400=move || color.get() == *rgb
+                                                    class:border-gray-600=move || color.get() != *rgb
+                                                    style=format!("background-color: rgb({},{},{})", r, g, b)
+                                                    title=*name
+                                                    on:click=move |_| color.set(rgb_str.clone())
+                                                />
+                                            }
+                                        }).collect_view()}
+                                    </div>
+
+                                    // Custom color picker
+                                    <div class="flex items-center gap-2 mb-3">
+                                        <label class="text-xs text-gray-400">"Custom:"</label>
+                                        <input
+                                            type="color"
+                                            class="w-12 h-8 rounded border border-gray-600 cursor-pointer"
+                                            value=move || {
+                                                // Convert RGB string to hex for color input
+                                                let rgb_parts: Vec<u8> = color.get().split(',')
+                                                    .filter_map(|s| s.parse().ok())
+                                                    .collect();
+                                                if rgb_parts.len() == 3 {
+                                                    format!("#{:02x}{:02x}{:02x}", rgb_parts[0], rgb_parts[1], rgb_parts[2])
+                                                } else {
+                                                    "#6496ff".to_string()
+                                                }
+                                            }
+                                            on:input=move |ev| {
+                                                // Convert hex to RGB format
+                                                let hex = event_target_value(&ev);
+                                                if hex.starts_with('#') && hex.len() == 7 {
+                                                    if let (Ok(r), Ok(g), Ok(b)) = (
+                                                        u8::from_str_radix(&hex[1..3], 16),
+                                                        u8::from_str_radix(&hex[3..5], 16),
+                                                        u8::from_str_radix(&hex[5..7], 16),
+                                                    ) {
+                                                        color.set(format!("{},{},{}", r, g, b));
+                                                    }
+                                                }
+                                            }
+                                        />
+                                        <span class="text-xs text-gray-500 font-mono">{move || color.get()}</span>
+                                    </div>
                                 </div>
 
                                 <div class="pt-4 border-t border-gray-700">

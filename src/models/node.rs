@@ -11,6 +11,8 @@ pub struct Node {
     pub topology_id: i64,
     pub name: String,
     pub node_type: String,
+    pub vendor: String, // Vendor name (e.g., "cisco", "versa", "generic")
+    pub model_name: String, // Model file name without extension (e.g., "asr9000", "blob-router")
     pub ip_address: Option<String>,
     pub position_x: f64,
     pub position_y: f64,
@@ -19,6 +21,7 @@ pub struct Node {
     pub rotation_y: f64,
     pub rotation_z: f64,
     pub scale: f64,
+    pub color: String, // RGB format: "R,G,B"
     pub metadata: Option<String>, // JSON string
     pub created_at: i64,
     pub updated_at: i64,
@@ -30,6 +33,8 @@ pub struct CreateNode {
     pub topology_id: i64,
     pub name: String,
     pub node_type: String,
+    pub vendor: Option<String>,
+    pub model_name: Option<String>,
     pub ip_address: Option<String>,
     pub position_x: Option<f64>,
     pub position_y: Option<f64>,
@@ -38,6 +43,7 @@ pub struct CreateNode {
     pub rotation_y: Option<f64>,
     pub rotation_z: Option<f64>,
     pub scale: Option<f64>,
+    pub color: Option<String>,
     pub metadata: Option<String>,
 }
 
@@ -46,6 +52,8 @@ pub struct CreateNode {
 pub struct UpdateNode {
     pub name: Option<String>,
     pub node_type: Option<String>,
+    pub vendor: Option<String>,
+    pub model_name: Option<String>,
     pub ip_address: Option<String>,
     pub position_x: Option<f64>,
     pub position_y: Option<f64>,
@@ -54,6 +62,7 @@ pub struct UpdateNode {
     pub rotation_y: Option<f64>,
     pub rotation_z: Option<f64>,
     pub scale: Option<f64>,
+    pub color: Option<String>,
     pub metadata: Option<String>,
 }
 
@@ -66,4 +75,5 @@ pub mod node_types {
     pub const LOAD_BALANCER: &str = "load_balancer";
     pub const SERVER: &str = "server";
     pub const CLOUD: &str = "cloud";
+    pub const APPLICATION: &str = "application";
 }

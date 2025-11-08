@@ -12,7 +12,20 @@ Please read these files to understand the current state:
 1. CLAUDE.md - Complete architecture, all phases, all learnings
 2. This file (SESSION-GUIDE.md) - Quick context
 
-Current Status: Phase 5 COMPLETE! ✅ (Export/Import + Phase 4.5 polish) Ready for Phase 6 - Traffic Monitoring!
+Current Status: Phase 5.5 COMPLETE! ✅ (Vendor-Based Model Selection) Ready for Phase 6 - Traffic Monitoring!
+
+**✅ Phase 5.5 Complete (2025-11-08):**
+Vendor-based multi-vendor model selection with auto-discovery system:
+
+**Vendor System Features:**
+- Device Palette buttons now plural ("Routers", "Switches", "Servers", etc.)
+- Added new "Applications" device type (7 types total)
+- Click device button → dropdown shows vendors and their models
+- Auto-discovers vendors from `public/models/{type}/{vendor}/` folders
+- Auto-discovers vendor icons from `public/icons/vendors/{vendor}.svg`
+- Generic vendor always shown first as fallback
+- Zero configuration - just add folders and models appear automatically!
+- Database stores vendor and model_name for each node
 
 **✅ Phase 4 Complete (2025-11-06 + Phase 4.5 on 2025-11-07):**
 ALL core 3D features, visual polish, UI optimization, customization, and settings persistence implemented:
