@@ -44,7 +44,7 @@ cargo install cargo-leptos
 
 # Clone repository
 git clone <repository-url>
-cd ntv
+cd ntb
 
 # Create database
 touch topologies.db
@@ -74,7 +74,7 @@ ls -lh target/site/pkg/*.wasm
 ## Project Structure
 
 ```
-ntv/
+ntb/
 ├── src/
 │   ├── app.rs              # Main app shell (SSR)
 │   ├── lib.rs              # Hydration entry point

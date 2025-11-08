@@ -6,7 +6,7 @@ async fn main() {
     use leptos::logging::log;
     use leptos::prelude::*;
     use leptos_axum::{generate_route_list, LeptosRoutes};
-    use ntv::app::*;
+    use ntb::app::*;
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
     use std::str::FromStr;
 

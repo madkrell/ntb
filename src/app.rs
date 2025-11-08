@@ -31,7 +31,7 @@ pub fn App() -> impl IntoView {
     view! {
         // injects a stylesheet into the document <head>
         // id=leptos means cargo-leptos will hot-reload this stylesheet
-        <Stylesheet id="leptos" href="/pkg/ntv.css"/>
+        <Stylesheet id="leptos" href="/pkg/ntb.css"/>
 
         // favicon
         <leptos_meta::Link rel="icon" type_="image/svg+xml" href="/ntb_logo.svg"/>

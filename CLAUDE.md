@@ -638,7 +638,7 @@ ls -lh target/site/pkg/*.wasm
 ```
 
 ## Git Repository
-**Repo:** https://github.com/madkrell/ntv.git
+**Repo:** https://github.com/madkrell/ntb.git
 **Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete
 **Next Tag:** v0.1.0-phase5-complete (after JSON export/import)
 
