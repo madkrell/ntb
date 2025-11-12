@@ -626,6 +626,36 @@ pub fn TopologyViewport(
     }
 }
 
+// glTF Color Space Conversion Functions
+// glTF 2.0 stores baseColorFactor in linear RGB space, but displays need sRGB
+// The exact sRGB transfer function uses gamma 2.4 with piecewise definition
+#[cfg(feature = "hydrate")]
+fn linear_to_srgb(linear: f32) -> f32 {
+    if linear <= 0.0031308 {
+        linear * 12.92
+    } else {
+        1.055 * linear.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+#[cfg(feature = "hydrate")]
+fn convert_linear_color_to_srgba(linear: &three_d_asset::Srgba) -> three_d_asset::Srgba {
+    use three_d_asset::Srgba;
+
+    // Extract linear values (0-255 range, but representing linear RGB)
+    let linear_r = linear.r as f32 / 255.0;
+    let linear_g = linear.g as f32 / 255.0;
+    let linear_b = linear.b as f32 / 255.0;
+
+    // Convert to sRGB for display
+    Srgba::new(
+        (linear_to_srgb(linear_r) * 255.0).clamp(0.0, 255.0) as u8,
+        (linear_to_srgb(linear_g) * 255.0).clamp(0.0, 255.0) as u8,
+        (linear_to_srgb(linear_b) * 255.0).clamp(0.0, 255.0) as u8,
+        linear.a, // Alpha is linear, never gamma-corrected
+    )
+}
+
 // Node data for selection and tooltip
 #[cfg(feature = "hydrate")]
 struct NodeData {
@@ -895,15 +925,80 @@ async fn initialize_threed_viewport(
                             }
                         };
                         let (metallic, roughness) = get_node_material_properties(&node.node_type);
-                        let normal_material = PhysicalMaterial::new_opaque(
-                            &context,
-                            &CpuMaterial {
-                                albedo: node_color,
-                                metallic,
-                                roughness,
-                                ..Default::default()
-                            },
-                        );
+
+                        // Material system: Use glTF materials with full texture support
+                        let normal_material = if let Some(mat_idx) = primitive.material_index {
+                            // Model has glTF material
+                            if let Some(gltf_mat) = cpu_model.materials.get(mat_idx) {
+                                // Check if material has textures
+                                let has_textures = gltf_mat.albedo_texture.is_some()
+                                    || gltf_mat.metallic_roughness_texture.is_some()
+                                    || gltf_mat.normal_texture.is_some()
+                                    || gltf_mat.occlusion_texture.is_some()
+                                    || gltf_mat.emissive_texture.is_some();
+
+                                if has_textures {
+                                    // Material has textures - use PhysicalMaterial::new() for full glTF support
+                                    // This handles: albedo textures, metallic/roughness textures, normal maps,
+                                    // occlusion maps, emissive textures, and alpha transparency
+                                    web_sys::console::log_1(&format!(
+                                        "✓ Using FULL glTF material with textures for {} (albedo_tex: {}, metallic_roughness_tex: {}, normal_tex: {}, occlusion_tex: {}, emissive_tex: {})",
+                                        node.model_name,
+                                        gltf_mat.albedo_texture.is_some(),
+                                        gltf_mat.metallic_roughness_texture.is_some(),
+                                        gltf_mat.normal_texture.is_some(),
+                                        gltf_mat.occlusion_texture.is_some(),
+                                        gltf_mat.emissive_texture.is_some()
+                                    ).into());
+                                    PhysicalMaterial::new(&context, gltf_mat)
+                                } else {
+                                    // No textures - only base color factor (needs color space conversion)
+                                    // Apply proper linear→sRGB conversion to fix three-d color space bug
+                                    let corrected_albedo = convert_linear_color_to_srgba(&gltf_mat.albedo);
+
+                                    web_sys::console::log_1(&format!(
+                                        "✓ Using glTF material (color-only) with sRGB conversion for {} - Linear: {:?}, sRGB: {:?}",
+                                        node.model_name,
+                                        (gltf_mat.albedo.r, gltf_mat.albedo.g, gltf_mat.albedo.b),
+                                        (corrected_albedo.r, corrected_albedo.g, corrected_albedo.b)
+                                    ).into());
+
+                                    PhysicalMaterial::new_opaque(
+                                        &context,
+                                        &CpuMaterial {
+                                            albedo: corrected_albedo,
+                                            metallic: gltf_mat.metallic,
+                                            roughness: gltf_mat.roughness,
+                                            ..Default::default()
+                                        },
+                                    )
+                                }
+                            } else {
+                                // Fallback: material_index invalid
+                                web_sys::console::log_1(&format!("⚠ Invalid material_index for {}, using database material", node.model_name).into());
+                                PhysicalMaterial::new_opaque(
+                                    &context,
+                                    &CpuMaterial {
+                                        albedo: node_color,
+                                        metallic,
+                                        roughness,
+                                        ..Default::default()
+                                    },
+                                )
+                            }
+                        } else {
+                            // No glTF material - use database + type properties
+                            web_sys::console::log_1(&format!("✓ Using database material for {}", node.model_name).into());
+                            PhysicalMaterial::new_opaque(
+                                &context,
+                                &CpuMaterial {
+                                    albedo: node_color,
+                                    metallic,
+                                    roughness,
+                                    ..Default::default()
+                                },
+                            )
+                        };
 
                         // Create GPU meshes (tri_mesh is already &TriMesh/&CpuMesh)
                         let mut normal_mesh = Gm::new(
