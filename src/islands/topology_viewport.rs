@@ -328,7 +328,8 @@ pub fn TopologyViewport(
                 let data_option = topology_data.get();
 
                 // Read signal values BEFORE entering conditional branches (needed in both branches)
-                let background_color_val = background_color.get_untracked();
+                // Use .get() instead of .get_untracked() to make Effect reactive to these changes
+                let background_color_val = background_color.get();
 
                 // Wait for topology data to load
                 if let Some(Some(topo_data)) = data_option {
@@ -343,16 +344,17 @@ pub fn TopologyViewport(
                     let connections_storage = connections_data_for_effect.clone();
 
                     // Read signal values BEFORE entering async context
-                    let show_grid_val = show_grid.get_untracked();
-                    let show_x_val = show_x_axis.get_untracked();
-                    let show_y_val = show_y_axis.get_untracked();
-                    let show_z_val = show_z_axis.get_untracked();
-                    let use_env_lighting_val = use_environment_lighting.get_untracked();
-                    let env_map_val = environment_map.get_untracked();
-                    let ambient_val = ambient_intensity.get_untracked();
-                    let key_light_val = key_light_intensity.get_untracked();
-                    let fill_light_val = fill_light_intensity.get_untracked();
-                    let rim_light_val = rim_light_intensity.get_untracked();
+                    // Use .get() instead of .get_untracked() to make Effect reactive to these changes
+                    let show_grid_val = show_grid.get();
+                    let show_x_val = show_x_axis.get();
+                    let show_y_val = show_y_axis.get();
+                    let show_z_val = show_z_axis.get();
+                    let use_env_lighting_val = use_environment_lighting.get();
+                    let env_map_val = environment_map.get();
+                    let ambient_val = ambient_intensity.get();
+                    let key_light_val = key_light_intensity.get();
+                    let fill_light_val = fill_light_intensity.get();
+                    let rim_light_val = rim_light_intensity.get();
 
                     wasm_bindgen_futures::spawn_local(async move {
                         match initialize_threed_viewport(
