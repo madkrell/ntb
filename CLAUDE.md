@@ -1,11 +1,11 @@
 # Network Topology Builder - Claude Development Notes
 
 ## Project Status
-**Current Phase:** Phase 5.6 COMPLETE! ✅ (Full glTF/GLB Material Support with Textures)
+**Current Phase:** Phase 5.7 COMPLETE! ✅ (HDR Environment Lighting)
 **Last Updated:** 2025-11-14
-**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete, v0.1.0-phase5-complete
+**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete, v0.1.0-phase5-complete, v0.1.0-phase5.7-complete
 **Architecture:** Regular Leptos Components (Islands removed - see notes below)
-**Next Phase:** Phase 5.7 - HDR Environment Lighting (Blender studio lighting match)
+**Next Phase:** Phase 6 - Traffic Monitoring (Real-time traffic visualization)
 
 ### three-d API Audit (2025-11-14) ✅
 
@@ -143,40 +143,76 @@ fn linear_to_srgb(linear: f32) -> f32 {
 - Alpha transparency for glass/screens
 - Proper color space handling
 
-### Phase 5.7 - HDR Environment Lighting (NEXT - RECOMMENDED)
+### Phase 5.7 - HDR Environment Lighting COMPLETE! ✅ (2025-11-14)
 
-**Goal:** Match Blender's studio lighting exactly in web app
+**✅ COMPLETED:**
+30. ✅ **HDR Environment Lighting System** (2025-11-14) - Realistic studio lighting
+   - Database migration: `20250114000001_add_environment_lighting.sql`
+   - Added `use_environment_lighting` (BOOLEAN) and `environment_map` (TEXT) to ui_settings
+   - HDR file loading with `three-d-asset` hdr feature enabled
+   - Skybox creation from equirectangular HDR maps
+   - `AmbientLight::new_with_environment()` for realistic ambient illumination
+   - Fallback to manual three-point lighting when disabled
 
-**Status:** Audit complete, implementation plan ready
+31. ✅ **HDR UI Controls** (2025-11-14) - User control over environment lighting
+   - Toggle button in View Controls panel (Enabled/Disabled)
+   - Dropdown selector for HDR environment maps:
+     - Studio Small (2K) - `studio_small_09_2k.hdr`
+     - Studio Loft (2K) - `photo_studio_loft_hall_2k.hdr`
+     - Photo Studio (4K) - `photo_studio_01_4k.hdr`
+     - Docklands (2K) - `docklands_02_2k.hdr`
+   - Real-time viewport updates when settings change
 
-**Priority 1 - HDR Environment Lighting:**
-- Load HDR equirectangular maps (.hdr format)
-- Use `AmbientLight::new_with_environment()` for realistic lighting
-- Add UI toggle: Environment lighting ON/OFF
-- Provide HDR file selection (studio, outdoor, sunset, etc.)
-- Results in pixel-perfect Blender appearance match
+32. ✅ **Settings Persistence** (2025-11-14) - All UI settings saved to database
+   - Auto-load on page mount via Effect with spawn_local
+   - Auto-save when any setting changes (viewport visibility, lighting, HDR)
+   - `settings_loaded` flag prevents save during initial load
+   - Updated `get_ui_settings()` SQL query to include new columns
+   - Updated `update_ui_settings()` to save HDR preferences
 
-**Priority 2 - Settings Persistence:**
-- Database: Store environment lighting preferences
-- UI: Toggle button + HDR dropdown selector
-- Performance: Lazy loading, HDR caching
+**Technical Implementation:**
+```rust
+// HDR loading (topology_viewport.rs:804-838)
+let skybox_option: Option<Skybox> = if use_environment_lighting {
+    let hdr_url = format!("{}/environments/{}", origin, environment_map);
+    match load_async(&[hdr_url.as_str()]).await {
+        Ok(mut loaded) => {
+            match loaded.deserialize::<three_d_asset::Texture2D>(&environment_map) {
+                Ok(hdr_texture) => {
+                    Some(Skybox::new_from_equirectangular(&context, &hdr_texture))
+                }
+                Err(e) => None,
+            }
+        }
+        Err(e) => None,
+    }
+} else {
+    None
+};
 
-**Priority 3 - Textured Workflow Documentation:**
-- BLENDER-TEXTURE-WORKFLOW.md already created ✅
-- Emissive LEDs already supported ✅
-- User workflow optimization ongoing
+// Conditional lighting (topology_viewport.rs:1206-1218)
+let ambient = if use_environment_lighting && skybox_option.is_some() {
+    let skybox = skybox_option.as_ref().unwrap();
+    Rc::new(AmbientLight::new_with_environment(
+        &context, ambient_intensity, Srgba::WHITE, skybox.texture()
+    ))
+} else {
+    Rc::new(AmbientLight::new(&context, ambient_intensity, Srgba::WHITE))
+};
+```
 
-**Implementation Resources:**
-- **Full plan:** See `docs/THREE-D-AUDIT-RESULTS.md` Section 6 (Phases 1-6)
-- **HDR source:** Poly Haven (https://polyhaven.com/hdris)
-- **Estimated effort:** 2-4 hours implementation + testing
-- **Visual impact:** High - significantly more realistic appearance
+**HDR Files Location:**
+- **Directory:** `public/environments/`
+- **Source:** Poly Haven (https://polyhaven.com/hdris)
+- **Format:** Equirectangular .hdr files
+- **Sizes:** 2K (6MB) and 4K (24MB) available
 
-**Benefits:**
-- Perfect color + lighting match with Blender
-- Realistic reflections on metallic devices
-- Professional studio appearance
-- No manual light tuning needed
+**Benefits Achieved:**
+- ✅ Perfect color + lighting match with Blender (when using same HDR)
+- ✅ Realistic reflections on metallic device surfaces
+- ✅ Professional studio appearance
+- ✅ No manual light tuning needed
+- ✅ Settings persist across page refreshes
 
 ### Phase 4.5 - UI/UX Polish COMPLETE! ✅ (2025-11-07)
 

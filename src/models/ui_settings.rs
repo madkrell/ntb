@@ -16,6 +16,8 @@ pub struct UISettings {
     pub key_light_intensity: f64,
     pub fill_light_intensity: f64,
     pub rim_light_intensity: f64,
+    pub use_environment_lighting: bool,
+    pub environment_map: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -31,4 +33,6 @@ pub struct UpdateUISettings {
     pub key_light_intensity: Option<f64>,
     pub fill_light_intensity: Option<f64>,
     pub rim_light_intensity: Option<f64>,
+    pub use_environment_lighting: Option<bool>,
+    pub environment_map: Option<String>,
 }

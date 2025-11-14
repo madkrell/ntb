@@ -8,6 +8,8 @@ use crate::models::{UpdateNode, UpdateConnection, CreateNode, UpdateUISettings, 
 #[cfg(feature = "hydrate")]
 use crate::api::{get_topology_full, create_topology, create_connection as create_connection_fn};
 #[cfg(feature = "hydrate")]
+use web_sys;
+#[cfg(feature = "hydrate")]
 use crate::models::{CreateTopology, CreateConnection};
 
 /// Connection creation mode state
@@ -27,6 +29,10 @@ pub struct ViewportVisibility {
     pub show_z_axis: RwSignal<bool>,
     /// Background color as RGB (None = transparent)
     pub background_color: RwSignal<Option<(u8, u8, u8)>>,
+    /// Enable HDR environment lighting
+    pub use_environment_lighting: RwSignal<bool>,
+    /// Selected HDR environment map filename
+    pub environment_map: RwSignal<String>,
 }
 
 /// Lighting settings for the 3D viewport
@@ -218,6 +224,8 @@ pub fn TopologyEditor(
         show_y_axis: RwSignal::new(true),
         show_z_axis: RwSignal::new(true),
         background_color: RwSignal::new(Some((0, 0, 0))), // Black default
+        use_environment_lighting: RwSignal::new(false), // Disabled by default
+        environment_map: RwSignal::new("studio_small_09_2k.hdr".to_string()), // Default HDR
     };
 
     // Lighting settings (wrapped in struct to avoid context collision)
@@ -308,32 +316,45 @@ pub fn TopologyEditor(
     provide_context(camera_controls);
     provide_context(fullscreen_mode);
 
-    // Load UI settings from database and update signals
-    let ui_settings_resource = Resource::new(
-        || (),
-        |_| async move {
-            get_ui_settings().await.ok()
-        }
-    );
+    // Track if settings have been loaded (prevent saving during initial load)
+    let settings_loaded = RwSignal::new(false);
 
-    // Effect: Update signals when settings load from database
+    // Effect: Load UI settings from database on mount
     Effect::new(move || {
-        if let Some(Some(settings)) = ui_settings_resource.get() {
-            // Update viewport visibility
-            viewport_visibility.show_grid.set(settings.show_grid);
-            viewport_visibility.show_x_axis.set(settings.show_x_axis);
-            viewport_visibility.show_y_axis.set(settings.show_y_axis);
-            viewport_visibility.show_z_axis.set(settings.show_z_axis);
+        leptos::logging::log!("Loading UI settings from database...");
+        spawn_local(async move {
+            match get_ui_settings().await {
+                Ok(settings) => {
+                    leptos::logging::log!("✓ Fetched UI settings: env_lighting={}, ambient={}", settings.use_environment_lighting, settings.ambient_intensity);
 
-            // Update lighting settings
-            lighting_settings.ambient_intensity.set(settings.ambient_intensity as f32);
-            lighting_settings.key_light_intensity.set(settings.key_light_intensity as f32);
-            lighting_settings.fill_light_intensity.set(settings.fill_light_intensity as f32);
-            lighting_settings.rim_light_intensity.set(settings.rim_light_intensity as f32);
+                    // Update viewport visibility
+                    viewport_visibility.show_grid.set(settings.show_grid);
+                    viewport_visibility.show_x_axis.set(settings.show_x_axis);
+                    viewport_visibility.show_y_axis.set(settings.show_y_axis);
+                    viewport_visibility.show_z_axis.set(settings.show_z_axis);
+                    viewport_visibility.use_environment_lighting.set(settings.use_environment_lighting);
+                    viewport_visibility.environment_map.set(settings.environment_map.clone());
 
-            // Trigger viewport refresh to apply loaded settings
-            refetch_trigger.update(|v| *v += 1);
-        }
+                    // Update lighting settings
+                    lighting_settings.ambient_intensity.set(settings.ambient_intensity as f32);
+                    lighting_settings.key_light_intensity.set(settings.key_light_intensity as f32);
+                    lighting_settings.fill_light_intensity.set(settings.fill_light_intensity as f32);
+                    lighting_settings.rim_light_intensity.set(settings.rim_light_intensity as f32);
+
+                    // Trigger viewport refresh to apply loaded settings
+                    refetch_trigger.update(|v| *v += 1);
+
+                    // Mark settings as loaded LAST (enables auto-save for subsequent changes)
+                    settings_loaded.set(true);
+                    leptos::logging::log!("Settings loaded, auto-save enabled");
+                }
+                Err(e) => {
+                    leptos::logging::error!("✗ Failed to fetch UI settings: {}", e);
+                    // Still enable auto-save even if load failed
+                    settings_loaded.set(true);
+                }
+            }
+        });
     });
 
     // Effect: Save viewport visibility settings when they change
@@ -343,9 +364,19 @@ pub fn TopologyEditor(
         let x = viewport_visibility.show_x_axis.get();
         let y = viewport_visibility.show_y_axis.get();
         let z = viewport_visibility.show_z_axis.get();
+        let use_env_lighting = viewport_visibility.use_environment_lighting.get();
+        let env_map = viewport_visibility.environment_map.get();
+        let loaded = settings_loaded.get();
 
-        // Skip save on initial mount (settings just loaded)
-        if ui_settings_resource.get().is_some() {
+        leptos::logging::log!("Viewport settings changed: env_lighting={}, loaded={}", use_env_lighting, loaded);
+
+        // Only save if settings have been loaded (prevents save during initial load)
+        if loaded {
+            leptos::logging::log!("Saving viewport settings to database...");
+
+            // Trigger viewport refresh for environment lighting changes
+            refetch_trigger.update(|v| *v += 1);
+
             spawn_local(async move {
                 let data = UpdateUISettings {
                     show_grid: Some(grid),
@@ -356,8 +387,13 @@ pub fn TopologyEditor(
                     key_light_intensity: None,
                     fill_light_intensity: None,
                     rim_light_intensity: None,
+                    use_environment_lighting: Some(use_env_lighting),
+                    environment_map: Some(env_map.clone()),
                 };
-                let _ = update_ui_settings(data).await;
+                match update_ui_settings(data).await {
+                    Ok(_) => leptos::logging::log!("✓ Saved viewport settings: env_lighting={}", use_env_lighting),
+                    Err(e) => leptos::logging::error!("✗ Failed to save viewport settings: {}", e),
+                }
             });
         }
     });
@@ -369,9 +405,17 @@ pub fn TopologyEditor(
         let key = lighting_settings.key_light_intensity.get();
         let fill = lighting_settings.fill_light_intensity.get();
         let rim = lighting_settings.rim_light_intensity.get();
+        let loaded = settings_loaded.get();
 
-        // Skip save on initial mount (settings just loaded)
-        if ui_settings_resource.get().is_some() {
+        leptos::logging::log!("Lighting settings changed: ambient={}, loaded={}", ambient, loaded);
+
+        // Only save if settings have been loaded (prevents save during initial load)
+        if loaded {
+            leptos::logging::log!("Saving lighting settings to database...");
+
+            // Trigger viewport refresh for lighting changes
+            refetch_trigger.update(|v| *v += 1);
+
             spawn_local(async move {
                 let data = UpdateUISettings {
                     show_grid: None,
@@ -382,8 +426,13 @@ pub fn TopologyEditor(
                     key_light_intensity: Some(key as f64),
                     fill_light_intensity: Some(fill as f64),
                     rim_light_intensity: Some(rim as f64),
+                    use_environment_lighting: None,
+                    environment_map: None,
                 };
-                let _ = update_ui_settings(data).await;
+                match update_ui_settings(data).await {
+                    Ok(_) => leptos::logging::log!("✓ Saved lighting settings: ambient={}", ambient),
+                    Err(e) => leptos::logging::error!("✗ Failed to save lighting settings: {}", e),
+                }
             });
         }
     });
@@ -1731,6 +1780,46 @@ fn PropertiesPanel(
                                                 "Black"
                                             </button>
                                         </div>
+                                    </div>
+
+                                    // HDR Environment Lighting
+                                    <div class="mt-3 pt-2 border-t border-gray-600">
+                                        <div class="text-[10px] text-gray-400 mb-1.5 px-1">"HDR Environment"</div>
+                                        <button
+                                            class="w-full px-2 py-1 rounded text-[10px] border transition text-left"
+                                            class:bg-blue-600=move || viewport_visibility.use_environment_lighting.get()
+                                            class:border-blue-500=move || viewport_visibility.use_environment_lighting.get()
+                                            class:bg-gray-700=move || !viewport_visibility.use_environment_lighting.get()
+                                            class:border-gray-600=move || !viewport_visibility.use_environment_lighting.get()
+                                            on:click=move |_| {
+                                                viewport_visibility.use_environment_lighting.update(|v| *v = !*v);
+                                            }
+                                        >
+                                            {move || if viewport_visibility.use_environment_lighting.get() { "Enabled" } else { "Disabled" }}
+                                        </button>
+
+                                        // HDR file selector (only show when enabled)
+                                        {move || {
+                                            if viewport_visibility.use_environment_lighting.get() {
+                                                view! {
+                                                    <select
+                                                        class="w-full mt-1.5 px-2 py-1 rounded text-[10px] bg-gray-700 border border-gray-600 text-gray-300"
+                                                        on:change=move |ev| {
+                                                            let value = event_target_value(&ev);
+                                                            viewport_visibility.environment_map.set(value);
+                                                        }
+                                                        prop:value=move || viewport_visibility.environment_map.get()
+                                                    >
+                                                        <option value="studio_small_09_2k.hdr">"Studio Small"</option>
+                                                        <option value="photo_studio_loft_hall_2k.hdr">"Studio Loft"</option>
+                                                        <option value="photo_studio_01_4k.hdr">"Photo Studio 4K"</option>
+                                                        <option value="docklands_02_2k.hdr">"Docklands"</option>
+                                                    </select>
+                                                }.into_any()
+                                            } else {
+                                                view! { <div></div> }.into_any()
+                                            }
+                                        }}
                                     </div>
                                 </div>
                             }.into_any()

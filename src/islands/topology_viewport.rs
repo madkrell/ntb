@@ -243,9 +243,9 @@ pub fn TopologyViewport(
     // Get grid/axes visibility controls from context (optional - may not exist)
     let viewport_visibility = use_context::<crate::islands::topology_editor::ViewportVisibility>();
     #[allow(unused_variables)]
-    let (show_grid, show_x_axis, show_y_axis, show_z_axis, background_color) = match viewport_visibility {
-        Some(vis) => (vis.show_grid, vis.show_x_axis, vis.show_y_axis, vis.show_z_axis, vis.background_color),
-        None => (RwSignal::new(true), RwSignal::new(true), RwSignal::new(true), RwSignal::new(true), RwSignal::new(Some((0, 0, 0)))),
+    let (show_grid, show_x_axis, show_y_axis, show_z_axis, background_color, use_environment_lighting, environment_map) = match viewport_visibility {
+        Some(vis) => (vis.show_grid, vis.show_x_axis, vis.show_y_axis, vis.show_z_axis, vis.background_color, vis.use_environment_lighting, vis.environment_map),
+        None => (RwSignal::new(true), RwSignal::new(true), RwSignal::new(true), RwSignal::new(true), RwSignal::new(Some((0, 0, 0))), RwSignal::new(false), RwSignal::new("studio_small_09_2k.hdr".to_string())),
     };
 
     // Get lighting settings from context (optional - may not exist)
@@ -347,6 +347,8 @@ pub fn TopologyViewport(
                     let show_x_val = show_x_axis.get_untracked();
                     let show_y_val = show_y_axis.get_untracked();
                     let show_z_val = show_z_axis.get_untracked();
+                    let use_env_lighting_val = use_environment_lighting.get_untracked();
+                    let env_map_val = environment_map.get_untracked();
                     let ambient_val = ambient_intensity.get_untracked();
                     let key_light_val = key_light_intensity.get_untracked();
                     let fill_light_val = fill_light_intensity.get_untracked();
@@ -368,6 +370,8 @@ pub fn TopologyViewport(
                             show_y_val,
                             show_z_val,
                             background_color_val,
+                            use_env_lighting_val,
+                            env_map_val,
                             ambient_val,
                             key_light_val,
                             fill_light_val,
@@ -761,6 +765,8 @@ async fn initialize_threed_viewport(
     show_y_axis: bool,
     show_z_axis: bool,
     background_color: Option<(u8, u8, u8)>,
+    use_environment_lighting: bool,
+    environment_map: String,
     ambient_intensity: f32,
     key_light_intensity: f32,
     fill_light_intensity: f32,
@@ -798,6 +804,42 @@ async fn initialize_threed_viewport(
     let gl = three_d::context::Context::from_webgl2_context(webgl2_context);
     let context = Context::from_gl_context(std::sync::Arc::new(gl))
         .map_err(|e| format!("Failed to create three-d Context: {:?}", e))?;
+
+    // Load HDR environment map (if environment lighting is enabled)
+    let skybox_option: Option<Skybox> = if use_environment_lighting {
+        use three_d_asset::io::load_async;
+
+        // Build full URL from window.location
+        let window = web_sys::window().expect("no global window");
+        let location = window.location();
+        let origin = location.origin().expect("no origin");
+
+        let hdr_url = format!("{}/environments/{}", origin, environment_map);
+        web_sys::console::log_1(&format!("Loading HDR environment: {}", hdr_url).into());
+
+        match load_async(&[hdr_url.as_str()]).await {
+            Ok(mut loaded) => {
+                match loaded.deserialize::<three_d_asset::Texture2D>(&environment_map) {
+                    Ok(hdr_texture) => {
+                        // Create skybox from equirectangular HDR
+                        let skybox = Skybox::new_from_equirectangular(&context, &hdr_texture);
+                        web_sys::console::log_1(&format!("✓ HDR environment loaded: {}", environment_map).into());
+                        Some(skybox)
+                    }
+                    Err(e) => {
+                        web_sys::console::error_1(&format!("✗ Failed to deserialize HDR {}: {:?}", environment_map, e).into());
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                web_sys::console::error_1(&format!("✗ Failed to load HDR from {}: {:?}", hdr_url, e).into());
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     // Load GLB models for each unique vendor/model combination (async loading)
     // Build cache key from vendor + model_name + node_type
@@ -1163,9 +1205,21 @@ async fn initialize_threed_viewport(
         }
     }
 
-    // Create professional three-point lighting setup with user-controlled intensities
-    // Ambient light - base illumination
-    let ambient = Rc::new(AmbientLight::new(&context, ambient_intensity, Srgba::WHITE));
+    // Create professional lighting setup with user-controlled intensities
+    // Ambient light - either environment-based or simple flat lighting
+    let ambient = if use_environment_lighting && skybox_option.is_some() {
+        // Use HDR environment lighting for realistic ambient illumination
+        let skybox = skybox_option.as_ref().unwrap();
+        Rc::new(AmbientLight::new_with_environment(
+            &context,
+            ambient_intensity,
+            Srgba::WHITE,
+            skybox.texture(),
+        ))
+    } else {
+        // Fallback to simple ambient light
+        Rc::new(AmbientLight::new(&context, ambient_intensity, Srgba::WHITE))
+    };
 
     // Key light - Main directional light from above-front with warm tone
     // Direction: from upper-front-right toward origin

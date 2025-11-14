@@ -42,7 +42,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = tr
 
 # 3D rendering with WebGL
 three-d = { version = "0.18", optional = true }
-three-d-asset = { version = "0.9", features = ["gltf", "http", "image"], optional = true }
+three-d-asset = { version = "0.9", features = ["gltf", "http", "image", "hdr"], optional = true }
 
 [features]
 default = []

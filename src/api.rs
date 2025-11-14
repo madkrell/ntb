@@ -722,6 +722,7 @@ pub async fn get_ui_settings() -> Result<UISettings, ServerFnError> {
         let settings = sqlx::query_as::<_, UISettings>(
             "SELECT id, show_grid, show_x_axis, show_y_axis, show_z_axis,
                     ambient_intensity, key_light_intensity, fill_light_intensity, rim_light_intensity,
+                    use_environment_lighting, environment_map,
                     created_at, updated_at
              FROM ui_settings WHERE id = 1"
         )
@@ -792,6 +793,16 @@ pub async fn update_ui_settings(data: UpdateUISettings) -> Result<UISettings, Se
         if let Some(rim_light_intensity) = data.rim_light_intensity {
             updates.push("rim_light_intensity = ?");
             values.push(rim_light_intensity.to_string());
+        }
+
+        if let Some(use_environment_lighting) = data.use_environment_lighting {
+            updates.push("use_environment_lighting = ?");
+            values.push(if use_environment_lighting { "1" } else { "0" }.to_string());
+        }
+
+        if let Some(environment_map) = data.environment_map {
+            updates.push("environment_map = ?");
+            values.push(environment_map);
         }
 
         if updates.is_empty() {
