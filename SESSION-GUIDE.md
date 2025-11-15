@@ -6,13 +6,33 @@
 
 ```
 I'm continuing work on the Network Topology Builder project at:
-/Users/mattearp/Documents/CodeProjects/ntv/
+/Users/mattearp/Documents/CodeProjects/ntb/
 
 Please read these files to understand the current state:
 1. CLAUDE.md - Complete architecture, all phases, all learnings
 2. This file (SESSION-GUIDE.md) - Quick context
 
-Current Status: Phase 5.5 COMPLETE! ✅ (Vendor-Based Model Selection) Ready for Phase 6 - Traffic Monitoring!
+Current Status: Phase 5.7 COMPLETE! ✅ (HDR Environment Lighting) Ready for Phase 6 - Traffic Monitoring!
+
+**✅ Phase 5.7 Complete (2025-11-14):**
+HDR Environment Lighting with studio-quality illumination:
+
+**HDR Lighting Features:**
+- HDR environment map loading from `public/environments/` (4 HDR files included)
+- Toggle control in View Controls panel (Enabled/Disabled)
+- Dropdown selector for different HDR environments (Studio Small, Studio Loft, Photo Studio 4K, Docklands)
+- Real-time toggle without viewport reinitialization
+- Conditional lighting system: HDR mode uses ambient only, Manual mode uses full 3-point lighting
+- Settings persistence across page refreshes
+- **Critical Fix:** Removed directional lights when HDR enabled (prevented texture washout)
+- **Dynamic signal reading:** Pass `RwSignal<bool>` to render closure for real-time updates
+- Perfect Blender color + lighting match when using same HDR environment
+
+**Key Technical Solutions:**
+1. Reactive signals in Effects (use `.get()` not `.get_untracked()`)
+2. Conditional lighting in render loop (HDR: 1 light | Manual: 4 lights)
+3. Dynamic signal reading in closures (pass signal, read each frame)
+4. Image textures + HDR = perfect Blender match
 
 **✅ Phase 5.5 Complete (2025-11-08):**
 Vendor-based multi-vendor model selection with auto-discovery system:

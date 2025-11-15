@@ -149,7 +149,7 @@ fn linear_to_srgb(linear: f32) -> f32 {
 30. ✅ **HDR Environment Lighting System** (2025-11-14) - Realistic studio lighting
    - Database migration: `20250114000001_add_environment_lighting.sql`
    - Added `use_environment_lighting` (BOOLEAN) and `environment_map` (TEXT) to ui_settings
-   - HDR file loading with `three-d-asset` hdr feature enabled
+   - HDR file loading with `three-d-asset` hdr feature enabled (Cargo.toml)
    - Skybox creation from equirectangular HDR maps
    - `AmbientLight::new_with_environment()` for realistic ambient illumination
    - Fallback to manual three-point lighting when disabled
@@ -162,6 +162,7 @@ fn linear_to_srgb(linear: f32) -> f32 {
      - Photo Studio (4K) - `photo_studio_01_4k.hdr`
      - Docklands (2K) - `docklands_02_2k.hdr`
    - Real-time viewport updates when settings change
+   - Reactive signal tracking via `.get()` instead of `.get_untracked()`
 
 32. ✅ **Settings Persistence** (2025-11-14) - All UI settings saved to database
    - Auto-load on page mount via Effect with spawn_local
@@ -170,9 +171,19 @@ fn linear_to_srgb(linear: f32) -> f32 {
    - Updated `get_ui_settings()` SQL query to include new columns
    - Updated `update_ui_settings()` to save HDR preferences
 
+33. ✅ **Conditional Lighting System** (2025-11-14) - Critical fix for HDR + texture compatibility
+   - **Problem:** HDR environment + directional lights caused texture washout
+   - **Root Cause:** All 4 lights (ambient + key + fill + rim) rendered simultaneously with HDR
+   - **Solution:** Conditional lighting in render loop:
+     - HDR mode: Use ONLY ambient light (contains HDR environment)
+     - Manual mode: Use all 4 lights (ambient + key + fill + rim)
+   - **Implementation:** Dynamic signal reading in render closure (topology_viewport.rs:1284-1290)
+   - Pass `use_environment_lighting_signal` to render function for real-time updates
+   - Result: Textured materials now display correctly with HDR lighting
+
 **Technical Implementation:**
 ```rust
-// HDR loading (topology_viewport.rs:804-838)
+// 1. HDR loading (topology_viewport.rs:811-844)
 let skybox_option: Option<Skybox> = if use_environment_lighting {
     let hdr_url = format!("{}/environments/{}", origin, environment_map);
     match load_async(&[hdr_url.as_str()]).await {
@@ -190,7 +201,7 @@ let skybox_option: Option<Skybox> = if use_environment_lighting {
     None
 };
 
-// Conditional lighting (topology_viewport.rs:1206-1218)
+// 2. Ambient light creation (topology_viewport.rs:1212-1224)
 let ambient = if use_environment_lighting && skybox_option.is_some() {
     let skybox = skybox_option.as_ref().unwrap();
     Rc::new(AmbientLight::new_with_environment(
@@ -199,6 +210,25 @@ let ambient = if use_environment_lighting && skybox_option.is_some() {
 } else {
     Rc::new(AmbientLight::new(&context, ambient_intensity, Srgba::WHITE))
 };
+
+// 3. Dynamic signal reading in render closure (topology_viewport.rs:1287-1290)
+move |state: CameraState| {
+    // Read HDR environment signal dynamically each frame
+    let use_env_lighting = use_env_lighting_signal
+        .map(|sig| sig.get_untracked())
+        .unwrap_or(use_environment_lighting);
+
+    // ... render code ...
+
+    // 4. Conditional lighting (topology_viewport.rs:1359-1366)
+    if use_env_lighting {
+        // HDR mode: Use ONLY ambient (contains HDR environment)
+        target.render(&camera, mesh_to_render, &[&*ambient]);
+    } else {
+        // Manual mode: Use full three-point lighting
+        target.render(&camera, mesh_to_render, &[&*ambient, &*key_light, &*fill_light, &*rim_light]);
+    }
+}
 ```
 
 **HDR Files Location:**
@@ -213,6 +243,32 @@ let ambient = if use_environment_lighting && skybox_option.is_some() {
 - ✅ Professional studio appearance
 - ✅ No manual light tuning needed
 - ✅ Settings persist across page refreshes
+- ✅ Textured materials display correctly with HDR (no washout)
+- ✅ Real-time HDR toggle without viewport reinitialization
+
+**Key Lessons Learned (Phase 5.7):**
+
+1. **Reactive Signals in Effects** - Use `.get()` not `.get_untracked()` for reactivity
+   - Changed viewport Effect to track HDR settings with `.get()`
+   - Enables automatic viewport refresh when settings change
+
+2. **HDR + Directional Lights = Overexposure**
+   - HDR environment maps provide comprehensive lighting
+   - Adding directional lights on top causes massive overexposure
+   - Solution: Conditional lighting based on mode
+   - HDR mode: ambient only | Manual mode: full 3-point lighting
+
+3. **Dynamic Signal Reading in Closures**
+   - Pass signals (not values) to render closures for real-time updates
+   - Use `RwSignal<bool>` parameter in function signature
+   - Read signal with `.get_untracked()` each frame in render loop
+   - Enables toggle without reinitializing entire viewport
+
+4. **Blender Texture Workflow**
+   - Image textures must be properly UV-mapped in Blender
+   - Export glTF with embedded textures
+   - Texture colors appear correct in web app (no color space conversion needed)
+   - Albedo texture + HDR environment = perfect Blender match
 
 ### Phase 4.5 - UI/UX Polish COMPLETE! ✅ (2025-11-07)
 

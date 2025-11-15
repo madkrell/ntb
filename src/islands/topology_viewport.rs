@@ -382,6 +382,7 @@ pub fn TopologyViewport(
                             refetch_trigger,
                             Some(current_topology_id),
                             already_initialized, // Skip event handlers on refetch
+                            Some(use_environment_lighting), // Pass signal for dynamic HDR toggle
                         ).await {
                             Ok(_) => {
                                 is_initialized.set(true);
@@ -777,6 +778,7 @@ async fn initialize_threed_viewport(
     refetch_trigger: Option<RwSignal<u32>>,
     current_topology_id: Option<RwSignal<i64>>,
     skip_event_handlers: bool, // Set to true on refetches to avoid duplicate handlers
+    use_environment_lighting_signal: Option<RwSignal<bool>>, // ADDED: Signal for dynamic HDR toggle
 ) -> Result<(), String> {
     use web_sys::WebGl2RenderingContext as GL;
     use three_d::*;
@@ -1280,8 +1282,13 @@ async fn initialize_threed_viewport(
         let canvas = canvas.clone();
         let selected_node_id_signal = selected_node_id_signal; // Capture signal for render closure
         let selected_item_signal = selected_item_signal; // Capture signal for connection selection
+        let use_env_lighting_signal = use_environment_lighting_signal; // Capture HDR signal (not value!)
 
         move |state: CameraState| {
+            // Read HDR environment signal dynamically each frame (if available)
+            let use_env_lighting = use_env_lighting_signal
+                .map(|sig| sig.get_untracked())
+                .unwrap_or(use_environment_lighting); // Fallback to initial value
             // Always get current canvas dimensions (handles window resize and fullscreen toggle)
             let width = canvas.client_width() as u32;
             let height = canvas.client_height() as u32;
@@ -1354,8 +1361,26 @@ async fn initialize_threed_viewport(
                 } else {
                     normal_mesh
                 };
-                // Render with three-point lighting setup
-                target.render(&camera, mesh_to_render, &[&*ambient, &*key_light, &*fill_light, &*rim_light]);
+                // Conditional lighting based on environment mode
+                if use_env_lighting {
+                    // HDR environment lighting mode: Use ONLY ambient (which contains HDR environment)
+                    // The HDR environment map provides comprehensive lighting - no additional lights needed
+                    target.render(&camera, mesh_to_render, &[&*ambient]);
+                } else {
+                    // Manual lighting mode: Use full three-point lighting setup
+                    target.render(&camera, mesh_to_render, &[&*ambient, &*key_light, &*fill_light, &*rim_light]);
+                }
+            }
+
+            // Debug logging (only on first frame)
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static LOGGED: AtomicBool = AtomicBool::new(false);
+            if !LOGGED.swap(true, Ordering::Relaxed) {
+                web_sys::console::log_1(&format!(
+                    "🔦 Lighting mode: {}, lights used: {}",
+                    if use_env_lighting { "HDR Environment" } else { "Manual 3-Point" },
+                    if use_env_lighting { "1 (ambient only)" } else { "4 (ambient + key + fill + rim)" }
+                ).into());
             }
         }
     };
