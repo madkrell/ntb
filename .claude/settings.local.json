@@ -44,7 +44,8 @@
       "Bash(command -v convert:*)",
       "Bash(command -v sips:*)",
       "Bash(qlmanage -t -s 32 -o /tmp public/ntv_logo.svg:*)",
-      "Bash(sqlx migrate run:*)"
+      "Bash(sqlx migrate run:*)",
+      "Bash(awk:*)"
     ],
     "deny": [],
     "ask": []

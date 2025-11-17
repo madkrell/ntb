@@ -1150,8 +1150,7 @@ pub async fn get_latest_traffic_metrics(topology_id: i64) -> Result<std::collect
         .bind(topology_id)
         .bind(topology_id)
         .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::ServerError(format!("Database error: {}", e)))?;
+        .await?;
 
         // Convert to HashMap for easy lookup
         let mut map = HashMap::new();
