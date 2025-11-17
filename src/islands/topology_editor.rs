@@ -1425,6 +1425,10 @@ fn DevicePalette() -> impl IntoView {
     // Counter for generating unique names and positions
     let node_counter = RwSignal::new(0u32);
 
+    // Traffic monitoring signals
+    let traffic_level_signal = RwSignal::new("medium".to_string());
+    let traffic_generating_signal = RwSignal::new(false);
+
     // Device type configurations: (Display Name, Icon, type_id, name_prefix)
     let device_types = vec![
         ("Routers", "🔀", "router", "Router"),
@@ -1614,36 +1618,47 @@ fn DevicePalette() -> impl IntoView {
                         <label class="block text-xs text-gray-400 mb-1">"Traffic Level"</label>
                         <select
                             class="w-full bg-gray-700 text-white text-xs rounded px-2 py-1 border border-gray-600"
+                            prop:value=move || traffic_level_signal.get()
                             on:change=move |ev| {
-                                let level = event_target_value(&ev);
-
-                                // Generate traffic immediately when level changes
-                                let topology_id = current_topology_id.get();
-                                let refetch = refetch_trigger;
-                                spawn_local(async move {
-                                    use crate::api::generate_mock_traffic;
-                                    match generate_mock_traffic(topology_id, level).await {
-                                        Ok(_count) => {
-                                            #[cfg(feature = "hydrate")]
-                                            web_sys::console::log_1(&format!("Generated {} traffic metrics", _count).into());
-                                            // Trigger viewport refresh to update connection colors
-                                            refetch.update(|v| *v += 1);
-                                        }
-                                        Err(e) => {
-                                            #[cfg(feature = "hydrate")]
-                                            web_sys::console::error_1(&format!("Failed to generate traffic: {}", e).into());
-                                        }
-                                    }
-                                });
+                                traffic_level_signal.set(event_target_value(&ev));
                             }
                         >
-                            <option value="low">"Low (30%)"</option>
-                            <option value="medium" selected>"Medium (60%)"</option>
-                            <option value="high">"High (90%)"</option>
+                            <option value="low">"Low"</option>
+                            <option value="medium" selected>"Medium"</option>
+                            <option value="high">"High"</option>
                         </select>
                     </div>
+                    <button
+                        class="w-full px-3 py-1.5 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-600"
+                        disabled=move || traffic_generating_signal.get()
+                        on:click=move |_| {
+                            let topology_id = current_topology_id.get();
+                            let level = traffic_level_signal.get();
+                            let refetch = refetch_trigger;
+
+                            traffic_generating_signal.set(true);
+                            spawn_local(async move {
+                                use crate::api::generate_mock_traffic;
+                                match generate_mock_traffic(topology_id, level).await {
+                                    Ok(_count) => {
+                                        #[cfg(feature = "hydrate")]
+                                        web_sys::console::log_1(&format!("✓ Generated {} traffic metrics", _count).into());
+                                        // Trigger viewport refresh to update connection colors
+                                        refetch.update(|v| *v += 1);
+                                    }
+                                    Err(e) => {
+                                        #[cfg(feature = "hydrate")]
+                                        web_sys::console::error_1(&format!("✗ Failed: {}", e).into());
+                                    }
+                                }
+                                traffic_generating_signal.set(false);
+                            });
+                        }
+                    >
+                        {move || if traffic_generating_signal.get() { "Generating..." } else { "Generate Traffic" }}
+                    </button>
                     <div class="text-xs text-gray-500 italic">
-                        "Generates traffic and updates connection colors automatically."
+                        "Updates connection colors based on traffic load."
                     </div>
                 </div>
             </div>

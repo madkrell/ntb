@@ -51,23 +51,20 @@ impl Default for CameraState {
 }
 
 /// Get connection color based on traffic utilization percentage
-/// Green (0-30%), Yellow (30-70%), Orange (70-90%), Red (90-100%)
+/// More distinct colors: Green (low <40%), Orange (medium 40-70%), Red (high >70%)
 #[cfg(feature = "hydrate")]
 fn get_traffic_color(utilization_pct: f64) -> three_d::Srgba {
     use three_d::Srgba;
 
-    if utilization_pct < 30.0 {
-        // Green - light load
-        Srgba::new(0, 200, 100, 255)
+    if utilization_pct < 40.0 {
+        // Green - low traffic
+        Srgba::new(50, 220, 100, 255)  // Bright green
     } else if utilization_pct < 70.0 {
-        // Yellow - moderate load
-        Srgba::new(255, 200, 0, 255)
-    } else if utilization_pct < 90.0 {
-        // Orange - heavy load
-        Srgba::new(255, 140, 0, 255)
+        // Orange - medium traffic
+        Srgba::new(255, 165, 0, 255)   // Pure orange
     } else {
-        // Red - critical/saturated
-        Srgba::new(255, 50, 50, 255)
+        // Red - high traffic
+        Srgba::new(255, 60, 60, 255)   // Bright red
     }
 }
 
