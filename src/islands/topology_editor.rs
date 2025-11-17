@@ -321,12 +321,9 @@ pub fn TopologyEditor(
 
     // Effect: Load UI settings from database on mount
     Effect::new(move || {
-        leptos::logging::log!("Loading UI settings from database...");
         spawn_local(async move {
             match get_ui_settings().await {
                 Ok(settings) => {
-                    leptos::logging::log!("✓ Fetched UI settings: env_lighting={}, ambient={}", settings.use_environment_lighting, settings.ambient_intensity);
-
                     // Update viewport visibility
                     viewport_visibility.show_grid.set(settings.show_grid);
                     viewport_visibility.show_x_axis.set(settings.show_x_axis);
@@ -346,10 +343,9 @@ pub fn TopologyEditor(
 
                     // Mark settings as loaded LAST (enables auto-save for subsequent changes)
                     settings_loaded.set(true);
-                    leptos::logging::log!("Settings loaded, auto-save enabled");
                 }
                 Err(e) => {
-                    leptos::logging::error!("✗ Failed to fetch UI settings: {}", e);
+                    leptos::logging::error!("Failed to fetch UI settings: {}", e);
                     // Still enable auto-save even if load failed
                     settings_loaded.set(true);
                 }
@@ -368,11 +364,8 @@ pub fn TopologyEditor(
         let env_map = viewport_visibility.environment_map.get();
         let loaded = settings_loaded.get();
 
-        leptos::logging::log!("Viewport settings changed: env_lighting={}, loaded={}", use_env_lighting, loaded);
-
         // Only save if settings have been loaded (prevents save during initial load)
         if loaded {
-            leptos::logging::log!("Saving viewport settings to database...");
 
             // Trigger viewport refresh for environment lighting changes
             refetch_trigger.update(|v| *v += 1);
@@ -391,8 +384,8 @@ pub fn TopologyEditor(
                     environment_map: Some(env_map.clone()),
                 };
                 match update_ui_settings(data).await {
-                    Ok(_) => leptos::logging::log!("✓ Saved viewport settings: env_lighting={}", use_env_lighting),
-                    Err(e) => leptos::logging::error!("✗ Failed to save viewport settings: {}", e),
+                    Ok(_) => {},
+                    Err(e) => leptos::logging::error!("Failed to save viewport settings: {}", e),
                 }
             });
         }
@@ -407,11 +400,8 @@ pub fn TopologyEditor(
         let rim = lighting_settings.rim_light_intensity.get();
         let loaded = settings_loaded.get();
 
-        leptos::logging::log!("Lighting settings changed: ambient={}, loaded={}", ambient, loaded);
-
         // Only save if settings have been loaded (prevents save during initial load)
         if loaded {
-            leptos::logging::log!("Saving lighting settings to database...");
 
             // Trigger viewport refresh for lighting changes
             refetch_trigger.update(|v| *v += 1);
@@ -430,8 +420,8 @@ pub fn TopologyEditor(
                     environment_map: None,
                 };
                 match update_ui_settings(data).await {
-                    Ok(_) => leptos::logging::log!("✓ Saved lighting settings: ambient={}", ambient),
-                    Err(e) => leptos::logging::error!("✗ Failed to save lighting settings: {}", e),
+                    Ok(_) => {},
+                    Err(e) => leptos::logging::error!("Failed to save lighting settings: {}", e),
                 }
             });
         }

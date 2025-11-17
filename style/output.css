@@ -710,6 +710,9 @@
   .text-white {
     color: var(--color-white);
   }
+  .italic {
+    font-style: italic;
+  }
   .opacity-50 {
     opacity: 50%;
   }
@@ -925,6 +928,11 @@
   .disabled\:cursor-not-allowed {
     &:disabled {
       cursor: not-allowed;
+    }
+  }
+  .disabled\:bg-gray-600 {
+    &:disabled {
+      background-color: var(--color-gray-600);
     }
   }
   .disabled\:opacity-50 {

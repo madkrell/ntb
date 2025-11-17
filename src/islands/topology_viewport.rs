@@ -879,7 +879,7 @@ async fn initialize_threed_viewport(
                     match loaded.deserialize::<three_d_asset::Model>(&model_name) {
                         Ok(cpu_model) => {
                             node_models.insert(cache_key.clone(), Some(cpu_model));
-                            web_sys::console::log_1(&format!("✓ Loaded model: {}", cache_key).into());
+                            // Model loaded successfully
                         }
                         Err(e) => {
                             web_sys::console::error_1(&format!("✗ Failed to deserialize {}: {:?}", cache_key, e).into());
@@ -987,27 +987,11 @@ async fn initialize_threed_viewport(
                                     // Material has textures - use PhysicalMaterial::new() for full glTF support
                                     // This handles: albedo textures, metallic/roughness textures, normal maps,
                                     // occlusion maps, emissive textures, and alpha transparency
-                                    web_sys::console::log_1(&format!(
-                                        "✓ Using FULL glTF material with textures for {} (albedo_tex: {}, metallic_roughness_tex: {}, normal_tex: {}, occlusion_tex: {}, emissive_tex: {})",
-                                        node.model_name,
-                                        gltf_mat.albedo_texture.is_some(),
-                                        gltf_mat.metallic_roughness_texture.is_some(),
-                                        gltf_mat.normal_texture.is_some(),
-                                        gltf_mat.occlusion_texture.is_some(),
-                                        gltf_mat.emissive_texture.is_some()
-                                    ).into());
                                     PhysicalMaterial::new(&context, gltf_mat)
                                 } else {
                                     // No textures - only base color factor (needs color space conversion)
                                     // Apply proper linear→sRGB conversion to fix three-d color space bug
                                     let corrected_albedo = convert_linear_color_to_srgba(&gltf_mat.albedo);
-
-                                    web_sys::console::log_1(&format!(
-                                        "✓ Using glTF material (color-only) with sRGB conversion for {} - Linear: {:?}, sRGB: {:?}",
-                                        node.model_name,
-                                        (gltf_mat.albedo.r, gltf_mat.albedo.g, gltf_mat.albedo.b),
-                                        (corrected_albedo.r, corrected_albedo.g, corrected_albedo.b)
-                                    ).into());
 
                                     PhysicalMaterial::new_opaque(
                                         &context,
@@ -1021,7 +1005,6 @@ async fn initialize_threed_viewport(
                                 }
                             } else {
                                 // Fallback: material_index invalid
-                                web_sys::console::log_1(&format!("⚠ Invalid material_index for {}, using database material", node.model_name).into());
                                 PhysicalMaterial::new_opaque(
                                     &context,
                                     &CpuMaterial {
@@ -1034,7 +1017,6 @@ async fn initialize_threed_viewport(
                             }
                         } else {
                             // No glTF material - use database + type properties
-                            web_sys::console::log_1(&format!("✓ Using database material for {}", node.model_name).into());
                             PhysicalMaterial::new_opaque(
                                 &context,
                                 &CpuMaterial {
@@ -1372,16 +1354,7 @@ async fn initialize_threed_viewport(
                 }
             }
 
-            // Debug logging (only on first frame)
-            use std::sync::atomic::{AtomicBool, Ordering};
-            static LOGGED: AtomicBool = AtomicBool::new(false);
-            if !LOGGED.swap(true, Ordering::Relaxed) {
-                web_sys::console::log_1(&format!(
-                    "🔦 Lighting mode: {}, lights used: {}",
-                    if use_env_lighting { "HDR Environment" } else { "Manual 3-Point" },
-                    if use_env_lighting { "1 (ambient only)" } else { "4 (ambient + key + fill + rim)" }
-                ).into());
-            }
+            // Lighting mode applied dynamically based on use_env_lighting flag
         }
     };
 
