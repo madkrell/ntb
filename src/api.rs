@@ -982,12 +982,13 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
             return Ok(0);
         }
 
-        // Traffic level multipliers
-        let base_multiplier = match traffic_level.as_str() {
-            "low" => 0.3,
-            "medium" => 0.6,
-            "high" => 0.9,
-            _ => 0.6, // default to medium
+        // Traffic level ranges for predictable color visualization
+        // Each level maps to a specific utilization range
+        let (min_util, max_util) = match traffic_level.as_str() {
+            "low" => (10.0, 35.0),      // Green (< 40%)
+            "medium" => (45.0, 65.0),   // Orange (40-70%)
+            "high" => (75.0, 95.0),     // Red (> 70%)
+            _ => (45.0, 65.0),          // default to medium
         };
 
         use rand::SeedableRng;
@@ -1010,13 +1011,8 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
             // Get bandwidth capacity (default to 1000 Mbps if not set)
             let bandwidth_capacity = connection.bandwidth_mbps.unwrap_or(1000) as f64;
 
-            // Generate realistic traffic patterns
-            // Base utilization: 10-60% of capacity depending on traffic level
-            let base_utilization = rng.gen_range(10.0..60.0) * base_multiplier;
-
-            // Add random variation (±20%)
-            let variation = rng.gen_range(-20.0_f64..20.0_f64);
-            let utilization_pct = (base_utilization + variation).clamp(0.0_f64, 100.0_f64);
+            // Generate utilization within the specified range for this traffic level
+            let utilization_pct = rng.gen_range(min_util..max_util);
 
             // Calculate throughput based on utilization
             let throughput_mbps = (bandwidth_capacity * utilization_pct / 100.0).max(0.1);
@@ -1159,6 +1155,39 @@ pub async fn get_latest_traffic_metrics(topology_id: i64) -> Result<std::collect
         }
 
         Ok(map)
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}
+
+/// Clear all traffic data for a specific topology (restore manual colors)
+#[server(ClearTrafficData, "/api")]
+pub async fn clear_traffic_data(topology_id: i64) -> Result<usize, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+
+        let Extension(pool): Extension<SqlitePool> = extract().await?;
+
+        // Delete all traffic metrics for connections in this topology
+        let result = sqlx::query(
+            r#"
+            DELETE FROM connection_traffic_metrics
+            WHERE connection_id IN (
+                SELECT id FROM connections WHERE topology_id = ?
+            )
+            "#
+        )
+        .bind(topology_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to clear traffic data: {}", e)))?;
+
+        Ok(result.rows_affected() as usize)
     }
 
     #[cfg(not(feature = "ssr"))]

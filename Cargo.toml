@@ -37,7 +37,7 @@ wasm-bindgen = { version = "=0.2.101", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 js-sys = { version = "0.3", optional = true }
-web-sys = { version = "0.3", features = ["HtmlCanvasElement", "WebGl2RenderingContext", "WebGlBuffer", "WebGlProgram", "WebGlShader", "WebGlUniformLocation", "console", "Window", "Location", "CanvasRenderingContext2d", "HtmlElement", "Element", "Document", "MouseEvent", "Blob", "BlobPropertyBag", "Url", "File", "FileList", "HtmlInputElement"], optional = true }
+web-sys = { version = "0.3", features = ["HtmlCanvasElement", "WebGl2RenderingContext", "WebGlBuffer", "WebGlProgram", "WebGlShader", "WebGlUniformLocation", "console", "Window", "Location", "CanvasRenderingContext2d", "HtmlElement", "Element", "DomRect", "Document", "MouseEvent", "Blob", "BlobPropertyBag", "Url", "File", "FileList", "HtmlInputElement"], optional = true }
 
 # Logging
 tracing = "0.1"

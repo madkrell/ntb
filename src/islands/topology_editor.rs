@@ -1639,16 +1639,15 @@ fn DevicePalette() -> impl IntoView {
                             traffic_generating_signal.set(true);
                             spawn_local(async move {
                                 use crate::api::generate_mock_traffic;
+
                                 match generate_mock_traffic(topology_id, level).await {
                                     Ok(_count) => {
-                                        #[cfg(feature = "hydrate")]
-                                        web_sys::console::log_1(&format!("✓ Generated {} traffic metrics", _count).into());
                                         // Trigger viewport refresh to update connection colors
                                         refetch.update(|v| *v += 1);
                                     }
                                     Err(e) => {
                                         #[cfg(feature = "hydrate")]
-                                        web_sys::console::error_1(&format!("✗ Failed: {}", e).into());
+                                        web_sys::console::error_1(&format!("Failed to generate traffic: {}", e).into());
                                     }
                                 }
                                 traffic_generating_signal.set(false);
@@ -1657,8 +1656,31 @@ fn DevicePalette() -> impl IntoView {
                     >
                         {move || if traffic_generating_signal.get() { "Generating..." } else { "Generate Traffic" }}
                     </button>
+                    <button
+                        class="w-full px-3 py-1.5 text-xs rounded bg-gray-600 hover:bg-gray-700 text-white"
+                        on:click=move |_| {
+                            let topology_id = current_topology_id.get();
+                            let refetch = refetch_trigger;
+
+                            spawn_local(async move {
+                                use crate::api::clear_traffic_data;
+                                match clear_traffic_data(topology_id).await {
+                                    Ok(_count) => {
+                                        // Trigger viewport refresh to restore manual colors
+                                        refetch.update(|v| *v += 1);
+                                    }
+                                    Err(e) => {
+                                        #[cfg(feature = "hydrate")]
+                                        web_sys::console::error_1(&format!("Failed to clear traffic data: {}", e).into());
+                                    }
+                                }
+                            });
+                        }
+                    >
+                        "Clear Traffic Data"
+                    </button>
                     <div class="text-xs text-gray-500 italic">
-                        "Updates connection colors based on traffic load."
+                        "Generate: Show traffic colors | Clear: Show manual colors"
                     </div>
                 </div>
             </div>

@@ -828,7 +828,7 @@ async fn initialize_threed_viewport(
         .dyn_into::<GL>()
         .map_err(|e| format!("Failed to cast to WebGL2 context: {:?}", e))?;
 
-    // Wrap in glow::Context
+    // Wrap in glow::Context (three-d re-exports glow)
     let gl = three_d::context::Context::from_webgl2_context(webgl2_context);
     let context = Context::from_gl_context(std::sync::Arc::new(gl))
         .map_err(|e| format!("Failed to create three-d Context: {:?}", e))?;
@@ -1154,7 +1154,7 @@ async fn initialize_threed_viewport(
         use crate::api::get_latest_traffic_metrics;
         match get_latest_traffic_metrics(topology_data.topology.id).await {
             Ok(metrics) => Some(metrics),
-            Err(_) => None, // Silently fall back to static colors if no traffic data
+            Err(_) => None, // Silently fall back to manual colors if no traffic data
         }
     };
 
@@ -1384,7 +1384,12 @@ async fn initialize_threed_viewport(
                 } else {
                     normal_mesh
                 };
-                target.render(&camera, mesh_to_render, &[]);
+                // Use same lighting as nodes for consistent appearance
+                if use_env_lighting {
+                    target.render(&camera, mesh_to_render, &[&*ambient]);
+                } else {
+                    target.render(&camera, mesh_to_render, &[&*ambient, &*key_light, &*fill_light, &*rim_light]);
+                }
             }
 
             // Get currently selected node ID (untracked - we handle reactivity via Effect)
@@ -1483,7 +1488,7 @@ fn initialize_threed_viewport_test(
         .dyn_into::<GL>()
         .map_err(|e| format!("Failed to cast to WebGL2 context: {:?}", e))?;
 
-    // Wrap in glow::Context (three-d uses glow internally)
+    // Wrap in glow::Context (three-d re-exports glow)
     let gl = three_d::context::Context::from_webgl2_context(webgl2_context);
 
     // Create three-d Context from glow context
@@ -1705,8 +1710,9 @@ fn setup_orbit_controls(
 
                 // Perform node selection using stored data
                 {
+                    use web_sys::Element;
                     let nodes = nodes_data.borrow(); // Borrow from storage
-                    let rect = canvas_clone.get_bounding_client_rect();
+                    let rect = canvas_clone.unchecked_ref::<Element>().get_bounding_client_rect();
                     let x = e.client_x() as f64 - rect.left();
                     let y = e.client_y() as f64 - rect.top();
 
@@ -1974,8 +1980,9 @@ fn setup_orbit_controls(
                 // Not dragging - check for hover and update tooltip
                 // Borrow from storage to get latest node data
                 {
+                    use web_sys::Element;
                     let nodes = nodes_data.borrow();
-                    let rect = canvas_clone.get_bounding_client_rect();
+                    let rect = canvas_clone.unchecked_ref::<Element>().get_bounding_client_rect();
                     let x = e.client_x() as f64 - rect.left();
                     let y = e.client_y() as f64 - rect.top();
                     let width = canvas_clone.client_width() as f64;
