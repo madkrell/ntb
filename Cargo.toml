@@ -25,6 +25,9 @@ tokio = { version = "1", features = ["full"], optional = true }
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "macros", "migrate"], optional = true }
 dotenvy = { version = "0.15", optional = true }
 
+# Random number generation (for mock traffic)
+rand = { version = "0.8", optional = true }
+
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -64,6 +67,7 @@ ssr = [
     "dep:leptos_axum",
     "dep:sqlx",
     "dep:dotenvy",
+    "dep:rand",
     "dep:tracing-subscriber",
     "leptos/ssr",
     "leptos_meta/ssr",

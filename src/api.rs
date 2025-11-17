@@ -4,6 +4,7 @@ use crate::models::{
     Connection, CreateConnection, UpdateConnection,
     UISettings, UpdateUISettings,
     VendorListResponse, VendorInfo, ModelInfo,
+    ConnectionTrafficMetric,
 };
 use leptos::prelude::*;
 
@@ -948,4 +949,203 @@ fn capitalize_words(s: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+// ============================================================================
+// Traffic Monitoring (Phase 6)
+// ============================================================================
+
+/// Generate mock traffic data for a specific topology
+/// This simulates realistic network traffic patterns for demonstration purposes
+#[server(GenerateMockTraffic, "/api")]
+pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> Result<usize, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+
+        let Extension(pool) = extract::<Extension<SqlitePool>>()
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+        // Get all connections for this topology
+        let connections = sqlx::query_as::<_, Connection>(
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, metadata, created_at, updated_at
+             FROM connections WHERE topology_id = ?"
+        )
+        .bind(topology_id)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to fetch connections: {}", e)))?;
+
+        if connections.is_empty() {
+            return Ok(0);
+        }
+
+        // Traffic level multipliers
+        let base_multiplier = match traffic_level.as_str() {
+            "low" => 0.3,
+            "medium" => 0.6,
+            "high" => 0.9,
+            _ => 0.6, // default to medium
+        };
+
+        use rand::SeedableRng;
+        use rand::Rng;
+        // Use StdRng which is Send-safe for async contexts
+        let mut rng = rand::rngs::StdRng::from_entropy();
+        let current_timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let mut metrics_created = 0;
+
+        for connection in connections {
+            // Skip inactive connections
+            if connection.status != "active" {
+                continue;
+            }
+
+            // Get bandwidth capacity (default to 1000 Mbps if not set)
+            let bandwidth_capacity = connection.bandwidth_mbps.unwrap_or(1000) as f64;
+
+            // Generate realistic traffic patterns
+            // Base utilization: 10-60% of capacity depending on traffic level
+            let base_utilization = rng.gen_range(10.0..60.0) * base_multiplier;
+
+            // Add random variation (±20%)
+            let variation = rng.gen_range(-20.0_f64..20.0_f64);
+            let utilization_pct = (base_utilization + variation).clamp(0.0_f64, 100.0_f64);
+
+            // Calculate throughput based on utilization
+            let throughput_mbps = (bandwidth_capacity * utilization_pct / 100.0).max(0.1);
+
+            // Packets per second (roughly 1000 packets per Mbps)
+            let packets_per_sec = (throughput_mbps * 1000.0) as i64;
+
+            // Latency: base latency from connection + jitter
+            let base_latency = connection.latency_ms.unwrap_or(10.0);
+            let jitter = rng.gen_range(-2.0..5.0);
+            let latency_ms = (base_latency + jitter).max(0.1);
+
+            // Packet loss: increases with utilization
+            let packet_loss_base: f64 = if utilization_pct > 80.0 {
+                rng.gen_range(0.5..3.0)
+            } else if utilization_pct > 60.0 {
+                rng.gen_range(0.1..1.0)
+            } else {
+                rng.gen_range(0.0..0.5)
+            };
+            let packet_loss_pct = packet_loss_base.min(10.0);
+
+            // Calculate bytes and packets transferred (for 1 second interval)
+            let bytes_transferred = (throughput_mbps * 125000.0) as i64; // Convert Mbps to bytes/sec
+            let packets_transferred = packets_per_sec;
+
+            // Insert metric into database
+            let _result = sqlx::query(
+                "INSERT INTO connection_traffic_metrics
+                 (connection_id, timestamp, throughput_mbps, packets_per_sec, latency_ms,
+                  packet_loss_pct, utilization_pct, bytes_transferred, packets_transferred)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            )
+            .bind(connection.id)
+            .bind(current_timestamp)
+            .bind(throughput_mbps)
+            .bind(packets_per_sec)
+            .bind(latency_ms)
+            .bind(packet_loss_pct)
+            .bind(utilization_pct)
+            .bind(bytes_transferred)
+            .bind(packets_transferred)
+            .execute(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to insert traffic metric: {}", e)))?;
+
+            metrics_created += 1;
+        }
+
+        Ok(metrics_created)
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}
+
+/// Get latest traffic metrics for all connections in a topology
+#[server(GetConnectionTrafficMetrics, "/api")]
+pub async fn get_connection_traffic_metrics(topology_id: i64) -> Result<Vec<ConnectionTrafficMetric>, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+        use crate::models::ConnectionTrafficMetric;
+
+        let Extension(pool) = extract::<Extension<SqlitePool>>()
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+        // Get latest metric for each connection (using subquery for max timestamp per connection)
+        let metrics = sqlx::query_as::<_, ConnectionTrafficMetric>(
+            "SELECT ctm.*
+             FROM connection_traffic_metrics ctm
+             INNER JOIN connections c ON ctm.connection_id = c.id
+             INNER JOIN (
+                 SELECT connection_id, MAX(timestamp) as max_timestamp
+                 FROM connection_traffic_metrics
+                 GROUP BY connection_id
+             ) latest ON ctm.connection_id = latest.connection_id
+                     AND ctm.timestamp = latest.max_timestamp
+             WHERE c.topology_id = ?
+             ORDER BY ctm.utilization_pct DESC"
+        )
+        .bind(topology_id)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to fetch traffic metrics: {}", e)))?;
+
+        Ok(metrics)
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}
+
+/// Clean up old traffic metrics (keep only last 1 hour of data)
+#[server(CleanOldTrafficMetrics, "/api")]
+pub async fn clean_old_traffic_metrics() -> Result<usize, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+
+        let Extension(pool) = extract::<Extension<SqlitePool>>()
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+        let one_hour_ago = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64 - 3600;
+
+        let result = sqlx::query(
+            "DELETE FROM connection_traffic_metrics WHERE timestamp < ?"
+        )
+        .bind(one_hour_ago)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to clean old metrics: {}", e)))?;
+
+        Ok(result.rows_affected() as usize)
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
 }

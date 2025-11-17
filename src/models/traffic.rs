@@ -31,3 +31,32 @@ pub struct CreateTrafficMetric {
     pub cpu_usage_percent: Option<f64>,
     pub memory_usage_percent: Option<f64>,
 }
+
+/// Represents traffic metrics for a connection (Phase 6)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ssr", derive(FromRow))]
+pub struct ConnectionTrafficMetric {
+    pub id: i64,
+    pub connection_id: i64,
+    pub timestamp: i64,
+    pub throughput_mbps: f64,
+    pub packets_per_sec: i64,
+    pub latency_ms: f64,
+    pub packet_loss_pct: f64,
+    pub utilization_pct: f64,
+    pub bytes_transferred: i64,
+    pub packets_transferred: i64,
+}
+
+/// Data transfer object for creating connection traffic metrics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateConnectionTrafficMetric {
+    pub connection_id: i64,
+    pub throughput_mbps: f64,
+    pub packets_per_sec: i64,
+    pub latency_ms: f64,
+    pub packet_loss_pct: f64,
+    pub utilization_pct: f64,
+    pub bytes_transferred: i64,
+    pub packets_transferred: i64,
+}

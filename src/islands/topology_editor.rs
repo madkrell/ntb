@@ -1627,6 +1627,12 @@ fn PropertiesPanel(
     // Collapsible section states
     let view_controls_open = RwSignal::new(true);
     let lighting_controls_open = RwSignal::new(false);
+    let traffic_monitoring_open = RwSignal::new(false);
+
+    // Traffic monitoring controls
+    let traffic_enabled = RwSignal::new(false);
+    let traffic_level = RwSignal::new("medium".to_string());
+    let traffic_generating = RwSignal::new(false);
 
     // Get context for controls
     let viewport_visibility = use_context::<ViewportVisibility>().expect("viewport_visibility context");
@@ -1918,6 +1924,102 @@ fn PropertiesPanel(
                                             }
                                         />
                                     </div>
+                                </div>
+                            }.into_any()
+                        } else {
+                            view! { <div></div> }.into_any()
+                        }
+                    }}
+                </div>
+
+                // Collapsible Traffic Monitoring (Phase 6.1)
+                <div class="border-b border-gray-700">
+                    <button
+                        class="w-full px-3 py-2 text-left text-xs font-semibold text-gray-300 hover:bg-gray-750 flex items-center justify-between"
+                        on:click=move |_| traffic_monitoring_open.update(|v| *v = !*v)
+                    >
+                        "Traffic Monitoring"
+                        <span class="text-gray-500">{move || if traffic_monitoring_open.get() { "▼" } else { "▶" }}</span>
+                    </button>
+                    {move || {
+                        if traffic_monitoring_open.get() {
+                            let current_topology = use_context::<RwSignal<Option<i64>>>()
+                                .expect("current_topology context");
+
+                            view! {
+                                <div class="p-2 space-y-3">
+                                    // Enable/Disable Traffic Monitoring
+                                    <div class="flex items-center justify-between">
+                                        <label class="text-xs text-gray-400">"Enable Traffic"</label>
+                                        <button
+                                            class=move || {
+                                                if traffic_enabled.get() {
+                                                    "px-3 py-1 text-xs rounded bg-green-600 hover:bg-green-700 text-white"
+                                                } else {
+                                                    "px-3 py-1 text-xs rounded bg-gray-600 hover:bg-gray-700 text-white"
+                                                }
+                                            }
+                                            on:click=move |_| {
+                                                traffic_enabled.update(|v| *v = !*v);
+                                            }
+                                        >
+                                            {move || if traffic_enabled.get() { "Enabled" } else { "Disabled" }}
+                                        </button>
+                                    </div>
+
+                                    // Traffic Level Selector
+                                    <Show when=move || traffic_enabled.get()>
+                                        <div>
+                                            <label class="block text-xs text-gray-400 mb-1">"Traffic Level"</label>
+                                            <select
+                                                class="w-full bg-gray-700 text-white text-xs rounded px-2 py-1 border border-gray-600"
+                                                on:change=move |ev| {
+                                                    traffic_level.set(event_target_value(&ev));
+                                                }
+                                            >
+                                                <option value="low" selected=move || traffic_level.get() == "low">"Low (30%)"</option>
+                                                <option value="medium" selected=move || traffic_level.get() == "medium">"Medium (60%)"</option>
+                                                <option value="high" selected=move || traffic_level.get() == "high">"High (90%)"</option>
+                                            </select>
+                                        </div>
+
+                                        // Generate Traffic Button
+                                        <div>
+                                            <button
+                                                class="w-full px-3 py-1.5 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                                disabled=move || traffic_generating.get()
+                                                on:click=move |_| {
+                                                    let topology_id = current_topology.get();
+                                                    if let Some(id) = topology_id {
+                                                        traffic_generating.set(true);
+                                                        let level = traffic_level.get();
+
+                                                        spawn_local(async move {
+                                                            use crate::api::generate_mock_traffic;
+                                                            match generate_mock_traffic(id, level).await {
+                                                                Ok(_count) => {
+                                                                    #[cfg(feature = "hydrate")]
+                                                                    web_sys::console::log_1(&format!("Generated {} traffic metrics", _count).into());
+                                                                }
+                                                                Err(_e) => {
+                                                                    #[cfg(feature = "hydrate")]
+                                                                    web_sys::console::error_1(&format!("Failed to generate traffic: {}", _e).into());
+                                                                }
+                                                            }
+                                                            traffic_generating.set(false);
+                                                        });
+                                                    }
+                                                }
+                                            >
+                                                {move || if traffic_generating.get() { "Generating..." } else { "Generate Traffic" }}
+                                            </button>
+                                        </div>
+
+                                        // Info text
+                                        <div class="text-xs text-gray-500 italic">
+                                            "Generates mock traffic data for all active connections in the current topology."
+                                        </div>
+                                    </Show>
                                 </div>
                             }.into_any()
                         } else {
