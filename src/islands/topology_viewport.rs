@@ -1370,7 +1370,7 @@ async fn initialize_threed_viewport(
     // Set up orbit controls with integrated click handler and tooltip
     // ONLY on first initialization - skip on refetches to avoid duplicate handlers
     if !skip_event_handlers {
-        setup_orbit_controls(
+        let _camera_snapshot = setup_orbit_controls(
             canvas,
             camera_state,
             render_fn_storage.clone(), // Pass storage so handlers always use latest render function
@@ -1383,6 +1383,8 @@ async fn initialize_threed_viewport(
             refetch_trigger,
             current_topology_id,
         )?;
+        // NOTE: camera_snapshot is available here but event handlers manage it internally
+        // Camera preset Effect syncs snapshot via the camera_state signal's render calls
     }
 
     Ok(())
@@ -1545,12 +1547,13 @@ fn initialize_threed_viewport_test(
     // Set up mouse drag for orbit (no node selection for test scene - use empty storage)
     let empty_nodes = Rc::new(RefCell::new(Vec::new()));
     let empty_connections = Rc::new(RefCell::new(Vec::new()));
-    setup_orbit_controls(canvas, camera_state, render_fn_storage.clone(), empty_nodes, empty_connections, selected_node_id_signal, selected_item_signal, tooltip_data, connection_mode, refetch_trigger, current_topology_id)?;
+    let _camera_snapshot = setup_orbit_controls(canvas, camera_state, render_fn_storage.clone(), empty_nodes, empty_connections, selected_node_id_signal, selected_item_signal, tooltip_data, connection_mode, refetch_trigger, current_topology_id)?;
 
     Ok(())
 }
 
 /// Set up mouse and scroll event handlers for orbit controls
+/// Returns the camera_state_snapshot Arc for syncing with preset animations
 #[cfg(feature = "hydrate")]
 fn setup_orbit_controls(
     canvas: &web_sys::HtmlCanvasElement,
@@ -1564,7 +1567,7 @@ fn setup_orbit_controls(
     connection_mode: Option<RwSignal<crate::islands::topology_editor::ConnectionMode>>,
     refetch_trigger: Option<RwSignal<u32>>,
     current_topology_id: Option<RwSignal<i64>>,
-) -> Result<(), String> {
+) -> Result<std::sync::Arc<std::sync::Mutex<CameraState>>, String> {
     use web_sys::{MouseEvent, WheelEvent};
     use three_d::*;
 
@@ -1603,8 +1606,8 @@ fn setup_orbit_controls(
             *mouse_down_pos.borrow_mut() = pos; // Remember where we started
             *total_mouse_movement.borrow_mut() = 0.0; // Reset movement counter
 
-            // Sync camera snapshot from current signal value - allows dragging from preset positions
-            *camera_state_snapshot.lock().unwrap() = camera_state.get_untracked();
+            // NOTE: camera_state_snapshot is kept in sync by render function
+            // Do NOT access camera_state signal here - it may be disposed on viewport re-initialization
 
             canvas_clone.set_attribute("style", "cursor: grabbing; border: 1px solid #ccc; display: block; background-color: #1a1a1a;").ok();
         }) as Box<dyn FnMut(_)>);
@@ -1888,10 +1891,8 @@ fn setup_orbit_controls(
                     state.elevation = (state.elevation - delta_y * 0.01).clamp(-1.5, 1.5);
                 }
 
-                // Only update reactive signal if not disposed
-                if !*is_disposed.lock().unwrap() {
-                    camera_state.set(*state);
-                }
+                // NOTE: Do NOT update camera_state signal here - it may be disposed on viewport re-initialization
+                // The snapshot is the source of truth for event handlers
 
                 // Render using latest render function from storage
                 if let Some(render_fn) = render_fn_storage.borrow().as_ref() {
@@ -1997,10 +1998,8 @@ fn setup_orbit_controls(
             let mut state = camera_state_snapshot.lock().unwrap();
             state.distance = (state.distance + e.delta_y() as f32 * 0.01).clamp(2.0, 50.0);
 
-            // Only update reactive signal if not disposed
-            if !*is_disposed.lock().unwrap() {
-                camera_state.set(*state);
-            }
+            // NOTE: Do NOT update camera_state signal here - it may be disposed on viewport re-initialization
+            // The snapshot is the source of truth for event handlers
 
             // Render using latest render function from storage
             if let Some(render_fn) = render_fn_storage.borrow().as_ref() {
@@ -2021,7 +2020,7 @@ fn setup_orbit_controls(
         *is_disposed.lock().unwrap() = true;
     });
 
-    Ok(())
+    Ok(camera_state_snapshot)
 }
 
 /// Create grid floor and XYZ axes for spatial reference (Blender-style)
