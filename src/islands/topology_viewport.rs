@@ -336,6 +336,12 @@ pub fn TopologyViewport(
                     // Check if this is a refetch (already initialized)
                     let already_initialized = is_initialized.get_untracked();
 
+                    // Mark as initialized IMMEDIATELY to prevent race condition with async init
+                    // This prevents Effect from spawning multiple async inits before first completes
+                    if !already_initialized {
+                        is_initialized.set(true);
+                    }
+
                     // Spawn async initialization (needed for glTF loading)
                     let canvas = canvas_element.clone();
                     let topo = topo_data.clone();
@@ -385,7 +391,7 @@ pub fn TopologyViewport(
                             Some(use_environment_lighting), // Pass signal for dynamic HDR toggle
                         ).await {
                             Ok(_) => {
-                                is_initialized.set(true);
+                                // is_initialized was already set before spawning to prevent race condition
                             }
                             Err(e) => {
                                 web_sys::console::error_1(&format!("Initialization failed: {}", e).into());
@@ -1597,7 +1603,7 @@ fn setup_orbit_controls(
         let mouse_down_pos = mouse_down_pos.clone();
         let total_mouse_movement = total_mouse_movement.clone();
         let canvas_clone = canvas.clone();
-        let camera_state_snapshot = camera_state_snapshot.clone();
+        let _camera_state_snapshot = camera_state_snapshot.clone();
 
         let mousedown = leptos::wasm_bindgen::closure::Closure::wrap(Box::new(move |e: MouseEvent| {
             let pos = (e.client_x() as f32, e.client_y() as f32);
@@ -1631,6 +1637,10 @@ fn setup_orbit_controls(
         let render_fn_storage = render_fn_storage.clone(); // Clone storage to always use latest render function
 
         let mouseup = leptos::wasm_bindgen::closure::Closure::wrap(Box::new(move |e: MouseEvent| {
+            // Prevent event propagation and default behavior
+            e.stop_propagation();
+            e.prevent_default();
+
             let was_dragging = *is_dragging.borrow();
             *is_dragging.borrow_mut() = false;
             canvas_clone.set_attribute("style", "cursor: pointer; border: 1px solid #ccc; display: block; background-color: #1a1a1a;").ok();
@@ -1781,7 +1791,6 @@ fn setup_orbit_controls(
                             Some(crate::islands::topology_editor::ConnectionMode::SelectingSecondNode { first_node_id }) => {
                                 // Second node selected - create connection
                                 if let Some(second_node_id) = selected_id {
-
                                     // Create connection via server function
                                     if let (Some(mode_signal), Some(trigger), Some(topo_id_signal)) = (connection_mode, refetch_trigger, current_topology_id) {
                                         let topology_id = topo_id_signal.get_untracked();
@@ -1891,14 +1900,20 @@ fn setup_orbit_controls(
                     state.elevation = (state.elevation - delta_y * 0.01).clamp(-1.5, 1.5);
                 }
 
-                // NOTE: Do NOT update camera_state signal here - it may be disposed on viewport re-initialization
-                // The snapshot is the source of truth for event handlers
+                drop(state); // Release lock before any signal updates
+
+                // Update camera_state signal if not disposed (needed for render Effects)
+                // This keeps signal in sync with snapshot
+                if !*is_disposed.lock().unwrap() {
+                    let state = *camera_state_snapshot.lock().unwrap();
+                    camera_state.set(state);
+                }
 
                 // Render using latest render function from storage
                 if let Some(render_fn) = render_fn_storage.borrow().as_ref() {
-                    render_fn(*state);
+                    let state = *camera_state_snapshot.lock().unwrap();
+                    render_fn(state);
                 }
-                drop(state); // Release lock
 
                 *last_mouse_pos.borrow_mut() = current_pos;
 
@@ -1997,13 +2012,17 @@ fn setup_orbit_controls(
             // Update snapshot (safe - no reactive signals)
             let mut state = camera_state_snapshot.lock().unwrap();
             state.distance = (state.distance + e.delta_y() as f32 * 0.01).clamp(2.0, 50.0);
+            let state_copy = *state;
+            drop(state); // Release lock before any signal updates
 
-            // NOTE: Do NOT update camera_state signal here - it may be disposed on viewport re-initialization
-            // The snapshot is the source of truth for event handlers
+            // Update camera_state signal if not disposed (needed for render Effects)
+            if !*is_disposed.lock().unwrap() {
+                camera_state.set(state_copy);
+            }
 
             // Render using latest render function from storage
             if let Some(render_fn) = render_fn_storage.borrow().as_ref() {
-                render_fn(*state);
+                render_fn(state_copy);
             }
         }) as Box<dyn FnMut(_)>);
 

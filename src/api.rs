@@ -3,7 +3,7 @@ use crate::models::{
     Node, CreateNode, UpdateNode,
     Connection, CreateConnection, UpdateConnection,
     UISettings, UpdateUISettings,
-    VendorListResponse,
+    VendorListResponse, VendorInfo, ModelInfo,
     ConnectionTrafficMetric,
 };
 use leptos::prelude::*;
