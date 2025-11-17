@@ -1933,8 +1933,8 @@ fn PropertiesPanel(
                     </button>
                     {move || {
                         if traffic_monitoring_open.get() {
-                            let current_topology = use_context::<RwSignal<Option<i64>>>()
-                                .expect("current_topology context");
+                            let current_topology_id = use_context::<RwSignal<i64>>()
+                                .expect("current_topology_id context");
 
                             view! {
                                 <div class="p-2 space-y-3">
@@ -1979,14 +1979,13 @@ fn PropertiesPanel(
                                                 class="w-full px-3 py-1.5 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-600 disabled:cursor-not-allowed"
                                                 disabled=move || traffic_generating.get()
                                                 on:click=move |_| {
-                                                    let topology_id = current_topology.get();
-                                                    if let Some(id) = topology_id {
-                                                        traffic_generating.set(true);
-                                                        let level = traffic_level.get();
+                                                    let topology_id = current_topology_id.get();
+                                                    traffic_generating.set(true);
+                                                    let level = traffic_level.get();
 
-                                                        spawn_local(async move {
-                                                            use crate::api::generate_mock_traffic;
-                                                            match generate_mock_traffic(id, level).await {
+                                                    spawn_local(async move {
+                                                        use crate::api::generate_mock_traffic;
+                                                        match generate_mock_traffic(topology_id, level).await {
                                                                 Ok(_count) => {
                                                                     #[cfg(feature = "hydrate")]
                                                                     web_sys::console::log_1(&format!("Generated {} traffic metrics", _count).into());
@@ -1998,7 +1997,6 @@ fn PropertiesPanel(
                                                             }
                                                             traffic_generating.set(false);
                                                         });
-                                                    }
                                                 }
                                             >
                                                 {move || if traffic_generating.get() { "Generating..." } else { "Generate Traffic" }}
