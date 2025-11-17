@@ -50,6 +50,27 @@ impl Default for CameraState {
     }
 }
 
+/// Get connection color based on traffic utilization percentage
+/// Green (0-30%), Yellow (30-70%), Orange (70-90%), Red (90-100%)
+#[cfg(feature = "hydrate")]
+fn get_traffic_color(utilization_pct: f64) -> three_d::Srgba {
+    use three_d::Srgba;
+
+    if utilization_pct < 30.0 {
+        // Green - light load
+        Srgba::new(0, 200, 100, 255)
+    } else if utilization_pct < 70.0 {
+        // Yellow - moderate load
+        Srgba::new(255, 200, 0, 255)
+    } else if utilization_pct < 90.0 {
+        // Orange - heavy load
+        Srgba::new(255, 140, 0, 255)
+    } else {
+        // Red - critical/saturated
+        Srgba::new(255, 50, 50, 255)
+    }
+}
+
 /// Get camera state for a given preset
 #[cfg(feature = "hydrate")]
 fn get_camera_preset(preset: crate::islands::topology_editor::CameraPreset) -> CameraState {
@@ -1131,6 +1152,15 @@ async fn initialize_threed_viewport(
         show_z_axis,
     );
 
+    // Fetch latest traffic metrics for traffic visualization (Phase 6.2)
+    let traffic_metrics = {
+        use crate::api::get_latest_traffic_metrics;
+        match get_latest_traffic_metrics(topology_data.topology.id).await {
+            Ok(metrics) => Some(metrics),
+            Err(_) => None, // Silently fall back to static colors if no traffic data
+        }
+    };
+
     // Shared cylinder mesh for all connections (for efficiency)
     let cylinder_cpu_mesh = CpuMesh::cylinder(16);
 
@@ -1151,8 +1181,30 @@ async fn initialize_threed_viewport(
                 radius: 0.15, // Larger than visual radius for easier clicking
             });
 
-            // Parse connection color from database (format: "R,G,B")
-            let normal_color = {
+            // Determine connection color - use traffic data if available, otherwise custom color
+            let normal_color = if let Some(ref metrics) = traffic_metrics {
+                // Traffic visualization mode - color by utilization
+                if let Some(metric) = metrics.get(&conn.id) {
+                    get_traffic_color(metric.utilization_pct)
+                } else {
+                    // No traffic data for this connection - use custom color
+                    let parts: Vec<&str> = conn.color.split(',').collect();
+                    if parts.len() == 3 {
+                        if let (Ok(r), Ok(g), Ok(b)) = (
+                            parts[0].parse::<u8>(),
+                            parts[1].parse::<u8>(),
+                            parts[2].parse::<u8>(),
+                        ) {
+                            Srgba::new(r, g, b, 255)
+                        } else {
+                            Srgba::new(128, 128, 128, 255) // Fallback gray
+                        }
+                    } else {
+                        Srgba::new(128, 128, 128, 255) // Fallback gray
+                    }
+                }
+            } else {
+                // No traffic data at all - use custom color from database
                 let parts: Vec<&str> = conn.color.split(',').collect();
                 if parts.len() == 3 {
                     if let (Ok(r), Ok(g), Ok(b)) = (

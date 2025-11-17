@@ -1116,6 +1116,58 @@ pub async fn get_connection_traffic_metrics(topology_id: i64) -> Result<Vec<Conn
     }
 }
 
+/// Get latest traffic metric for each connection (for real-time visualization)
+/// Returns a map of connection_id -> latest metric
+#[server(GetLatestTrafficMetrics, "/api")]
+pub async fn get_latest_traffic_metrics(topology_id: i64) -> Result<std::collections::HashMap<i64, ConnectionTrafficMetric>, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+        use std::collections::HashMap;
+
+        let Extension(pool): Extension<SqlitePool> = extract().await?;
+
+        // Get latest metric for each connection in this topology
+        // Uses a subquery to find the max timestamp per connection, then joins to get full row
+        let metrics = sqlx::query_as::<_, ConnectionTrafficMetric>(
+            r#"
+            SELECT ctm.*
+            FROM connection_traffic_metrics ctm
+            INNER JOIN connections c ON c.id = ctm.connection_id
+            INNER JOIN (
+                SELECT connection_id, MAX(timestamp) as max_timestamp
+                FROM connection_traffic_metrics
+                WHERE connection_id IN (
+                    SELECT id FROM connections WHERE topology_id = ?
+                )
+                GROUP BY connection_id
+            ) latest ON latest.connection_id = ctm.connection_id
+                    AND latest.max_timestamp = ctm.timestamp
+            WHERE c.topology_id = ?
+            "#
+        )
+        .bind(topology_id)
+        .bind(topology_id)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| ServerFnError::ServerError(format!("Database error: {}", e)))?;
+
+        // Convert to HashMap for easy lookup
+        let mut map = HashMap::new();
+        for metric in metrics {
+            map.insert(metric.connection_id, metric);
+        }
+
+        Ok(map)
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}
+
 /// Clean up old traffic metrics (keep only last 1 hour of data)
 #[server(CleanOldTrafficMetrics, "/api")]
 pub async fn clean_old_traffic_metrics() -> Result<usize, ServerFnError> {
