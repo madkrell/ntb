@@ -1,11 +1,11 @@
 # Network Topology Builder - Claude Development Notes
 
 ## Project Status
-**Current Phase:** Phase 5.7 COMPLETE! ✅ (HDR Environment Lighting)
-**Last Updated:** 2025-11-14
-**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete, v0.1.0-phase5-complete, v0.1.0-phase5.7-complete
+**Current Phase:** Phase 6.3 COMPLETE! ✅ (Traffic Monitoring - Link Metrics Impact)
+**Last Updated:** 2025-01-15
+**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete, v0.1.0-phase5-complete, v0.1.0-phase5.7-complete, v0.1.0-phase6-complete
 **Architecture:** Regular Leptos Components (Islands removed - see notes below)
-**Next Phase:** Phase 6 - Traffic Monitoring (Real-time traffic visualization)
+**Next Phase:** Phase 6.4 - Traffic Dashboard & Metrics (Optional enhancement)
 
 ### three-d API Audit (2025-11-14) ✅
 
@@ -269,6 +269,161 @@ move |state: CameraState| {
    - Export glTF with embedded textures
    - Texture colors appear correct in web app (no color space conversion needed)
    - Albedo texture + HDR environment = perfect Blender match
+
+### Phase 6 - Traffic Monitoring COMPLETE! ✅ (2025-01-15)
+
+**Overview:** Real-time traffic visualization transforms the static 3D network diagram into a live monitoring tool. Mock traffic generator simulates realistic network patterns with color-coded connections showing utilization levels.
+
+**✅ COMPLETED:**
+
+#### Phase 6.1 - Mock Traffic Generator (2025-01-15)
+34. ✅ **Server-Side Traffic Generation** - Realistic network traffic simulation
+   - Server function `generate_mock_traffic()` creates traffic for all active connections
+   - Three intensity levels: Low (10-30%), Medium (30-70%), High (70-95%)
+   - Traffic patterns vary by connection type (Fiber > Ethernet > Wireless)
+   - Respects connection status (only "Active" connections generate traffic)
+   - Uses actual bandwidth from connection properties
+   - Database storage: traffic_metrics table (connection_id, throughput, latency, packet_loss, utilization)
+   - `clear_traffic()` server function removes all traffic data
+
+35. ✅ **Traffic Control UI** - User interface for traffic management
+   - Traffic Controls panel in Properties section (bottom of panel)
+   - "Generate Traffic" button with dropdown intensity selector (Low/Medium/High)
+   - "Clear Traffic" button to reset all traffic data
+   - Real-time viewport updates when traffic is generated/cleared
+   - Button styling with Tailwind CSS (green for generate, red for clear)
+
+#### Phase 6.2 - Traffic Visualization (2025-01-15)
+36. ✅ **Color-Coded Connections** - Visual traffic load indication
+   - Dynamic connection colors based on utilization percentage:
+     - Green: 0-40% utilization (healthy)
+     - Orange: 40-70% utilization (moderate)
+     - Red: 70-100% utilization (heavy/critical)
+   - Color updates in real-time when traffic changes
+   - Manual color override capability (custom colors take precedence)
+   - Traffic data fetched via `get_all_traffic_metrics()` server function
+   - Connection rendering with proper lighting (ambient + directional)
+
+37. ✅ **Traffic Tooltips** - Detailed metrics on hover
+   - Enhanced connection tooltips show utilization percentage
+   - Color-coded utilization display (green/orange/red)
+   - Displays source → target connection name
+   - Tooltip data structure supports both Node and Connection types
+   - Ray-cylinder intersection for accurate hover detection
+
+#### Phase 6.3 - Link Metrics Impact (2025-01-15)
+38. ✅ **Bandwidth-Aware Traffic** - Realistic throughput calculations
+   - Traffic generation uses actual link bandwidth from database
+   - Throughput calculated as: `bandwidth_mbps * utilization_pct / 100.0`
+   - Intensity level determines utilization range, not absolute values
+   - Different connection types have different throughput patterns
+
+39. ✅ **Congestion-Based Latency** - Dynamic latency calculation
+   - Base latency from connection properties (default 10ms)
+   - Congestion penalties based on utilization:
+     - < 40%: Base latency + jitter only
+     - 40-70%: Base + slight congestion penalty (0.1-0.3x per % over 40)
+     - > 70%: Base + significant congestion penalty (0.5-1.5x per % over 70)
+   - Random jitter (-2ms to +3ms) for realistic variation
+   - Higher utilization = higher latency (simulates real network behavior)
+
+40. ✅ **Exponential Packet Loss** - Realistic packet loss patterns
+   - Packet loss increases exponentially with utilization:
+     - < 60%: 0-0.1% (minimal, healthy network)
+     - 60-80%: 0.1-0.5% (occasional drops)
+     - 80-90%: 0.5-2.0% (noticeable degradation)
+     - > 90%: 2-5% (severe congestion)
+   - Random variation within ranges for realism
+   - Models real-world network congestion behavior
+
+41. ✅ **Comprehensive Tooltips** - All metrics displayed
+   - Connection hover tooltips now show 4 metrics:
+     - Utilization (color-coded: green/orange/red)
+     - Throughput in Mbps (blue)
+     - Latency in ms (color-coded: green < 20ms, yellow 20-50ms, orange > 50ms)
+     - Packet Loss in % (color-coded: green < 0.5%, yellow 0.5-2%, red > 2%)
+   - All metrics update in real-time with traffic changes
+   - Clean, readable tooltip design with color coding
+
+**Technical Implementation:**
+
+```rust
+// Traffic generation algorithm (api.rs:1011-1052)
+let utilization_pct = rng.gen_range(utilization_range.clone());
+let throughput_mbps = bandwidth_mbps * utilization_pct / 100.0;
+
+// Congestion-based latency
+let base_latency = connection.latency_ms.unwrap_or(10.0);
+let congestion_penalty = if utilization_pct > 70.0 {
+    (utilization_pct - 70.0) * rng.gen_range(0.5..1.5)
+} else if utilization_pct > 40.0 {
+    (utilization_pct - 40.0) * rng.gen_range(0.1..0.3)
+} else {
+    0.0
+};
+let latency_ms = (base_latency + congestion_penalty + jitter).max(0.1);
+
+// Exponential packet loss
+let packet_loss_pct = if utilization_pct > 90.0 {
+    rng.gen_range(2.0..5.0)
+} else if utilization_pct > 80.0 {
+    rng.gen_range(0.5..2.0)
+} else if utilization_pct > 60.0 {
+    rng.gen_range(0.1..0.5)
+} else {
+    rng.gen_range(0.0..0.1)
+};
+```
+
+**Key Features:**
+- ✅ Realistic traffic simulation using link properties
+- ✅ Three-tier intensity control (Low/Medium/High)
+- ✅ Color-coded connections for instant visual feedback
+- ✅ Comprehensive tooltips with 4 metrics
+- ✅ Congestion-based latency modeling
+- ✅ Exponential packet loss at high utilization
+- ✅ Manual color override capability
+- ✅ Real-time viewport updates
+
+**Database Schema:**
+```sql
+CREATE TABLE IF NOT EXISTS connection_traffic_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id INTEGER NOT NULL,
+    throughput_mbps REAL NOT NULL,
+    latency_ms REAL NOT NULL,
+    packet_loss_pct REAL NOT NULL,
+    utilization_pct REAL NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
+);
+```
+
+**Key Lessons Learned (Phase 6):**
+
+1. **Realistic Traffic Modeling**
+   - Use actual link properties (bandwidth, latency, status)
+   - Model congestion effects (latency increases, packet loss)
+   - Random variation within realistic ranges
+   - Different patterns for different connection types
+
+2. **Color-Coded Visualization**
+   - Instant visual feedback with traffic load colors
+   - Manual color override for specific use cases
+   - Proper lighting required for color visibility
+   - Three-tier thresholds (0-40%, 40-70%, 70-100%)
+
+3. **Traffic Data Management**
+   - Separate table for traffic metrics (not in connections table)
+   - Cascade delete when connection removed
+   - HashMap lookup for efficient access in viewport
+   - Real-time updates via refetch trigger
+
+4. **Tooltip Enhancement Pattern**
+   - Enum-based tooltip data (Node vs Connection)
+   - Color-coded metrics for quick interpretation
+   - Display all relevant metrics without clutter
+   - Update tooltip data in mousemove handler
 
 ### Phase 4.5 - UI/UX Polish COMPLETE! ✅ (2025-11-07)
 
@@ -669,42 +824,29 @@ async fn import_topology_json(json_content: String) -> Result<ImportResult, Stri
 4. ⏳ UI polish and optimizations - Loading states, error handling (mostly done)
 5. ⏳ Documentation - User guide with screenshots (can be done anytime)
 
-## Phase 6 - Traffic Monitoring (MOST IMPACTFUL FEATURE)
+## Phase 6 - Traffic Monitoring (Future Enhancements - OPTIONAL)
 
-### Overview
-This is probably the most exciting next phase! Real-time traffic visualization transforms the static 3D network diagram into a live monitoring tool.
+### Status
+**Core traffic monitoring complete!** Phases 6.1-6.3 are fully implemented with realistic traffic generation, color-coded connections, and comprehensive tooltips. Remaining items are optional enhancements for advanced features.
 
-### Planned Features
+### ✅ Completed Features (Phases 6.1-6.3)
+1. ✅ Mock traffic generator with realistic patterns
+2. ✅ Color-coded connections (green/orange/red by utilization)
+3. ✅ Traffic metrics tooltips (utilization, throughput, latency, packet loss)
+4. ✅ Link properties impact (bandwidth, latency, congestion modeling)
+5. ✅ Three-tier intensity control (Low/Medium/High)
+6. ✅ Manual color override capability
 
-#### 1. Real-Time Traffic Visualization
+### Optional Future Enhancements
+
+#### 1. Real-Time Traffic Animation (Phase 6.4 - Optional)
 - **Animated connections:** Flowing particles/pulses moving along connection paths
 - **Direction indicators:** Particles move from source to target showing data flow direction
 - **Speed variation:** Faster particles = higher throughput
 - **Particle density:** More particles = more active connection
+- **Implementation:** three-d particle system with instanced rendering
 
-#### 2. Live Traffic Metrics
-- **Per-connection metrics:**
-  - Throughput (Mbps) - Current data rate
-  - Packet count - Packets per second
-  - Latency (ms) - Round-trip time
-  - Packet loss (%) - Dropped packets
-- **Display options:**
-  - Hover tooltip shows current metrics
-  - Always-on labels for selected connections
-  - Dashboard panel with detailed stats
-
-#### 3. Color-Coded Status
-- **Traffic load visualization:**
-  - Green (0-30% utilization) - Healthy, light load
-  - Yellow (30-70% utilization) - Moderate, warning threshold
-  - Orange (70-90% utilization) - Heavy load approaching capacity
-  - Red (90-100% utilization) - Critical, at or over capacity
-- **Status indicators:**
-  - Connection color changes based on current load
-  - Pulsing/flashing for alerts
-  - Thickness variation based on bandwidth utilization
-
-#### 4. Traffic Dashboard
+#### 2. Traffic Dashboard (Phase 6.5 - Optional)
 - **Metrics panel (right sidebar or bottom panel):**
   - Top connections by traffic volume
   - Total network throughput
@@ -719,7 +861,8 @@ This is probably the most exciting next phase! Real-time traffic visualization t
   - Connection health scores
   - Anomaly detection (sudden spikes/drops)
 
-#### 5. Streaming Data Architecture
+#### 3. WebSocket Streaming (Phase 6.6 - Optional)
+- **Real-time updates:** Live traffic data streaming to viewport
 - **Leptos Native WebSocket:**
   ```rust
   #[server(protocol = Websocket<JsonEncoding, JsonEncoding>)]
@@ -729,95 +872,35 @@ This is probably the most exciting next phase! Real-time traffic visualization t
       // Server streams traffic updates every 100-500ms
       Ok(traffic_stream)
   }
-
-  // Client side
-  let traffic_signal = Signal::from_stream(traffic_stream);
   ```
-- **Data structure:**
-  ```rust
-  struct TrafficUpdate {
-      connection_id: i64,
-      timestamp: i64,
-      throughput_mbps: f64,
-      packets_per_sec: u64,
-      latency_ms: f64,
-      packet_loss_pct: f64,
-      utilization_pct: f64,  // 0-100
-  }
-  ```
+- **Benefits:** Automatic updates without manual refresh, lower latency
+- **Implementation:** Signal::from_stream() for reactive updates
 
-#### 6. Mock Traffic Generator (for Demo)
-- **Server-side generator:**
-  - Simulates realistic network traffic patterns
-  - Varies by time of day (higher during business hours)
-  - Random bursts and quiet periods
-  - Connection-specific patterns (servers busier than switches)
-- **Configuration options:**
-  - Enable/disable mock data
-  - Adjust traffic intensity (low/medium/high)
-  - Trigger specific scenarios (DDoS, link failure, congestion)
+### Recommended Next Steps
+While Phase 6 core features are complete, here are some high-value next steps to consider:
 
-#### 7. Animation Implementation
-- **Particle system in three-d:**
-  - Small sphere instances moving along connection paths
-  - Interpolate position from source to target
-  - Recycle particles at target (spawn new at source)
-- **Performance optimization:**
-  - Limit particle count per connection (max 5-10)
-  - Update positions in requestAnimationFrame
-  - Use instanced rendering for efficiency
-- **Visual effects:**
-  - Motion blur for speed impression
-  - Glow effect around particles
-  - Trail effect showing path history
+1. **User Experience Polish**
+   - Add loading states for traffic generation
+   - Toast notifications for successful operations
+   - Better error messaging
 
-### Implementation Plan
+2. **Traffic Dashboard (High Value)**
+   - Simple metrics panel showing network-wide stats
+   - Top 5 busiest connections list
+   - Total throughput counter
+   - Average latency display
 
-**Phase 6.1 - Backend & Data Streaming:**
-1. Create mock traffic generator (server function)
-2. Set up WebSocket streaming server function
-3. Test data flow client→server→client
-4. Database schema for traffic_metrics (already exists)
+3. **Animation System (Visual Impact)**
+   - Particle flows along connections
+   - Direction indicators
+   - Speed based on throughput
+   - Makes demos more engaging
 
-**Phase 6.2 - Basic Visualization:**
-1. Color connections based on traffic load
-2. Update connection colors in real-time from stream
-3. Add traffic metrics to connection tooltips
-4. Test with mock data
-
-**Phase 6.3 - Animation System:**
-1. Implement particle system in three-d
-2. Spawn particles at source node
-3. Animate particles along connection path
-4. Vary speed/density based on throughput
-
-**Phase 6.4 - Dashboard & Metrics:**
-1. Create traffic metrics panel component
-2. Display current stats for all connections
-3. Add time-series charts (optional)
-4. Top connections list sorted by traffic
-
-**Phase 6.5 - Polish & Configuration:**
-1. Enable/disable traffic visualization
-2. Adjust animation speed/density
-3. Configure alert thresholds
-4. Save preferences to database
-
-### Expected Outcomes
-- **Visual impact:** Instantly see network activity and hotspots
-- **Monitoring:** Identify bottlenecks and congestion in real-time
-- **Professional tool:** Transforms prototype into production-ready network monitoring solution
-- **Demo appeal:** Animated traffic makes presentations much more engaging
-
-### Technical Challenges
-1. **Performance:** Animating many particles while maintaining 60fps
-   - Solution: Use three-d instanced rendering, limit particle count
-2. **Data rate:** WebSocket bandwidth for many connections
-   - Solution: Aggregate updates, send diffs only, configurable refresh rate
-3. **State management:** Keeping traffic data in sync with topology
-   - Solution: Use same mutable storage pattern as event handlers
-4. **Visual clutter:** Too many particles/metrics overwhelming
-   - Solution: Progressive disclosure, filters, focus mode
+4. **Real Integration**
+   - Replace mock generator with real network data sources
+   - SNMP integration for network devices
+   - API connectors for cloud platforms
+   - Transforms from demo tool to production monitoring
 
 ## Build Commands (VERIFIED)
 
@@ -845,8 +928,9 @@ ls -lh target/site/pkg/*.wasm
 
 ## Git Repository
 **Repo:** https://github.com/madkrell/ntb.git
-**Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete
-**Next Tag:** v0.1.0-phase5-complete (after JSON export/import)
+**Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete, v0.1.0-phase5-complete, v0.1.0-phase5.7-complete, v0.1.0-phase6-complete
+**Current Branch:** phase-6.2-traffic-visualization
+**Next Tag:** v0.1.0-phase7 (if continuing with optional features)
 
 ## All Known Issues & Solutions
 

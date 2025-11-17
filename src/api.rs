@@ -1014,24 +1014,40 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
             // Generate utilization within the specified range for this traffic level
             let utilization_pct = rng.gen_range(min_util..max_util);
 
-            // Calculate throughput based on utilization
+            // Calculate throughput based on utilization and bandwidth capacity
             let throughput_mbps = (bandwidth_capacity * utilization_pct / 100.0).max(0.1);
 
-            // Packets per second (roughly 1000 packets per Mbps)
+            // Packets per second (roughly 1000 packets per Mbps for standard Ethernet)
             let packets_per_sec = (throughput_mbps * 1000.0) as i64;
 
-            // Latency: base latency from connection + jitter
+            // Latency: base latency + congestion penalty (higher utilization = higher latency)
             let base_latency = connection.latency_ms.unwrap_or(10.0);
-            let jitter = rng.gen_range(-2.0..5.0);
-            let latency_ms = (base_latency + jitter).max(0.1);
-
-            // Packet loss: increases with utilization
-            let packet_loss_base: f64 = if utilization_pct > 80.0 {
-                rng.gen_range(0.5..3.0)
-            } else if utilization_pct > 60.0 {
-                rng.gen_range(0.1..1.0)
+            let congestion_penalty = if utilization_pct > 70.0 {
+                // Heavy congestion: significant latency increase
+                (utilization_pct - 70.0) * rng.gen_range(0.5..1.5)
+            } else if utilization_pct > 40.0 {
+                // Moderate congestion: slight latency increase
+                (utilization_pct - 40.0) * rng.gen_range(0.1..0.3)
             } else {
-                rng.gen_range(0.0..0.5)
+                0.0
+            };
+            let jitter = rng.gen_range(-2.0..3.0); // Natural network jitter
+            let latency_ms = (base_latency + congestion_penalty + jitter).max(0.1);
+
+            // Packet loss: increases exponentially with utilization
+            // Real networks experience packet loss when buffers overflow at high utilization
+            let packet_loss_base: f64 = if utilization_pct > 90.0 {
+                // Critical: severe packet loss
+                rng.gen_range(2.0..5.0)
+            } else if utilization_pct > 80.0 {
+                // High: noticeable packet loss
+                rng.gen_range(0.5..2.0)
+            } else if utilization_pct > 60.0 {
+                // Moderate: occasional packet loss
+                rng.gen_range(0.1..0.5)
+            } else {
+                // Low: minimal packet loss
+                rng.gen_range(0.0..0.1)
             };
             let packet_loss_pct = packet_loss_base.min(10.0);
 

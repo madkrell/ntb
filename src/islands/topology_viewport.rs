@@ -282,7 +282,10 @@ pub fn TopologyViewport(
     let error_signal = RwSignal::new(None::<String>);
     let is_initialized = RwSignal::new(false);
 
-    // Tooltip state: (node_name, node_type, x, y)
+    // Tooltip state: supports both nodes and connections with traffic metrics
+    #[cfg(feature = "hydrate")]
+    let tooltip_data = RwSignal::new(None::<TooltipData>);
+    #[cfg(not(feature = "hydrate"))]
     let tooltip_data = RwSignal::new(None::<(String, String, f64, f64)>);
 
     // Create signal for topology_id (needed for connection creation)
@@ -578,21 +581,88 @@ pub fn TopologyViewport(
                 }
             }}
 
-            // Tooltip display - shows node name and type on hover
+            // Tooltip display - shows node or connection info on hover
             {move || {
-                tooltip_data.get().map(|(name, node_type, x, y)| {
-                    view! {
-                        <div
-                            class="absolute bg-gray-900 text-white px-3 py-2 rounded shadow-lg text-sm pointer-events-none"
-                            style:left=format!("{}px", x + 10.0)
-                            style:top=format!("{}px", y + 10.0)
-                            style="z-index: 1000;"
-                        >
-                            <div class="font-semibold">{name}</div>
-                            <div class="text-gray-400 text-xs">{node_type}</div>
-                        </div>
-                    }
-                })
+                #[cfg(feature = "hydrate")]
+                {
+                    tooltip_data.get().map(|data| {
+                        match data {
+                            TooltipData::Node { name, node_type, x, y } => view! {
+                                <div
+                                    class="absolute bg-gray-900 text-white px-3 py-2 rounded shadow-lg text-sm pointer-events-none"
+                                    style:left=format!("{}px", x + 10.0)
+                                    style:top=format!("{}px", y + 10.0)
+                                    style="z-index: 1000;"
+                                >
+                                    <div class="font-semibold">{name}</div>
+                                    <div class="text-gray-400 text-xs">{node_type}</div>
+                                </div>
+                            }.into_any(),
+                            TooltipData::Connection { source, target, utilization, latency, packet_loss, throughput, x, y } => view! {
+                                <div
+                                    class="absolute bg-gray-900 text-white px-3 py-2 rounded shadow-lg text-sm pointer-events-none"
+                                    style:left=format!("{}px", x + 10.0)
+                                    style:top=format!("{}px", y + 10.0)
+                                    style="z-index: 1000;"
+                                >
+                                    <div class="font-semibold mb-1">{format!("{} → {}", source, target)}</div>
+                                    {utilization.map(|util| view! {
+                                        <div class="text-xs">
+                                            <span class="text-gray-400">"Utilization: "</span>
+                                            <span class={
+                                                if util < 40.0 { "text-green-400 font-semibold" }
+                                                else if util < 70.0 { "text-orange-400 font-semibold" }
+                                                else { "text-red-400 font-semibold" }
+                                            }>{format!("{:.1}%", util)}</span>
+                                        </div>
+                                    })}
+                                    {throughput.map(|tp| view! {
+                                        <div class="text-xs">
+                                            <span class="text-gray-400">"Throughput: "</span>
+                                            <span class="text-blue-400">{format!("{:.1} Mbps", tp)}</span>
+                                        </div>
+                                    })}
+                                    {latency.map(|lat| view! {
+                                        <div class="text-xs">
+                                            <span class="text-gray-400">"Latency: "</span>
+                                            <span class={
+                                                if lat < 20.0 { "text-green-400" }
+                                                else if lat < 50.0 { "text-yellow-400" }
+                                                else { "text-orange-400" }
+                                            }>{format!("{:.1} ms", lat)}</span>
+                                        </div>
+                                    })}
+                                    {packet_loss.map(|loss| view! {
+                                        <div class="text-xs">
+                                            <span class="text-gray-400">"Packet Loss: "</span>
+                                            <span class={
+                                                if loss < 0.5 { "text-green-400" }
+                                                else if loss < 2.0 { "text-yellow-400" }
+                                                else { "text-red-400" }
+                                            }>{format!("{:.2}%", loss)}</span>
+                                        </div>
+                                    })}
+                                </div>
+                            }.into_any(),
+                        }
+                    })
+                }
+                #[cfg(not(feature = "hydrate"))]
+                {
+                    tooltip_data.get().map(|(name, node_type, x, y)| {
+                        view! {
+                            <div
+                                class="absolute bg-gray-900 text-white px-3 py-2 rounded shadow-lg text-sm pointer-events-none"
+                                style:left=format!("{}px", x + 10.0)
+                                style:top=format!("{}px", y + 10.0)
+                                style="z-index: 1000;"
+                            >
+                                <div class="font-semibold">{name}</div>
+                                <div class="text-gray-400 text-xs">{node_type}</div>
+                            </div>
+                        }
+                    })
+                }
             }}
 
             // Camera controls overlay - top right corner (compact 2x2 grid)
@@ -687,6 +757,23 @@ fn convert_linear_color_to_srgba(linear: &three_d_asset::Srgba) -> three_d_asset
     )
 }
 
+// Tooltip data - supports both nodes and connections
+#[cfg(feature = "hydrate")]
+#[derive(Clone, Debug)]
+enum TooltipData {
+    Node { name: String, node_type: String, x: f64, y: f64 },
+    Connection {
+        source: String,
+        target: String,
+        utilization: Option<f64>,
+        latency: Option<f64>,
+        packet_loss: Option<f64>,
+        throughput: Option<f64>,
+        x: f64,
+        y: f64
+    },
+}
+
 // Node data for selection and tooltip
 #[cfg(feature = "hydrate")]
 struct NodeData {
@@ -697,13 +784,19 @@ struct NodeData {
     radius: f32,
 }
 
-// Connection data for selection
+// Connection data for selection and tooltips
 #[cfg(feature = "hydrate")]
 struct ConnectionData {
     id: i64,
+    source_name: String,
+    target_name: String,
     source_pos: three_d::Vec3,
     target_pos: three_d::Vec3,
     radius: f32, // Cylinder radius for hit detection
+    utilization: Option<f64>, // Traffic utilization percentage
+    latency: Option<f64>, // Latency in ms
+    packet_loss: Option<f64>, // Packet loss percentage
+    throughput: Option<f64>, // Throughput in Mbps
 }
 
 // Ray-cylinder intersection test
@@ -786,7 +879,7 @@ async fn initialize_threed_viewport(
     render_fn_storage: Rc<RefCell<Option<Rc<dyn Fn(CameraState)>>>>,
     nodes_data_storage: Rc<RefCell<Vec<NodeData>>>,
     connections_data_storage: Rc<RefCell<Vec<ConnectionData>>>,
-    tooltip_data: RwSignal<Option<(String, String, f64, f64)>>,
+    tooltip_data: RwSignal<Option<TooltipData>>,
     show_grid: bool,
     show_x_axis: bool,
     show_y_axis: bool,
@@ -939,6 +1032,12 @@ async fn initialize_threed_viewport(
             ..Default::default()
         },
     );
+
+    // Build node name map for connection tooltips
+    let mut node_names = std::collections::HashMap::new();
+    for node in &topology_data.nodes {
+        node_names.insert(node.id, node.name.clone());
+    }
 
     for node in &topology_data.nodes {
         // Map database coordinates to Blender convention (XY floor, Z up)
@@ -1170,12 +1269,38 @@ async fn initialize_threed_viewport(
             node_positions.get(&conn.source_node_id),
             node_positions.get(&conn.target_node_id),
         ) {
-            // Store connection data for selection (use larger radius for easier clicking)
+            // Get node names and traffic metrics for tooltip
+            let source_name = node_names.get(&conn.source_node_id).cloned().unwrap_or_else(|| format!("Node {}", conn.source_node_id));
+            let target_name = node_names.get(&conn.target_node_id).cloned().unwrap_or_else(|| format!("Node {}", conn.target_node_id));
+
+            // Extract all metrics if traffic data exists
+            let (utilization, latency, packet_loss, throughput) = if let Some(ref metrics) = traffic_metrics {
+                if let Some(metric) = metrics.get(&conn.id) {
+                    (
+                        Some(metric.utilization_pct),
+                        Some(metric.latency_ms),
+                        Some(metric.packet_loss_pct),
+                        Some(metric.throughput_mbps),
+                    )
+                } else {
+                    (None, None, None, None)
+                }
+            } else {
+                (None, None, None, None)
+            };
+
+            // Store connection data for selection and tooltip (use larger radius for easier clicking)
             connections_data.push(ConnectionData {
                 id: conn.id,
+                source_name,
+                target_name,
                 source_pos: start_pos,
                 target_pos: end_pos,
                 radius: 0.15, // Larger than visual radius for easier clicking
+                utilization,
+                latency,
+                packet_loss,
+                throughput,
             });
 
             // Determine connection color - use traffic data if available, otherwise custom color
@@ -1458,7 +1583,7 @@ fn initialize_threed_viewport_test(
     selected_node_id_signal: RwSignal<Option<i64>>,
     selected_item_signal: RwSignal<Option<crate::islands::topology_editor::SelectedItem>>,
     render_fn_storage: Rc<RefCell<Option<Rc<dyn Fn(CameraState)>>>>,
-    tooltip_data: RwSignal<Option<(String, String, f64, f64)>>,
+    tooltip_data: RwSignal<Option<TooltipData>>,
     background_color: Option<(u8, u8, u8)>,
     connection_mode: Option<RwSignal<crate::islands::topology_editor::ConnectionMode>>,
     refetch_trigger: Option<RwSignal<u32>>,
@@ -1623,7 +1748,7 @@ fn setup_orbit_controls(
     connections_data: Rc<RefCell<Vec<ConnectionData>>>,
     selected_node_id_signal: RwSignal<Option<i64>>,
     selected_item_signal: RwSignal<Option<crate::islands::topology_editor::SelectedItem>>,
-    tooltip_data: RwSignal<Option<(String, String, f64, f64)>>,
+    tooltip_data: RwSignal<Option<TooltipData>>,
     connection_mode: Option<RwSignal<crate::islands::topology_editor::ConnectionMode>>,
     refetch_trigger: Option<RwSignal<u32>>,
     current_topology_id: Option<RwSignal<i64>>,
@@ -2035,9 +2160,47 @@ fn setup_orbit_controls(
                     // Update tooltip data with canvas-relative coordinates (guard against disposal)
                     if !*is_disposed.lock().unwrap() {
                         if let Some(node) = hovered_node {
-                            tooltip_data.set(Some((node.name.clone(), node.node_type.clone(), x, y)));
+                            tooltip_data.set(Some(TooltipData::Node {
+                                name: node.name.clone(),
+                                node_type: node.node_type.clone(),
+                                x,
+                                y,
+                            }));
                         } else {
-                            tooltip_data.set(None);
+                            // No node hovered - check for connection hover
+                            let connections = connections_data.borrow();
+                            let mut hovered_connection: Option<&ConnectionData> = None;
+                            let mut closest_t = f32::MAX;
+
+                            for conn in connections.iter() {
+                                if let Some(t) = ray_cylinder_intersection(
+                                    eye,
+                                    ray_dir,
+                                    conn.source_pos,
+                                    conn.target_pos,
+                                    conn.radius,
+                                ) {
+                                    if t > 0.0 && t < closest_t {
+                                        closest_t = t;
+                                        hovered_connection = Some(conn);
+                                    }
+                                }
+                            }
+
+                            if let Some(conn) = hovered_connection {
+                                tooltip_data.set(Some(TooltipData::Connection {
+                                    source: conn.source_name.clone(),
+                                    target: conn.target_name.clone(),
+                                    utilization: conn.utilization,
+                                    latency: conn.latency,
+                                    packet_loss: conn.packet_loss,
+                                    throughput: conn.throughput,
+                                    x,
+                                    y,
+                                }));
+                            } else {
+                                tooltip_data.set(None);
+                            }
                         }
                     }
                 }

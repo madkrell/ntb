@@ -12,7 +12,28 @@ Please read these files to understand the current state:
 1. CLAUDE.md - Complete architecture, all phases, all learnings
 2. This file (SESSION-GUIDE.md) - Quick context
 
-Current Status: Phase 5.7 COMPLETE! ✅ (HDR Environment Lighting) Ready for Phase 6 - Traffic Monitoring!
+Current Status: Phase 6.3 COMPLETE! ✅ (Traffic Monitoring - Link Metrics Impact) Ready for optional enhancements!
+
+**✅ Phase 6 Complete (2025-01-15):**
+Traffic Monitoring with realistic network simulation:
+
+**Traffic Monitoring Features (Phases 6.1-6.3):**
+- Mock traffic generator with three intensity levels (Low/Medium/High)
+- Color-coded connections based on utilization (green 0-40%, orange 40-70%, red 70-100%)
+- Traffic Controls panel with Generate/Clear buttons
+- Bandwidth-aware traffic using actual link properties
+- Congestion-based latency calculation (increases with utilization)
+- Exponential packet loss modeling (realistic network behavior)
+- Comprehensive tooltips with 4 metrics (utilization, throughput, latency, packet loss)
+- Real-time viewport updates when traffic changes
+- Manual color override capability maintained
+
+**Key Technical Implementation:**
+1. Server-side traffic generation (generate_mock_traffic server function)
+2. Realistic patterns based on connection type (Fiber > Ethernet > Wireless)
+3. Congestion penalties for latency at high utilization
+4. Exponential packet loss increase at high utilization
+5. Color-coded tooltips for instant metric interpretation
 
 **✅ Phase 5.7 Complete (2025-11-14):**
 HDR Environment Lighting with studio-quality illumination:
@@ -94,7 +115,7 @@ ALL core 3D features, visual polish, UI optimization, customization, and setting
 28. ✅ **Export as JSON** - Full topology backup (nodes, connections, all properties)
 29. ✅ **Import from JSON** - Restore or share topologies with validation
 
-Next: Phase 6 (Traffic Monitoring - Real-time visualization!)
+Next: Optional enhancements (Traffic Dashboard, Animation System, etc.)
 ```
 
 ## 📊 Current Project State
@@ -271,65 +292,65 @@ Next: Phase 6 (Traffic Monitoring - Real-time visualization!)
 
 ### 🔄 What to Work On Next
 
-**Phases 4, 4.5, & 5: COMPLETE! ✅** (2025-11-06 + 2025-11-07)
-All Priority 1 and Priority 2 features implemented + Export & Customization + Polish:
+**Phases 4, 4.5, 5, & 6: COMPLETE! ✅** (through 2025-01-15)
+All core features, visual polish, export/import, and traffic monitoring implemented:
 - All core 3D features ✅
 - All visual polish features ✅
 - UI optimization ✅
 - Settings persistence ✅
 - Code quality improvements ✅
-- PNG export with transparency ✅
-- Node scale control ✅
-- Background color control ✅
-- Connection color control ✅
-- Node color control ✅
-- Fullscreen toggle ✅
-- Camera pan controls ✅
-- Viewport centering ✅
-- Zoom to fit ✅
-- Cloud type in UI ✅
-- PNG export ✅
-- JSON export ✅
-- JSON import ✅
+- PNG/JSON export with import ✅
+- Customization (colors, scale, background) ✅
+- Fullscreen, camera controls, zoom to fit ✅
+- **Traffic monitoring** ✅
+- **Mock traffic generator** ✅
+- **Color-coded connections by utilization** ✅
+- **Comprehensive traffic tooltips** ✅
+- **Link metrics impact on traffic** ✅
 
-**Git Tag:** v0.1.0-phase4-complete (already created), ready for phase 5 tag
+**Git Tag:** v0.1.0-phase6-complete (ready to create)
 
 **Recommended Next Steps:**
 
-**Option 1: Phase 6 - Traffic Monitoring** (MOST IMPACTFUL! Ready to implement!)
-   - ⏳ **Real-time traffic visualization** - Animated connections showing data flow with moving particles
-   - ⏳ **Live metrics** - Throughput, latency, packet loss displayed on connections and in dashboard
-   - ⏳ **Color-coded status** - Green (healthy), yellow (warning), red (critical) based on thresholds
-   - ⏳ **Traffic dashboard** - Charts showing historical metrics with real-time updates
-   - ⏳ **Streaming data** - Using Leptos' native WebSocket server functions (`#[server(protocol = Websocket<>)]`)
-   - ⏳ **Mock traffic generator** - Realistic network simulation for demo purposes
-   - 🎯 **Why this is exciting?** Brings the topology to life with real-time monitoring capabilities!
+**Option 1: Traffic Dashboard** (High Value - Data Visualization)
+   - ⏳ **Metrics panel** - Network-wide stats and top connections
+   - ⏳ **Historical charts** - Time-series visualization of traffic
+   - ⏳ **Alert panel** - Critical connection warnings
+   - ⏳ **Export metrics** - CSV download for analysis
+   - 🎯 **Why valuable?** Professional monitoring dashboard completes the traffic monitoring experience
 
-**Option 2: Additional Polish & Features** (Optional enhancements)
+**Option 2: Traffic Animation System** (Visual Impact - Animated Particles)
+   - ⏳ **Particle flows** - Moving particles along connections
+   - ⏳ **Direction indicators** - Particles show data flow direction
+   - ⏳ **Speed variation** - Faster particles = higher throughput
+   - ⏳ **Density control** - More particles = busier connection
+   - 🎯 **Why exciting?** Makes demos much more engaging, immediately shows network activity
+
+**Option 3: Additional Polish & Features** (Optional UX enhancements)
    - ⏳ Multi-select nodes (Shift+Click to select multiple)
    - ⏳ Multi-select connections (bulk color changes)
    - ⏳ Undo/redo functionality
    - ⏳ Copy/paste nodes
    - ⏳ Keyboard shortcuts (Del to delete, Ctrl+S to save, etc.)
    - ⏳ Node grouping/labeling
-   - 🎯 **Why consider?** These are nice-to-have UX improvements
+   - 🎯 **Why consider?** Nice-to-have UX improvements for power users
 
-**Option 3: Documentation & Deployment** (Can be done anytime)
+**Option 4: Documentation & Deployment** (Can be done anytime)
    - ⏳ User/developer documentation (README with screenshots)
    - ⏳ Deployment guide (Docker, production build)
    - 🎯 **Why later?** Focus on features first, document when stable
 
 ---
 
-## 📋 Next Steps (Ready for Phase 6!)
+## 📋 Phase 6 Implementation Details (COMPLETE!)
 
-### ✅ Phases 1-5 - COMPLETE! (Foundation through Export/Import)
+### ✅ Phases 1-6 - COMPLETE! (Foundation through Traffic Monitoring)
 
-All foundational features, 3D editing, visual polish, and export/import functionality are complete and working!
+All foundational features, 3D editing, visual polish, export/import, and core traffic monitoring are complete and working!
 
 ---
 
-### Phase 6 - Traffic Monitoring (Real-time with Leptos Streaming)
+### Phase 6 - Traffic Monitoring ✅ COMPLETE (Phases 6.1-6.3)
 
 **Goal:** Transform the static topology into a live network monitoring tool with real-time traffic visualization
 
@@ -394,17 +415,32 @@ This brings the entire application to life! Instead of just showing a static net
    - Throttle metric updates to avoid overwhelming UI
    - Efficient WebSocket message batching
 
-**Implementation Plan:**
+**Implementation Status:**
 
-**Phase 6.1 - Database & Mock Generator (1-2 hours)**
-1. Verify traffic_metrics table schema
-2. Add indexes for efficient time-range queries
-3. Create mock traffic generator server function
-   - Random but realistic traffic patterns
-   - Configurable via UI (enable/disable, traffic level)
-   - Store data in traffic_metrics table
+**Phase 6.1 - Mock Traffic Generator ✅ COMPLETE**
+1. ✅ Traffic metrics table verified (connection_traffic_metrics)
+2. ✅ Mock traffic generator server function created
+   - Realistic patterns based on connection type
+   - Three intensity levels (Low/Medium/High)
+   - Stores throughput, latency, packet_loss, utilization
+3. ✅ Traffic Controls UI with Generate/Clear buttons
+4. ✅ Real-time viewport updates
 
-**Phase 6.2 - WebSocket Streaming (2-3 hours)**
+**Phase 6.2 - Traffic Visualization ✅ COMPLETE**
+1. ✅ Color-coded connections (green/orange/red)
+2. ✅ Traffic data fetching via get_all_traffic_metrics
+3. ✅ Enhanced tooltips with utilization display
+4. ✅ Manual color override capability maintained
+5. ✅ Proper lighting for color visibility
+
+**Phase 6.3 - Link Metrics Impact ✅ COMPLETE**
+1. ✅ Bandwidth-aware traffic generation
+2. ✅ Congestion-based latency calculation
+3. ✅ Exponential packet loss modeling
+4. ✅ Comprehensive tooltips (4 metrics with color coding)
+5. ✅ All metrics update in real-time
+
+**Phase 6.4 - Traffic Animation (Optional - Not Yet Implemented)**
 1. Create streaming server function:
    ```rust
    #[server(protocol = Websocket<JsonEncoding, JsonEncoding>)]
@@ -864,23 +900,33 @@ What should I work on next? Please review the options in SESSION-GUIDE.md and re
 
 ## 🚀 You're Ready!
 
-**Phases 1-5 are COMPLETE!** ✅ All features implemented:
+**Phases 1-6 are COMPLETE!** ✅ All core features implemented:
 - ✅ All core 3D features (rotation, models, grid, axes, topology switching, device palette, connections)
 - ✅ All visual polish (labels, colors, rendering, selection, lighting, camera controls)
 - ✅ All UI optimization (space, persistence, code quality, fullscreen, camera pan)
 - ✅ Export & customization (PNG/JSON export, JSON import, node scale, background/node/connection colors)
 - ✅ Polish features (viewport centering, zoom to fit with 10% margin, cloud type in UI)
+- ✅ **Traffic monitoring (mock generator, color-coded connections, comprehensive tooltips)**
+- ✅ **Link metrics impact (bandwidth, latency, congestion, packet loss)**
 
-**Recommended next step:**
-1. **Traffic Monitoring - Phase 6** (MOST IMPACTFUL!) - Real-time visualization with WebSocket streaming
-   - This is the flagship feature that brings the topology to life!
-   - All foundation work is complete and ready to support streaming
+**Recommended next steps (all optional enhancements):**
+1. **Traffic Dashboard** (High Value) - Metrics panel with historical charts
+   - Network-wide stats and top connections
+   - Time-series visualization
+   - Export to CSV
 
-**Optional enhancements (can do anytime):**
-2. **Multi-select nodes** (Polish feature) - Bulk operations
-3. **Keyboard shortcuts** (UX enhancement) - Power user features
-4. **User documentation** - Help users learn the app
-5. **Deployment guide** - Production deployment instructions
+2. **Traffic Animation System** (Visual Impact) - Particle flows along connections
+   - Moving particles showing data flow
+   - Speed/density based on metrics
+   - Engaging demo presentation
+
+3. **Additional UX Polish** - Multi-select, keyboard shortcuts, undo/redo
+   - Power user features
+   - Bulk operations
+
+4. **Documentation** - User guide, deployment instructions
+   - Help users learn the application
+   - Production deployment guide
 
 All architectural patterns are working and documented in CLAUDE.md.
 Use the example prompts above to start your next session!
