@@ -1358,3 +1358,52 @@ pub async fn set_last_topology_id(topology_id: i64) -> Result<(), ServerFnError>
         unreachable!("Server function called on client")
     }
 }
+
+/// Create a new blank topology with auto-generated name
+#[server(CreateBlankTopology, "/api")]
+pub async fn create_blank_topology() -> Result<Topology, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+
+        let Extension(pool) = extract::<Extension<SqlitePool>>()
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+        // Generate unique name with timestamp
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let name = format!("New Topology #{}", timestamp);
+
+        let result = sqlx::query(
+            "INSERT INTO topologies (name, description) VALUES (?, ?)"
+        )
+        .bind(&name)
+        .bind(Some("Created via UI"))
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+        let id = result.last_insert_rowid();
+
+        // Fetch the created topology
+        let topology = sqlx::query_as::<_, Topology>(
+            "SELECT id, name, description, created_at, updated_at FROM topologies WHERE id = ?"
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+        Ok(topology)
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}

@@ -566,17 +566,8 @@ fn TopToolbar() -> impl IntoView {
     // Create new topology action
     let create_new_topology_action = Action::new(move |_: &()| {
         async move {
-            use crate::api::create_topology;
-            use crate::models::CreateTopology;
-
-            // Generate unique name using timestamp
-            let counter = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-
-            let new_topology_data = CreateTopology {
-                name: format!("New Topology #{}", counter),
-                description: Some("Created via UI".to_string()),
-            };
-            create_topology(new_topology_data).await
+            use crate::api::create_blank_topology;
+            create_blank_topology().await
         }
     });
 
