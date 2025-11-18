@@ -245,6 +245,24 @@ pub fn TopologyEditor(
     // Panel visibility controls - single fullscreen toggle
     let fullscreen_mode = RwSignal::new(false);
 
+    // Save topology ID whenever it changes and stop animation on startup
+    Effect::new(move || {
+        let topology_id = current_topology_id.get();
+
+        // Save to database
+        spawn_local(async move {
+            use crate::api::set_last_topology_id;
+            let _ = set_last_topology_id(topology_id).await;
+        });
+
+        // Stop animation when topology changes (will be restarted by Generate Traffic button)
+        #[cfg(feature = "hydrate")]
+        {
+            use crate::islands::topology_viewport::stop_particle_animation;
+            stop_particle_animation();
+        }
+    });
+
     // Keyboard shortcuts handler
     #[cfg(feature = "hydrate")]
     {
@@ -545,6 +563,37 @@ fn TopToolbar() -> impl IntoView {
         }
     });
 
+    // Create new topology action
+    let create_new_topology_action = Action::new(move |_: &()| {
+        async move {
+            use crate::api::create_topology;
+            use crate::models::CreateTopology;
+
+            // Generate unique name using timestamp
+            let counter = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+
+            let new_topology_data = CreateTopology {
+                name: format!("New Topology #{}", counter),
+                description: Some("Created via UI".to_string()),
+            };
+            create_topology(new_topology_data).await
+        }
+    });
+
+    // After creating new topology, switch to it
+    Effect::new(move || {
+        if let Some(Ok(new_topology)) = create_new_topology_action.value().get() {
+            // Refetch topologies list
+            topology_list_trigger.update(|v| *v += 1);
+            // Switch to the new topology
+            current_topology_id.set(new_topology.id);
+            // Clear selection
+            selected_item.set(None);
+            // Trigger viewport refresh
+            refetch_trigger.update(|v| *v += 1);
+        }
+    });
+
     // Delete topology action
     let delete_topology_action = Action::new(move |_: &()| {
         let topology_id = current_topology_id.get_untracked();
@@ -694,6 +743,19 @@ fn TopToolbar() -> impl IntoView {
                     }}
                 </Suspense>
             </div>
+
+            // Create New Topology button
+            <button
+                class="px-3 py-1.5 bg-green-600 hover:bg-green-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                on:click=move |_| { create_new_topology_action.dispatch(()); }
+                disabled=move || create_new_topology_action.pending().get()
+            >
+                {move || if create_new_topology_action.pending().get() {
+                    "Creating..."
+                } else {
+                    "+ New Topology"
+                }}
+            </button>
 
             // Delete Topology button with confirmation
             <div class="relative">
@@ -2538,6 +2600,19 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
     Effect::new(move || {
         if let Some(Ok(_)) = save_action.value().get() {
             refetch_trigger.update(|v| *v += 1);
+        }
+    });
+
+    // Auto-save when traffic flow settings change
+    Effect::new(move || {
+        // Track changes to carries_traffic and flow_direction
+        let _carries = carries_traffic.get();
+        let _direction = flow_direction.get();
+
+        // Skip on first load (when data is being populated from Resource)
+        if connection_data.get().is_some() {
+            // Debounce: only save if we have a valid connection loaded
+            save_action.dispatch(());
         }
     });
 

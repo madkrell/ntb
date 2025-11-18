@@ -45,7 +45,14 @@
       "Bash(command -v sips:*)",
       "Bash(qlmanage -t -s 32 -o /tmp public/ntv_logo.svg:*)",
       "Bash(sqlx migrate run:*)",
-      "Bash(awk:*)"
+      "Bash(awk:*)",
+      "Bash(git stash:*)",
+      "Bash(cargo tree:*)",
+      "Bash(ls:*)",
+      "Bash(wait)",
+      "Bash(cat:*)",
+      "Bash(tee:*)",
+      "Bash(git restore:*)"
     ],
     "deny": [],
     "ask": []

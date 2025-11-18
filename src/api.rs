@@ -1301,3 +1301,60 @@ pub async fn clean_old_traffic_metrics() -> Result<usize, ServerFnError> {
         unreachable!("Server function called on client")
     }
 }
+
+/// Get the last viewed topology ID from ui_settings
+#[server(GetLastTopologyId, "/api")]
+pub async fn get_last_topology_id() -> Result<Option<i64>, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+
+        let Extension(pool): Extension<SqlitePool> = extract()
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+        let result: Option<(Option<i64>,)> = sqlx::query_as(
+            "SELECT last_topology_id FROM ui_settings WHERE id = 1"
+        )
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+        Ok(result.and_then(|(id,)| id))
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}
+
+/// Set the last viewed topology ID in ui_settings
+#[server(SetLastTopologyId, "/api")]
+pub async fn set_last_topology_id(topology_id: i64) -> Result<(), ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+
+        let Extension(pool): Extension<SqlitePool> = extract()
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+        sqlx::query(
+            "UPDATE ui_settings SET last_topology_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1"
+        )
+        .bind(topology_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+        Ok(())
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}

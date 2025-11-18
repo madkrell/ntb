@@ -52,9 +52,32 @@ pub fn App() -> impl IntoView {
 #[component]
 fn HomePage() -> impl IntoView {
     use crate::islands::TopologyEditor;
+    use crate::api::{get_last_topology_id, clear_traffic_data, get_topologies};
+    use leptos::task::spawn_local;
 
-    // Create a signal for the current topology ID (default to 1)
+    // Create a signal for the current topology ID (will be loaded from database)
     let current_topology_id = RwSignal::new(1i64);
+
+    // Load the last viewed topology and clear traffic on startup
+    Effect::new(move || {
+        spawn_local(async move {
+            // Get the last viewed topology ID
+            if let Ok(Some(last_id)) = get_last_topology_id().await {
+                current_topology_id.set(last_id);
+
+                // Clear traffic data for this topology on startup
+                let _ = clear_traffic_data(last_id).await;
+            } else {
+                // If no last topology, try to get the first available topology
+                if let Ok(topologies) = get_topologies().await {
+                    if let Some(first_topology) = topologies.first() {
+                        current_topology_id.set(first_topology.id);
+                        let _ = clear_traffic_data(first_topology.id).await;
+                    }
+                }
+            }
+        });
+    });
 
     // Use TopologyEditor with full-screen layout
     view! {
