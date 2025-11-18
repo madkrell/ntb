@@ -37,6 +37,17 @@ impl CameraState {
     }
 }
 
+/// Traffic particle for animation along connections
+#[cfg(feature = "hydrate")]
+#[derive(Clone, Debug)]
+struct TrafficParticle {
+    connection_id: i64,
+    position: f32,  // 0.0 to 1.0 along connection path
+    speed: f32,     // Movement speed per frame (units per second)
+    color: three_d::Srgba,  // Particle color based on utilization
+    direction_forward: bool, // true = source->target, false = target->source
+}
+
 #[cfg(feature = "hydrate")]
 impl Default for CameraState {
     fn default() -> Self {

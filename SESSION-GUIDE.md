@@ -12,9 +12,9 @@ Please read these files to understand the current state:
 1. CLAUDE.md - Complete architecture, all phases, all learnings
 2. This file (SESSION-GUIDE.md) - Quick context
 
-Current Status: Phase 6.3 COMPLETE! ✅ (Traffic Monitoring - Link Metrics Impact) Ready for optional enhancements!
+Current Status: Phase 6.4.1 COMPLETE! ✅ (Traffic Flow Controls) Ready for Phase 6.4.2 - Particle Animation!
 
-**✅ Phase 6 Complete (2025-01-15):**
+**✅ Phase 6.1-6.3 Complete (2025-01-15):**
 Traffic Monitoring with realistic network simulation:
 
 **Traffic Monitoring Features (Phases 6.1-6.3):**
@@ -27,6 +27,18 @@ Traffic Monitoring with realistic network simulation:
 - Comprehensive tooltips with 4 metrics (utilization, throughput, latency, packet loss)
 - Real-time viewport updates when traffic changes
 - Manual color override capability maintained
+
+**✅ Phase 6.4.1 Complete (2025-01-18):**
+Traffic Flow Controls - User control over traffic animation:
+
+**Traffic Flow Control Features:**
+- Database migration: carries_traffic (BOOLEAN) and flow_direction (TEXT) fields
+- Properties Panel checkbox: Enable/disable traffic animation per connection
+- Properties Panel radio buttons: Control flow direction (source→target, target→source, bidirectional)
+- Swap Source/Target button: Reverse connection direction with one click
+- TrafficParticle struct: Foundation for particle animation system
+- SQLite validation triggers: Enforce valid flow directions
+- All SQL queries updated: Include new traffic flow fields
 
 **Key Technical Implementation:**
 1. Server-side traffic generation (generate_mock_traffic server function)
@@ -292,8 +304,8 @@ Next: Optional enhancements (Traffic Dashboard, Animation System, etc.)
 
 ### 🔄 What to Work On Next
 
-**Phases 4, 4.5, 5, & 6: COMPLETE! ✅** (through 2025-01-15)
-All core features, visual polish, export/import, and traffic monitoring implemented:
+**Phases 4, 4.5, 5, 6.1-6.3, & 6.4.1: COMPLETE! ✅** (through 2025-01-18)
+All core features, visual polish, export/import, traffic monitoring, and flow controls implemented:
 - All core 3D features ✅
 - All visual polish features ✅
 - UI optimization ✅
@@ -307,8 +319,12 @@ All core features, visual polish, export/import, and traffic monitoring implemen
 - **Color-coded connections by utilization** ✅
 - **Comprehensive traffic tooltips** ✅
 - **Link metrics impact on traffic** ✅
+- **Traffic flow controls** ✅
+- **Swap Source/Target button** ✅
 
-**Git Tag:** v0.1.0-phase6-complete (ready to create)
+**Git Tag:** v0.1.0-phase6.4.1-complete (ready to create)
+
+**IMMEDIATE NEXT STEP: Phase 6.4.2 - Particle Animation System 🎯**
 
 **Recommended Next Steps:**
 
@@ -319,12 +335,19 @@ All core features, visual polish, export/import, and traffic monitoring implemen
    - ⏳ **Export metrics** - CSV download for analysis
    - 🎯 **Why valuable?** Professional monitoring dashboard completes the traffic monitoring experience
 
-**Option 2: Traffic Animation System** (Visual Impact - Animated Particles)
+**Option 2: Particle Animation System - Phase 6.4.2** (IMMEDIATE NEXT - Visual Impact)
+   - 🎯 **RECOMMENDED NEXT STEP** - Foundation already in place!
+   - ⏳ **Particle storage** - Vec<TrafficParticle> in Rc<RefCell<>>
+   - ⏳ **Spawning logic** - Based on utilization thresholds (1-3, 3-7, 7-12 particles)
+   - ⏳ **Animation loop** - 60fps updates with requestAnimationFrame
+   - ⏳ **Render particles** - Small glowing spheres using three-d
+   - ⏳ **Conditional rendering** - Only when traffic exists and carries_traffic=true
    - ⏳ **Particle flows** - Moving particles along connections
    - ⏳ **Direction indicators** - Particles show data flow direction
    - ⏳ **Speed variation** - Faster particles = higher throughput
    - ⏳ **Density control** - More particles = busier connection
    - 🎯 **Why exciting?** Makes demos much more engaging, immediately shows network activity
+   - 🎯 **Why now?** Phase 6.4.1 complete - database, UI controls, TrafficParticle struct ready!
 
 **Option 3: Additional Polish & Features** (Optional UX enhancements)
    - ⏳ Multi-select nodes (Shift+Click to select multiple)
@@ -440,19 +463,35 @@ This brings the entire application to life! Instead of just showing a static net
 4. ✅ Comprehensive tooltips (4 metrics with color coding)
 5. ✅ All metrics update in real-time
 
-**Phase 6.4 - Traffic Animation (Optional - Not Yet Implemented)**
-1. Create streaming server function:
-   ```rust
-   #[server(protocol = Websocket<JsonEncoding, JsonEncoding>)]
-   async fn stream_traffic_metrics(
-       input: BoxedStream<TrafficRequest, ServerFnError>
-   ) -> Result<BoxedStream<TrafficMetrics, ServerFnError>, ServerFnError>
-   ```
-2. Client-side signal creation:
-   ```rust
-   let traffic_signal = Signal::from_stream(traffic_stream);
-   ```
-3. Handle connection lifecycle (connect, disconnect, reconnect)
+**Phase 6.4.1 - Traffic Flow Controls ✅ COMPLETE (2025-01-18)**
+1. ✅ Database migration with carries_traffic and flow_direction fields
+2. ✅ Connection model updated (src/models/connection.rs:19-20)
+3. ✅ All SQL queries updated (5 locations in api.rs)
+4. ✅ Properties Panel UI with checkbox and radio buttons
+5. ✅ Swap Source/Target button (reverse connection direction)
+6. ✅ TrafficParticle struct defined (topology_viewport.rs:40-49)
+
+**Phase 6.4.2 - Particle Animation System (IN PROGRESS - Next Steps)**
+1. ⏳ Add particle storage (Vec<TrafficParticle> in Rc<RefCell<>>)
+2. ⏳ Implement spawning logic:
+   - Read traffic metrics from database
+   - Check carries_traffic flag (only spawn if true)
+   - Determine particle count based on utilization:
+     - <40%: 1-3 particles
+     - 40-70%: 3-7 particles
+     - >70%: 7-12 particles
+3. ⏳ Create animation loop:
+   - Use requestAnimationFrame for 60fps updates
+   - Update particle positions (position += speed * delta_time)
+   - Recycle particles at destination (reset position to 0.0)
+4. ⏳ Render particles:
+   - Create small glowing spheres using three-d
+   - Color based on utilization (green/orange/red)
+   - Scale: 0.05-0.1 units for visibility
+5. ⏳ Conditional rendering:
+   - Only render when traffic metrics exist
+   - Only render on connections with carries_traffic=true
+   - Respect flow_direction (forward/backward/bidirectional)
 
 **Phase 6.3 - Animated Connections (3-4 hours)**
 1. Particle system for connection animations
@@ -802,25 +841,43 @@ Goals (Database & Mock Generator):
 This sets the foundation for real-time streaming in Phase 6.2!
 ```
 
-### Option 4: Traffic Monitoring - Phase 6.2 (WebSocket Streaming)
+### Option 4: Traffic Animation - Phase 6.4.2 (Particle System) 🎯 RECOMMENDED NEXT
 ```
-I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntv/
+I'm continuing the Network Topology Visualizer at /Users/mattearp/Documents/CodeProjects/ntb/
 
 Read CLAUDE.md and SESSION-GUIDE.md for complete context.
 
-Current Status: Phase 6.1 COMPLETE! ✅ (Mock generator working)
+Current Status: Phase 6.4.1 COMPLETE! ✅ (Traffic flow controls implemented)
 
-Let's implement Phase 6.2 - WebSocket Streaming:
+Let's implement Phase 6.4.2 - Particle Animation System:
 
-Goals:
-1. Create streaming server function using Leptos WebSocket protocol:
-   #[server(protocol = Websocket<JsonEncoding, JsonEncoding>)]
-2. Stream traffic metrics from database to client (every 100-500ms)
-3. Client-side: Use Signal::from_stream() for reactive data binding
-4. Handle connection lifecycle (connect, disconnect, reconnect)
-5. Test with mock generator to verify streaming works
+Goals (3D Traffic Animation):
+1. Add particle storage (Vec<TrafficParticle> in Rc<RefCell<>>)
+2. Implement spawning logic based on traffic metrics:
+   - Check carries_traffic flag (only spawn if true)
+   - Determine particle count based on utilization:
+     - <40%: 1-3 particles
+     - 40-70%: 3-7 particles
+     - >70%: 7-12 particles
+3. Create animation loop with requestAnimationFrame (60fps):
+   - Update particle positions (position += speed * delta_time)
+   - Recycle particles at destination (reset to 0.0)
+4. Render particles as small glowing spheres using three-d:
+   - Color based on utilization (green/orange/red)
+   - Scale: 0.05-0.1 units for visibility
+   - Interpolate position along connection path
+5. Conditional rendering:
+   - Only render when traffic metrics exist
+   - Respect carries_traffic flag
+   - Respect flow_direction (forward/backward/bidirectional)
 
-This enables real-time data flow for Phase 6.3 animations!
+Foundation already in place:
+✅ TrafficParticle struct defined (topology_viewport.rs:40-49)
+✅ Traffic flow controls in UI
+✅ Database fields for carries_traffic and flow_direction
+✅ Traffic metrics available from database
+
+Ready to bring the network to life with animated traffic flows!
 ```
 
 ### Option 5: Traffic Monitoring - Full Phase 6 (All Sub-Phases)

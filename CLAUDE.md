@@ -1,11 +1,11 @@
 # Network Topology Builder - Claude Development Notes
 
 ## Project Status
-**Current Phase:** Phase 6.3 COMPLETE! ✅ (Traffic Monitoring - Link Metrics Impact)
-**Last Updated:** 2025-01-15
+**Current Phase:** Phase 6.4.1 COMPLETE! ✅ (Traffic Flow Controls)
+**Last Updated:** 2025-01-18
 **Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete, v0.1.0-phase5-complete, v0.1.0-phase5.7-complete, v0.1.0-phase6-complete
 **Architecture:** Regular Leptos Components (Islands removed - see notes below)
-**Next Phase:** Phase 6.4 - Traffic Dashboard & Metrics (Optional enhancement)
+**Next Phase:** Phase 6.4.2 - Particle Animation System (3D traffic animation)
 
 ### three-d API Audit (2025-11-14) ✅
 
@@ -398,6 +398,95 @@ CREATE TABLE IF NOT EXISTS connection_traffic_metrics (
     FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
 );
 ```
+
+#### Phase 6.4.1 - Traffic Flow Controls (2025-01-18) ✅ COMPLETE
+
+42. ✅ **Traffic Flow Configuration** - User control over traffic animation
+   - Database migration: `20250118000001_add_traffic_flow_controls.sql`
+   - Added `carries_traffic` (BOOLEAN, default TRUE) - Enable/disable traffic animation per connection
+   - Added `flow_direction` (TEXT, default 'source_to_target') - Control particle direction
+   - SQLite triggers enforce valid directions: 'source_to_target', 'target_to_source', 'bidirectional'
+   - Properties Panel UI: Checkbox to enable/disable traffic + Radio buttons for direction
+   - Updated Connection model with new fields (src/models/connection.rs:19-20)
+   - Updated all SQL queries in api.rs (5 locations: lines 200, 525-526, 580-581, 675-676, 985-986)
+
+43. ✅ **Swap Source/Target Button** - Reverse connection direction
+   - Server function: `swap_connection_direction(id: i64)` (api.rs:1190-1226)
+   - SQL UPDATE swaps source_node_id and target_node_id
+   - UI button in Properties Panel with loading state
+   - Real-time viewport refresh after swap
+   - Use case: Correct connection direction without recreating
+
+44. ✅ **TrafficParticle Struct** - Data structure for animation system
+   - Defined in topology_viewport.rs:40-49
+   - Fields: connection_id, position (0.0-1.0), speed, color, direction_forward
+   - Ready for particle system implementation in Phase 6.4.2
+
+**Database Migration:**
+```sql
+-- migrations/20250118000001_add_traffic_flow_controls.sql
+ALTER TABLE connections ADD COLUMN carries_traffic BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE connections ADD COLUMN flow_direction TEXT NOT NULL DEFAULT 'source_to_target';
+
+-- Validation triggers
+CREATE TRIGGER check_flow_direction_insert
+BEFORE INSERT ON connections
+FOR EACH ROW
+WHEN NEW.flow_direction NOT IN ('source_to_target', 'target_to_source', 'bidirectional')
+BEGIN
+    SELECT RAISE(ABORT, 'flow_direction must be one of: source_to_target, target_to_source, bidirectional');
+END;
+```
+
+**Properties Panel UI (topology_editor.rs:2708-2775):**
+```rust
+// Checkbox: Enable/Disable Traffic
+<input
+    type="checkbox"
+    checked=move || carries_traffic.get()
+    on:change=move |ev| carries_traffic.set(event_target_checked(&ev))
+/>
+
+// Radio Buttons: Flow Direction
+<input type="radio" value="source_to_target" checked=move || flow_direction.get() == "source_to_target" />
+<input type="radio" value="target_to_source" checked=move || flow_direction.get() == "target_to_source" />
+<input type="radio" value="bidirectional" checked=move || flow_direction.get() == "bidirectional" />
+
+// Swap Button (topology_editor.rs:2591-2605)
+<button on:click=move |_| { swap_action.dispatch(()); }>
+    "🔄 Swap Source ↔ Target"
+</button>
+```
+
+**TrafficParticle Struct (topology_viewport.rs:40-49):**
+```rust
+#[cfg(feature = "hydrate")]
+#[derive(Clone, Debug)]
+struct TrafficParticle {
+    connection_id: i64,
+    position: f32,  // 0.0 to 1.0 along connection path
+    speed: f32,     // Movement speed per frame (units per second)
+    color: three_d::Srgba,  // Particle color based on utilization
+    direction_forward: bool, // true = source->target, false = target->source
+}
+```
+
+**Key Benefits:**
+- ✅ Users can selectively enable/disable traffic on specific connections
+- ✅ Control traffic flow direction (source→target, target→source, bidirectional)
+- ✅ Quickly reverse connection direction without recreating it
+- ✅ Foundation ready for particle animation system
+- ✅ All new fields stored in database with validation
+
+**Next Steps (Phase 6.4.2 - Particle Animation):**
+1. ⏳ Particle storage (Vec<TrafficParticle> in Rc<RefCell<>>)
+2. ⏳ Spawning logic based on traffic metrics and carries_traffic flag
+3. ⏳ Utilization-based density (1-3 for <40%, 3-7 for 40-70%, 7-12 for >70%)
+4. ⏳ Animation loop with requestAnimationFrame (60fps updates)
+5. ⏳ Render particles as small glowing spheres using three-d
+6. ⏳ Conditional rendering (only when traffic exists)
+7. ⏳ Particle interpolation along connection path
+8. ⏳ Particle recycling at destination (respawn at source)
 
 **Key Lessons Learned (Phase 6):**
 

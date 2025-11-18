@@ -16,6 +16,8 @@ pub struct Connection {
     pub latency_ms: Option<f64>,
     pub status: String,
     pub color: String, // RGB color as "R,G,B" format (e.g., "128,128,128")
+    pub carries_traffic: bool, // Whether this connection carries traffic for animations
+    pub flow_direction: String, // Traffic flow direction: 'source_to_target', 'target_to_source', 'bidirectional'
     pub metadata: Option<String>, // JSON string
     pub created_at: i64,
     pub updated_at: i64,
@@ -43,6 +45,8 @@ pub struct UpdateConnection {
     pub latency_ms: Option<f64>,
     pub status: Option<String>,
     pub color: Option<String>,
+    pub carries_traffic: Option<bool>,
+    pub flow_direction: Option<String>,
     pub metadata: Option<String>,
 }
 
@@ -60,4 +64,11 @@ pub mod connection_status {
     pub const ACTIVE: &str = "active";
     pub const INACTIVE: &str = "inactive";
     pub const DEGRADED: &str = "degraded";
+}
+
+/// Traffic flow direction constants
+pub mod flow_direction {
+    pub const SOURCE_TO_TARGET: &str = "source_to_target";
+    pub const TARGET_TO_SOURCE: &str = "target_to_source";
+    pub const BIDIRECTIONAL: &str = "bidirectional";
 }

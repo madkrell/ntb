@@ -197,7 +197,7 @@ pub async fn get_topology_full(id: i64) -> Result<TopologyFull, ServerFnError> {
 
         // Fetch all connections for this topology
         let connections = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
              FROM connections WHERE topology_id = ? ORDER BY created_at"
         )
         .bind(id)
@@ -522,7 +522,7 @@ pub async fn get_connection(id: i64) -> Result<Connection, ServerFnError> {
             .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
         let connection = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
              FROM connections WHERE id = ?"
         )
         .bind(id)
@@ -577,7 +577,7 @@ pub async fn create_connection(data: CreateConnection) -> Result<Connection, Ser
 
         // Fetch the created connection
         let connection = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
              FROM connections WHERE id = ?"
         )
         .bind(id)
@@ -624,6 +624,12 @@ pub async fn update_connection(id: i64, data: UpdateConnection) -> Result<Connec
         if let Some(_) = data.color {
             query_str.push_str(", color = ?");
         }
+        if let Some(_) = data.carries_traffic {
+            query_str.push_str(", carries_traffic = ?");
+        }
+        if let Some(_) = data.flow_direction {
+            query_str.push_str(", flow_direction = ?");
+        }
         if let Some(_) = data.metadata {
             query_str.push_str(", metadata = ?");
         }
@@ -648,6 +654,12 @@ pub async fn update_connection(id: i64, data: UpdateConnection) -> Result<Connec
         if let Some(ref color) = data.color {
             query = query.bind(color);
         }
+        if let Some(carries_traffic) = data.carries_traffic {
+            query = query.bind(carries_traffic);
+        }
+        if let Some(ref flow_direction) = data.flow_direction {
+            query = query.bind(flow_direction);
+        }
         if let Some(ref metadata) = data.metadata {
             query = query.bind(metadata);
         }
@@ -660,7 +672,7 @@ pub async fn update_connection(id: i64, data: UpdateConnection) -> Result<Connec
 
         // Fetch the updated connection
         let connection = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
              FROM connections WHERE id = ?"
         )
         .bind(id)
@@ -696,6 +708,50 @@ pub async fn delete_connection(id: i64) -> Result<(), ServerFnError> {
             .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
 
         Ok(())
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}
+
+/// Swap source and target nodes for a connection (reverse direction)
+#[server(SwapConnectionDirection, "/api")]
+pub async fn swap_connection_direction(id: i64) -> Result<Connection, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+
+        let Extension(pool) = extract::<Extension<SqlitePool>>()
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+        // Swap source_node_id and target_node_id
+        sqlx::query(
+            "UPDATE connections
+             SET source_node_id = target_node_id,
+                 target_node_id = source_node_id,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?"
+        )
+        .bind(id)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+        // Fetch the updated connection
+        let connection = sqlx::query_as::<_, Connection>(
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
+             FROM connections WHERE id = ?"
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Connection not found: {}", e)))?;
+
+        Ok(connection)
     }
 
     #[cfg(not(feature = "ssr"))]
@@ -970,7 +1026,7 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
 
         // Get all connections for this topology
         let connections = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
              FROM connections WHERE topology_id = ?"
         )
         .bind(topology_id)

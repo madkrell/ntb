@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use crate::islands::TopologyViewport;
-use crate::api::{get_node, update_node, get_connection, update_connection, create_node, delete_node, delete_connection, get_topologies, delete_topology, update_topology, get_ui_settings, update_ui_settings, get_vendors_for_type};
+use crate::api::{get_node, update_node, get_connection, update_connection, create_node, delete_node, delete_connection, swap_connection_direction, get_topologies, delete_topology, update_topology, get_ui_settings, update_ui_settings, get_vendors_for_type};
 use crate::models::{UpdateNode, UpdateConnection, CreateNode, UpdateUISettings, UpdateTopology};
 
 // Import these only when hydrating (for JSON import/export)
@@ -2485,6 +2485,8 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
     let latency_ms = RwSignal::new(0.0f64);
     let status = RwSignal::new(String::new());
     let color = RwSignal::new(String::from("128,128,128")); // Default gray
+    let carries_traffic = RwSignal::new(true); // Default enabled for traffic animation
+    let flow_direction = RwSignal::new(String::from("source_to_target")); // Default source to target
 
     // Populate signals when data loads
     Effect::new(move || {
@@ -2494,6 +2496,8 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
             latency_ms.set(connection.latency_ms.unwrap_or(0.0));
             status.set(connection.status);
             color.set(connection.color);
+            carries_traffic.set(connection.carries_traffic);
+            flow_direction.set(connection.flow_direction);
         }
     });
 
@@ -2505,6 +2509,8 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
             latency_ms: Some(latency_ms.get_untracked()).filter(|&v| v > 0.0),
             status: Some(status.get_untracked()),
             color: Some(color.get_untracked()),
+            carries_traffic: Some(carries_traffic.get_untracked()),
+            flow_direction: Some(flow_direction.get_untracked()),
             metadata: None,
         };
 
@@ -2537,6 +2543,23 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
         }
     });
 
+    // Swap direction action
+    let swap_action = Action::new(move |_: &()| {
+        async move {
+            swap_connection_direction(connection_id).await
+        }
+    });
+
+    // Trigger viewport refetch on successful swap
+    Effect::new(move || {
+        if let Some(Ok(_)) = swap_action.value().get() {
+            // Refetch connection data to update display
+            connection_data.refetch();
+            // Trigger viewport refetch
+            refetch_trigger.update(|v| *v += 1);
+        }
+    });
+
     view! {
         <div class="space-y-4">
             <Suspense fallback=move || view! {
@@ -2563,6 +2586,22 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
                                 <div>
                                     <label class="block text-xs font-medium text-gray-400 mb-1">"Target Node"</label>
                                     <div class="text-sm text-gray-300">"Node #{"{connection.target_node_id}"}"</div>
+                                </div>
+
+                                // Swap Direction button
+                                <div>
+                                    <button
+                                        class="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded text-xs font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                        on:click=move |_| { swap_action.dispatch(()); }
+                                        disabled=move || swap_action.pending().get()
+                                        title="Swap source and target nodes (reverse connection direction)"
+                                    >
+                                        {move || if swap_action.pending().get() {
+                                            "⏳ Swapping..."
+                                        } else {
+                                            "🔄 Swap Source ↔ Target"
+                                        }}
+                                    </button>
                                 </div>
 
                                 <div>
@@ -2696,6 +2735,75 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
                                             }
                                         />
                                         <span class="text-xs text-gray-500 font-mono">{move || color.get()}</span>
+                                    </div>
+                                </div>
+
+                                // Traffic Flow Configuration Section
+                                <div class="pt-3 border-t border-gray-700">
+                                    <label class="block text-xs font-medium text-gray-300 mb-2">"Traffic Flow Configuration"</label>
+
+                                    // Carries Traffic checkbox
+                                    <div class="mb-3 flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="carries-traffic"
+                                            class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                                            checked=move || carries_traffic.get()
+                                            on:change=move |ev| carries_traffic.set(event_target_checked(&ev))
+                                        />
+                                        <label for="carries-traffic" class="text-sm text-gray-400 cursor-pointer">
+                                            "Carries Traffic (Show Particles)"
+                                        </label>
+                                    </div>
+
+                                    // Flow Direction radio buttons
+                                    <div class="space-y-2">
+                                        <label class="block text-xs font-medium text-gray-400 mb-1">"Flow Direction:"</label>
+
+                                        <div class="flex items-center gap-2">
+                                            <input
+                                                type="radio"
+                                                id="flow-source-to-target"
+                                                name="flow_direction"
+                                                value="source_to_target"
+                                                class="w-4 h-4 border-gray-600 bg-gray-700 text-blue-600 focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                                                checked=move || flow_direction.get() == "source_to_target"
+                                                on:change=move |_| flow_direction.set("source_to_target".to_string())
+                                            />
+                                            <label for="flow-source-to-target" class="text-sm text-gray-400 cursor-pointer">
+                                                "Source → Target"
+                                            </label>
+                                        </div>
+
+                                        <div class="flex items-center gap-2">
+                                            <input
+                                                type="radio"
+                                                id="flow-target-to-source"
+                                                name="flow_direction"
+                                                value="target_to_source"
+                                                class="w-4 h-4 border-gray-600 bg-gray-700 text-blue-600 focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                                                checked=move || flow_direction.get() == "target_to_source"
+                                                on:change=move |_| flow_direction.set("target_to_source".to_string())
+                                            />
+                                            <label for="flow-target-to-source" class="text-sm text-gray-400 cursor-pointer">
+                                                "Target → Source"
+                                            </label>
+                                        </div>
+
+                                        <div class="flex items-center gap-2">
+                                            <input
+                                                type="radio"
+                                                id="flow-bidirectional"
+                                                name="flow_direction"
+                                                value="bidirectional"
+                                                class="w-4 h-4 border-gray-600 bg-gray-700 text-blue-600 focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                                                checked=move || flow_direction.get() == "bidirectional"
+                                                on:change=move |_| flow_direction.set("bidirectional".to_string())
+                                            />
+                                            <label for="flow-bidirectional" class="text-sm text-gray-400 cursor-pointer">
+                                                "Bidirectional"
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
 
