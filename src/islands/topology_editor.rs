@@ -223,7 +223,7 @@ pub fn TopologyEditor(
         show_x_axis: RwSignal::new(true),
         show_y_axis: RwSignal::new(true),
         show_z_axis: RwSignal::new(true),
-        background_color: RwSignal::new(Some((0, 0, 0))), // Black default
+        background_color: RwSignal::new(None), // Transparent default
         use_environment_lighting: RwSignal::new(false), // Disabled by default
         environment_map: RwSignal::new("studio_small_09_2k.hdr".to_string()), // Default HDR
     };
@@ -1479,7 +1479,7 @@ fn DevicePalette() -> impl IntoView {
     let node_counter = RwSignal::new(0u32);
 
     // Traffic monitoring signals
-    let traffic_level_signal = RwSignal::new("medium".to_string());
+    let traffic_level_signal = RwSignal::new("low".to_string());
     let traffic_generating_signal = RwSignal::new(false);
 
     // Device type configurations: (Display Name, Icon, type_id, name_prefix)
