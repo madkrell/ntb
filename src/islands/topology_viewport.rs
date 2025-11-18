@@ -48,6 +48,65 @@ struct TrafficParticle {
     direction_forward: bool, // true = source->target, false = target->source
 }
 
+// Global state for particle animation (Phase 6.4.2)
+// Shared across all functions to ensure synchronization
+#[cfg(feature = "hydrate")]
+use std::sync::Mutex;
+
+#[cfg(feature = "hydrate")]
+static GLOBAL_PARTICLES: Mutex<Vec<TrafficParticle>> = Mutex::new(Vec::new());
+
+#[cfg(feature = "hydrate")]
+static ANIMATION_RUNNING: Mutex<bool> = Mutex::new(false);
+
+#[cfg(feature = "hydrate")]
+static ANIMATION_FRAME_ID: Mutex<Option<i32>> = Mutex::new(None);
+
+/// Helper function to determine particle count based on utilization
+#[cfg(feature = "hydrate")]
+fn get_particle_count(utilization_pct: f64) -> usize {
+    if utilization_pct < 40.0 {
+        3  // Low traffic: 1-3 particles
+    } else if utilization_pct < 70.0 {
+        5  // Medium traffic: 3-7 particles
+    } else {
+        10 // High traffic: 7-12 particles
+    }
+}
+
+/// Helper function to calculate particle speed based on throughput
+/// Higher throughput = faster particles (more visually engaging)
+#[cfg(feature = "hydrate")]
+fn get_particle_speed(throughput_mbps: f64) -> f32 {
+    // Base speed: 0.5 units/second
+    // Scale by log10(throughput) for visual variety
+    // Clamp between 0.3 and 1.5 units/second
+    let base_speed = 0.5;
+    let speed_multiplier = (throughput_mbps.max(1.0).log10() * 0.3).clamp(0.6, 3.0);
+    (base_speed * speed_multiplier) as f32
+}
+
+/// Public function to start particle animation (called by Generate Traffic button)
+#[cfg(feature = "hydrate")]
+pub fn start_particle_animation() {
+    if let Ok(mut running) = ANIMATION_RUNNING.lock() {
+        *running = true;
+    }
+}
+
+/// Public function to stop particle animation (called by Clear Traffic button)
+#[cfg(feature = "hydrate")]
+pub fn stop_particle_animation() {
+    if let Ok(mut running) = ANIMATION_RUNNING.lock() {
+        *running = false;
+    }
+
+    // Clear particles
+    if let Ok(mut particles) = GLOBAL_PARTICLES.lock() {
+        particles.clear();
+    }
+}
+
 #[cfg(feature = "hydrate")]
 impl Default for CameraState {
     fn default() -> Self {
@@ -932,8 +991,9 @@ async fn initialize_threed_viewport(
         .dyn_into::<GL>()
         .map_err(|e| format!("Failed to cast to WebGL2 context: {:?}", e))?;
 
-    // Wrap in glow::Context (three-d re-exports glow)
+    // Create glow Context from WebGL2 context (three-d re-exports glow)
     let gl = three_d::context::Context::from_webgl2_context(webgl2_context);
+    // Wrap in three-d Context
     let context = Context::from_gl_context(std::sync::Arc::new(gl))
         .map_err(|e| format!("Failed to create three-d Context: {:?}", e))?;
 
@@ -1271,6 +1331,80 @@ async fn initialize_threed_viewport(
     // Shared cylinder mesh for all connections (for efficiency)
     let cylinder_cpu_mesh = CpuMesh::cylinder(16);
 
+    // Clear any existing particles when viewport reinitializes
+    // (they will be respawned when Generate Traffic button is clicked)
+    if let Ok(mut particles) = GLOBAL_PARTICLES.lock() {
+        particles.clear();
+    }
+
+    // Build connection position map for particle interpolation
+    // Maps connection_id -> (source_pos, target_pos)
+    let mut connection_positions: HashMap<i64, (Vec3, Vec3)> = HashMap::new();
+    for conn in &topology_data.connections {
+        if let (Some(&source_pos), Some(&target_pos)) = (
+            node_positions.get(&conn.source_node_id),
+            node_positions.get(&conn.target_node_id),
+        ) {
+            connection_positions.insert(conn.id, (source_pos, target_pos));
+        }
+    }
+    let connection_positions = Rc::new(connection_positions); // Share with render closure
+
+    // Shared sphere CPU mesh for all particles
+    let particle_sphere_cpu = Rc::new(CpuMesh::sphere(8));
+
+    // Spawn particles based on traffic metrics and connection settings
+    if let Some(ref metrics) = traffic_metrics {
+        let mut spawned_particles = Vec::new();
+        for conn in &topology_data.connections {
+            // Only spawn particles if carries_traffic is true and traffic metrics exist
+            if conn.carries_traffic {
+                if let Some(metric) = metrics.get(&conn.id) {
+                    let particle_count = get_particle_count(metric.utilization_pct);
+                    let particle_speed = get_particle_speed(metric.throughput_mbps);
+                    let particle_color = get_traffic_color(metric.utilization_pct);
+
+                    // Determine which directions to spawn particles
+                    let spawn_forward = conn.flow_direction == "source_to_target" || conn.flow_direction == "bidirectional";
+                    let spawn_backward = conn.flow_direction == "target_to_source" || conn.flow_direction == "bidirectional";
+
+                    // Spawn particles evenly spaced along the connection
+                    for i in 0..particle_count {
+                        let spacing = 1.0 / (particle_count as f32);
+                        let initial_position = (i as f32) * spacing;
+
+                        // Spawn forward particles
+                        if spawn_forward {
+                            spawned_particles.push(TrafficParticle {
+                                connection_id: conn.id,
+                                position: initial_position,
+                                speed: particle_speed,
+                                color: particle_color,
+                                direction_forward: true,
+                            });
+                        }
+
+                        // Spawn backward particles (offset by half spacing for better distribution)
+                        if spawn_backward {
+                            spawned_particles.push(TrafficParticle {
+                                connection_id: conn.id,
+                                position: initial_position + spacing * 0.5,
+                                speed: particle_speed,
+                                color: particle_color,
+                                direction_forward: false,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Store in global particle storage
+        if let Ok(mut particles) = GLOBAL_PARTICLES.lock() {
+            *particles = spawned_particles;
+        }
+    }
+
     // Create connection meshes (lines between nodes) - both normal and selected versions
     let mut connection_meshes = Vec::new();
     let mut connections_data = Vec::new();
@@ -1453,6 +1587,8 @@ async fn initialize_threed_viewport(
         let fill_light = fill_light.clone();
         let rim_light = rim_light.clone();
         let canvas = canvas.clone();
+        let connection_positions = connection_positions.clone(); // Capture connection positions for particle interpolation
+        let particle_sphere_cpu = particle_sphere_cpu.clone(); // Shared sphere geometry
         let selected_node_id_signal = selected_node_id_signal; // Capture signal for render closure
         let selected_item_signal = selected_item_signal; // Capture signal for connection selection
         let use_env_lighting_signal = use_environment_lighting_signal; // Capture HDR signal (not value!)
@@ -1550,6 +1686,62 @@ async fn initialize_threed_viewport(
                 }
             }
 
+            // Render traffic particles (Phase 6.4.2) - Read from global storage
+            if let Ok(particles) = GLOBAL_PARTICLES.lock() {
+            for particle in particles.iter() {
+                // Get connection endpoints from position map
+                if let Some(&(source_pos, target_pos)) = connection_positions.get(&particle.connection_id) {
+                    // Interpolate particle position along connection path
+                    let position = if particle.direction_forward {
+                        source_pos + (target_pos - source_pos) * particle.position
+                    } else {
+                        target_pos + (source_pos - target_pos) * particle.position
+                    };
+
+                    // Particle radius
+                    let particle_radius = 0.08; // Small glowing spheres
+
+                    // Make particles glow by using emissive color
+                    let glow_color = Srgba::new(
+                        (particle.color.r as f32 * 0.5) as u8,
+                        (particle.color.g as f32 * 0.5) as u8,
+                        (particle.color.b as f32 * 0.5) as u8,
+                        255
+                    );
+
+                    // Create material for this particle
+                    let material = PhysicalMaterial::new_opaque(
+                        &context,
+                        &CpuMaterial {
+                            albedo: particle.color,
+                            metallic: 0.0,
+                            roughness: 0.3,
+                            emissive: glow_color, // Make particles glow!
+                            ..Default::default()
+                        }
+                    );
+
+                    // Create mesh from shared CPU mesh
+                    let mut particle_mesh = Gm::new(
+                        Mesh::new(&context, &particle_sphere_cpu),
+                        material
+                    );
+
+                    // Apply transformation (position + scale)
+                    particle_mesh.set_transformation(
+                        Mat4::from_translation(position) * Mat4::from_scale(particle_radius)
+                    );
+
+                    // Render with same lighting as nodes
+                    if use_env_lighting {
+                        target.render(&camera, &particle_mesh, &[&*ambient]);
+                    } else {
+                        target.render(&camera, &particle_mesh, &[&*ambient, &*key_light, &*fill_light, &*rim_light]);
+                    }
+                }
+            }
+            } // Close if let Ok(particles) = GLOBAL_PARTICLES.lock()
+
             // Lighting mode applied dynamically based on use_env_lighting flag
         }
     };
@@ -1581,6 +1773,110 @@ async fn initialize_threed_viewport(
         )?;
         // NOTE: camera_snapshot is available here but event handlers manage it internally
         // Camera preset Effect syncs snapshot via the camera_state signal's render calls
+    }
+
+    // Particle animation loop setup (Phase 6.4.2)
+    // IMPORTANT: This runs on EVERY Effect execution (not just first init)
+    // Start animation loop if ANIMATION_RUNNING is true AND we have particles
+    let should_start_animation = {
+        let has_particles = if let Ok(particles) = GLOBAL_PARTICLES.lock() {
+            !particles.is_empty()
+        } else {
+            false
+        };
+
+        let animation_enabled = if let Ok(running) = ANIMATION_RUNNING.lock() {
+            *running
+        } else {
+            false
+        };
+
+        has_particles && animation_enabled
+    };
+
+    if should_start_animation {
+        use wasm_bindgen::closure::Closure;
+        use wasm_bindgen::JsCast;
+        use std::rc::Rc;
+        use std::cell::RefCell;
+
+        // Cancel any existing animation loop before starting new one
+        if let Ok(mut frame_id) = ANIMATION_FRAME_ID.lock() {
+            if let Some(id) = *frame_id {
+                if let Some(window) = web_sys::window() {
+                    window.cancel_animation_frame(id).ok();
+                }
+            }
+            *frame_id = None;
+        }
+
+            // Track last frame time for delta calculation
+            let last_frame_time: Rc<RefCell<Option<f64>>> = Rc::new(RefCell::new(None));
+
+            // Animation loop closure
+            let animation_loop: Rc<RefCell<Option<Closure<dyn FnMut(f64)>>>> = Rc::new(RefCell::new(None));
+            let animation_loop_clone = animation_loop.clone();
+
+            let render_fn_storage_clone = render_fn_storage.clone();
+            let camera_state_clone = camera_state;
+
+            let anim_fn = Closure::wrap(Box::new(move |timestamp: f64| {
+                // Calculate delta time (time since last frame)
+                let delta_time = if let Some(last_time) = *last_frame_time.borrow() {
+                    (timestamp - last_time) / 1000.0 // Convert ms to seconds
+                } else {
+                    0.0 // First frame
+                };
+                *last_frame_time.borrow_mut() = Some(timestamp);
+
+                // Update particle positions - Use global storage
+                if let Ok(mut particles) = GLOBAL_PARTICLES.lock() {
+                    for particle in particles.iter_mut() {
+                        // Move particle along path based on speed and delta time
+                        particle.position += particle.speed * delta_time as f32;
+                        // Recycle particle when it reaches the end
+                        if particle.position >= 1.0 {
+                            particle.position = 0.0;
+                        }
+                    }
+                }
+
+                // Trigger render with current camera state
+                if let Some(render_fn) = render_fn_storage_clone.borrow().as_ref() {
+                    render_fn(camera_state_clone.get_untracked());
+                }
+
+                // Request next frame ONLY if animation is still running
+                let should_continue = if let Ok(running) = ANIMATION_RUNNING.lock() {
+                    *running
+                } else {
+                    false
+                };
+
+                if should_continue {
+                    if let Some(window) = web_sys::window() {
+                        if let Some(closure) = animation_loop_clone.borrow().as_ref() {
+                            let _ = window.request_animation_frame(closure.as_ref().unchecked_ref());
+                        }
+                    }
+                }
+            }) as Box<dyn FnMut(f64)>);
+
+            // Start animation loop
+            if let Some(window) = web_sys::window() {
+                if let Ok(frame_id) = window.request_animation_frame(anim_fn.as_ref().unchecked_ref()) {
+                    // Store frame ID for cancellation on next reinit
+                    if let Ok(mut stored_id) = ANIMATION_FRAME_ID.lock() {
+                        *stored_id = Some(frame_id);
+                    }
+
+                    // Store closure in Rc<RefCell> so it can call itself recursively
+                    *animation_loop.borrow_mut() = Some(anim_fn);
+
+                    // Leak the Rc to prevent cleanup (closure will run indefinitely)
+                    std::mem::forget(animation_loop);
+                }
+            }
     }
 
     Ok(())
@@ -1624,10 +1920,9 @@ fn initialize_threed_viewport_test(
         .dyn_into::<GL>()
         .map_err(|e| format!("Failed to cast to WebGL2 context: {:?}", e))?;
 
-    // Wrap in glow::Context (three-d re-exports glow)
+    // Create glow Context from WebGL2 context (three-d re-exports glow)
     let gl = three_d::context::Context::from_webgl2_context(webgl2_context);
-
-    // Create three-d Context from glow context
+    // Wrap in three-d Context
     let context = Context::from_gl_context(std::sync::Arc::new(gl))
         .map_err(|e| format!("Failed to create three-d Context: {:?}", e))?;
 

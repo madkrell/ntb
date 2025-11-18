@@ -1,11 +1,11 @@
 # Network Topology Builder - Claude Development Notes
 
 ## Project Status
-**Current Phase:** Phase 6.4.1 COMPLETE! ✅ (Traffic Flow Controls)
+**Current Phase:** Phase 6.4.2 COMPLETE! ✅ (Particle Animation System)
 **Last Updated:** 2025-01-18
-**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete, v0.1.0-phase5-complete, v0.1.0-phase5.7-complete, v0.1.0-phase6-complete
+**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete, v0.1.0-phase5-complete, v0.1.0-phase5.7-complete, v0.1.0-phase6-complete, v0.1.0-phase6.4.2-complete
 **Architecture:** Regular Leptos Components (Islands removed - see notes below)
-**Next Phase:** Phase 6.4.2 - Particle Animation System (3D traffic animation)
+**Next Phase:** Future enhancements (see optional Phase 6.5+ items)
 
 ### three-d API Audit (2025-11-14) ✅
 
@@ -478,17 +478,133 @@ struct TrafficParticle {
 - ✅ Foundation ready for particle animation system
 - ✅ All new fields stored in database with validation
 
-**Next Steps (Phase 6.4.2 - Particle Animation):**
-1. ⏳ Particle storage (Vec<TrafficParticle> in Rc<RefCell<>>)
-2. ⏳ Spawning logic based on traffic metrics and carries_traffic flag
-3. ⏳ Utilization-based density (1-3 for <40%, 3-7 for 40-70%, 7-12 for >70%)
-4. ⏳ Animation loop with requestAnimationFrame (60fps updates)
-5. ⏳ Render particles as small glowing spheres using three-d
-6. ⏳ Conditional rendering (only when traffic exists)
-7. ⏳ Particle interpolation along connection path
-8. ⏳ Particle recycling at destination (respawn at source)
+#### Phase 6.4.2 - Particle Animation System (2025-01-18) ✅ COMPLETE
 
-**Key Lessons Learned (Phase 6):**
+45. ✅ **Global Particle Storage** - Synchronized state for animation
+   - Replaced `Rc<RefCell<Vec<TrafficParticle>>>` with `static GLOBAL_PARTICLES: Mutex<Vec<TrafficParticle>>`
+   - Ensures animation loop and render function access SAME particle data
+   - `ANIMATION_RUNNING: Mutex<bool>` flag controls animation state
+   - `ANIMATION_FRAME_ID: Mutex<Option<i32>>` tracks requestAnimationFrame ID
+   - Prevents stale data issues when viewport Effect reruns (topology_viewport.rs:51-63)
+
+46. ✅ **Particle Spawning Logic** - Traffic-based particle generation
+   - Spawns particles when "Generate Traffic" button clicked
+   - Density based on utilization: 1-3 particles (<40%), 3-7 (40-70%), 7-12 (>70%)
+   - Color matches connection utilization (green/orange/red)
+   - Speed varies: 0.15-0.25 units/sec (low), 0.25-0.40 (medium), 0.40-0.60 (high)
+   - Respects `carries_traffic` flag (only spawns on enabled connections)
+   - Random starting positions (0.0-0.5) for natural distribution (topology_viewport.rs:1310-1406)
+
+47. ✅ **60fps Animation Loop** - Smooth particle movement
+   - Uses `window.requestAnimationFrame()` for browser-synchronized updates
+   - Delta time calculation for frame-rate-independent movement
+   - Updates particle positions: `position += speed * delta_time`
+   - Particle recycling: Resets to 0.0 when reaching 1.0
+   - Conditional continuation: Only requests next frame if ANIMATION_RUNNING = true
+   - Stops cleanly when "Clear Traffic" clicked (topology_viewport.rs:1793-1895)
+
+48. ✅ **Particle Rendering** - Glowing sphere particles with lighting
+   - Renders particles as small spheres (radius 0.08) with emissive glow
+   - Interpolates position along connection path based on `position` value (0.0-1.0)
+   - Respects `direction_forward` flag for bidirectional flows
+   - Uses PhysicalMaterial with emissive color for glow effect
+   - Renders with proper lighting (ambient + directional or HDR environment)
+   - Reads from GLOBAL_PARTICLES in render closure (topology_viewport.rs:1693-1755)
+
+49. ✅ **Animation Control Functions** - Start/Stop API
+   - `start_particle_animation()` sets ANIMATION_RUNNING = true
+   - `stop_particle_animation()` sets flag to false AND clears particles
+   - Called from Generate Traffic / Clear Traffic buttons BEFORE viewport refetch
+   - Public functions accessible from topology_editor.rs (topology_viewport.rs:89-108)
+
+50. ✅ **Animation Initialization Fix** - Works on first load
+   - Moved animation setup OUTSIDE `skip_event_handlers` block
+   - Allows animation to initialize on EVERY Effect execution (not just first)
+   - Checks `should_start_animation` flag (particles exist AND ANIMATION_RUNNING)
+   - Fixes issue where animation only worked after manual page refresh
+   - Animation now starts immediately when "Generate Traffic" clicked (topology_viewport.rs:1793-1818)
+
+**Technical Implementation:**
+
+```rust
+// Global storage (topology_viewport.rs:51-63)
+#[cfg(feature = "hydrate")]
+static GLOBAL_PARTICLES: Mutex<Vec<TrafficParticle>> = Mutex::new(Vec::new());
+
+#[cfg(feature = "hydrate")]
+static ANIMATION_RUNNING: Mutex<bool> = Mutex::new(false);
+
+// Animation loop (topology_viewport.rs:1858-1888)
+if let Ok(mut particles) = GLOBAL_PARTICLES.lock() {
+    for particle in particles.iter_mut() {
+        particle.position += particle.speed * delta_time as f32;
+        if particle.position >= 1.0 {
+            particle.position = 0.0;  // Recycle
+        }
+    }
+}
+
+// Particle rendering (topology_viewport.rs:1697-1719)
+if let Ok(particles) = GLOBAL_PARTICLES.lock() {
+    for particle in particles.iter() {
+        let position = if particle.direction_forward {
+            source_pos + (target_pos - source_pos) * particle.position
+        } else {
+            target_pos + (source_pos - target_pos) * particle.position
+        };
+
+        let material = PhysicalMaterial::new_opaque(&context, &CpuMaterial {
+            albedo: particle.color,
+            emissive: glow_color,
+            roughness: 0.3,
+            ..Default::default()
+        });
+
+        let mut particle_mesh = Gm::new(Mesh::new(&context, &particle_sphere_cpu), material);
+        particle_mesh.set_transformation(
+            Mat4::from_translation(position) * Mat4::from_scale(particle_radius)
+        );
+        target.render(&camera, &particle_mesh, &[lights...]);
+    }
+}
+```
+
+**Key Features:**
+- ✅ Smooth 60fps animation with delta time synchronization
+- ✅ Utilization-based particle density and speed
+- ✅ Glowing particles with emissive materials
+- ✅ Bidirectional flow support
+- ✅ Clean start/stop without memory leaks
+- ✅ Works on first load (no manual refresh needed)
+- ✅ Global state prevents stale data issues
+
+**Key Lessons Learned (Phase 6.4.2):**
+
+1. **Global State for Cross-Closure Synchronization**
+   - `Rc<RefCell<>>` creates NEW instances when closures recreate
+   - `static Mutex<T>` ensures SAME storage across all closures
+   - Critical for animation loop + render function coordination
+   - Prevents "particles updating but not rendering" bugs
+
+2. **Animation Initialization Timing**
+   - Animation setup inside `skip_event_handlers` ONLY runs on first init
+   - Move animation logic OUTSIDE to run on EVERY Effect execution
+   - Check conditions (particles exist AND flag set) before starting
+   - Enables animation to start on refetch, not just page load
+
+3. **requestAnimationFrame Best Practices**
+   - Calculate delta time for frame-rate-independent movement
+   - Check flag before requesting next frame (clean stop)
+   - Store closure in `Rc<RefCell<>>` to access from callback
+   - Use `.forget()` to prevent premature cleanup
+
+4. **Particle Recycling Pattern**
+   - Reset position to 0.0 when reaching 1.0 (seamless loop)
+   - Random starting positions create natural distribution
+   - Direction flag enables bidirectional flows
+   - Speed variation adds visual interest
+
+**Key Lessons Learned (Phase 6 Overall):**
 
 1. **Realistic Traffic Modeling**
    - Use actual link properties (bandwidth, latency, status)

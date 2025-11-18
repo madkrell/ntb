@@ -1642,12 +1642,20 @@ fn DevicePalette() -> impl IntoView {
 
                                 match generate_mock_traffic(topology_id, level).await {
                                     Ok(_count) => {
-                                        // Trigger viewport refresh to update connection colors
+                                        // Start particle animation BEFORE refetch (Phase 6.4.2)
+                                        // This sets the flag that will be read during viewport Effect
+                                        #[cfg(feature = "hydrate")]
+                                        {
+                                            use crate::islands::topology_viewport::start_particle_animation;
+                                            start_particle_animation();
+                                        }
+
+                                        // Trigger viewport refresh to spawn particles and initialize animation
                                         refetch.update(|v| *v += 1);
                                     }
-                                    Err(e) => {
+                                    Err(_e) => {
                                         #[cfg(feature = "hydrate")]
-                                        web_sys::console::error_1(&format!("Failed to generate traffic: {}", e).into());
+                                        web_sys::console::error_1(&format!("Failed to generate traffic: {}", _e).into());
                                     }
                                 }
                                 traffic_generating_signal.set(false);
@@ -1666,12 +1674,19 @@ fn DevicePalette() -> impl IntoView {
                                 use crate::api::clear_traffic_data;
                                 match clear_traffic_data(topology_id).await {
                                     Ok(_count) => {
+                                        // Stop particle animation (Phase 6.4.2)
+                                        #[cfg(feature = "hydrate")]
+                                        {
+                                            use crate::islands::topology_viewport::stop_particle_animation;
+                                            stop_particle_animation();
+                                        }
+
                                         // Trigger viewport refresh to restore manual colors
                                         refetch.update(|v| *v += 1);
                                     }
-                                    Err(e) => {
+                                    Err(_e) => {
                                         #[cfg(feature = "hydrate")]
-                                        web_sys::console::error_1(&format!("Failed to clear traffic data: {}", e).into());
+                                        web_sys::console::error_1(&format!("Failed to clear traffic data: {}", _e).into());
                                     }
                                 }
                             });
