@@ -3,9 +3,53 @@
 ## Project Status
 **Current Phase:** Phase 6.4.2 COMPLETE! ✅ (Particle Animation System)
 **Last Updated:** 2025-01-18
-**Git Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete, v0.1.0-phase5-complete, v0.1.0-phase5.7-complete, v0.1.0-phase6-complete, v0.1.0-phase6.4.2-complete
+**Git Tags:** v0.1.0-phase6.4.2-complete (latest)
 **Architecture:** Regular Leptos Components (Islands removed - see notes below)
-**Next Phase:** Future enhancements (see optional Phase 6.5+ items)
+**Database:** ntv.db (SQLite) - See "Database Configuration" section below
+
+## ✅ What's Complete
+All core features are fully implemented and working:
+- ✅ 3D network topology visualization with glTF/GLB models
+- ✅ Full CRUD operations (nodes, connections, topologies)
+- ✅ Advanced camera controls (pan, zoom, presets, fullscreen)
+- ✅ Customization (colors, scale, lighting, HDR environments)
+- ✅ Export/Import (PNG with transparency, JSON topology backup)
+- ✅ **Traffic monitoring** with realistic simulation
+- ✅ **Color-coded connections** by utilization (green/orange/red)
+- ✅ **Comprehensive tooltips** (4 metrics: utilization, throughput, latency, packet loss)
+- ✅ **60fps particle animation** showing live traffic flows
+- ✅ **Traffic flow controls** (direction, enable/disable per connection)
+
+## 🎯 Recommended Next Steps (All Optional)
+
+**Option 1: Traffic Dashboard** (High Value - 2-3 hours)
+- Metrics panel showing network-wide statistics
+- Top N busiest connections list
+- Historical charts for throughput/latency trends
+- Alert panel for critical connections
+- Export metrics to CSV
+
+**Option 2: WebSocket Streaming** (Real-Time Updates - 2-3 hours)
+- Live traffic data streaming using Leptos WebSocket server functions
+- Automatic viewport updates without manual refresh
+- Lower latency, professional monitoring feel
+
+**Option 3: Additional UX Polish** (Power User Features - 1-2 hours)
+- Multi-select nodes (Shift+Click)
+- Keyboard shortcuts (Del, Ctrl+S, etc.)
+- Undo/redo functionality
+- Node grouping/labeling
+
+**Option 4: Real Network Integration** (Production - 3-5 hours)
+- Replace mock generator with real data sources
+- SNMP integration for network devices
+- API connectors for cloud platforms
+- Transforms demo into production monitoring tool
+
+**Option 5: Documentation & Deployment** (Can be done anytime)
+- User guide with screenshots
+- Developer documentation
+- Docker deployment guide
 
 ### three-d API Audit (2025-11-14) ✅
 
@@ -578,58 +622,6 @@ if let Ok(particles) = GLOBAL_PARTICLES.lock() {
 - ✅ Works on first load (no manual refresh needed)
 - ✅ Global state prevents stale data issues
 
-**Key Lessons Learned (Phase 6.4.2):**
-
-1. **Global State for Cross-Closure Synchronization**
-   - `Rc<RefCell<>>` creates NEW instances when closures recreate
-   - `static Mutex<T>` ensures SAME storage across all closures
-   - Critical for animation loop + render function coordination
-   - Prevents "particles updating but not rendering" bugs
-
-2. **Animation Initialization Timing**
-   - Animation setup inside `skip_event_handlers` ONLY runs on first init
-   - Move animation logic OUTSIDE to run on EVERY Effect execution
-   - Check conditions (particles exist AND flag set) before starting
-   - Enables animation to start on refetch, not just page load
-
-3. **requestAnimationFrame Best Practices**
-   - Calculate delta time for frame-rate-independent movement
-   - Check flag before requesting next frame (clean stop)
-   - Store closure in `Rc<RefCell<>>` to access from callback
-   - Use `.forget()` to prevent premature cleanup
-
-4. **Particle Recycling Pattern**
-   - Reset position to 0.0 when reaching 1.0 (seamless loop)
-   - Random starting positions create natural distribution
-   - Direction flag enables bidirectional flows
-   - Speed variation adds visual interest
-
-**Key Lessons Learned (Phase 6 Overall):**
-
-1. **Realistic Traffic Modeling**
-   - Use actual link properties (bandwidth, latency, status)
-   - Model congestion effects (latency increases, packet loss)
-   - Random variation within realistic ranges
-   - Different patterns for different connection types
-
-2. **Color-Coded Visualization**
-   - Instant visual feedback with traffic load colors
-   - Manual color override for specific use cases
-   - Proper lighting required for color visibility
-   - Three-tier thresholds (0-40%, 40-70%, 70-100%)
-
-3. **Traffic Data Management**
-   - Separate table for traffic metrics (not in connections table)
-   - Cascade delete when connection removed
-   - HashMap lookup for efficient access in viewport
-   - Real-time updates via refetch trigger
-
-4. **Tooltip Enhancement Pattern**
-   - Enum-based tooltip data (Node vs Connection)
-   - Color-coded metrics for quick interpretation
-   - Display all relevant metrics without clutter
-   - Update tooltip data in mousemove handler
-
 ### Phase 4.5 - UI/UX Polish COMPLETE! ✅ (2025-11-07)
 
 **✅ COMPLETED (Latest Session - Critical Fixes):**
@@ -683,102 +675,11 @@ if let Ok(particles) = GLOBAL_PARTICLES.lock() {
    - Positioned between "Load Balancer" and "Database"
    - Matches glTF/GLB model loading (blob-cloud.glb)
 
-### Phase 4 - COMPLETE! ✅
+## Key Lessons Learned (All Phases)
 
-**✅ COMPLETED (Priority 1 - Core 3D Features):**
-1. ✅ **3D node rotation controls** - Full X/Y/Z rotation with database storage, UI sliders, and viewport rendering
-2. ✅ **Model Selection UI** - Loads correct glTF/GLB model for each node type (router, switch, server, firewall, load_balancer, cloud)
-3. ✅ **3D Grid and Axes** - Blender-style reference grid with X/Y/Z axis lines and grid floor plane
-4. ✅ **Topology switching control** - Multiple topologies with dropdown selector in UI
-5. ✅ **Enable Device Palette buttons** - All 6 device types ('Router', 'Switch', 'Server', 'Firewall', 'Load Balancer', 'Cloud') create nodes with grid positioning
-6. ✅ **Grid/Axes visibility controls** (2025-11-05) - Toggle buttons to show/hide grid and individual axes
-   - ViewportVisibility struct pattern prevents context collision for same-typed signals
-   - Independent toggles for Grid Floor, X Axis (Red), Y Axis (Green), Z Axis (Blue)
-   - Z-axis extremely transparent (alpha=25), all axes thinned to 0.006
-7. ✅ **Connection creation mode** (2025-11-05) - Click two nodes to create connection between them
-   - "Connect Nodes" button with visual feedback (button color changes)
-   - Three-state mode: Disabled → SelectingFirstNode → SelectingSecondNode
-   - Creates connections via create_connection() server function
-   - Deselects on second node click to trigger viewport refresh
+### Phase 4.5 - UI/UX Polish Lessons
 
-**✅ COMPLETED (Priority 2 - Visual Polish):**
-8. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
-9. ✅ **Color-Coded Nodes by Type** - Router=blue, Switch=green, Server=orange, etc. (now overridden by custom colors)
-10. ✅ **Connection rendering improvements** (2025-11-05) - Thin cylindrical lines (0.012 thickness) using ColorMaterial
-11. ✅ **Connection selection** (2025-11-05) - Click to select connections in viewport
-    - Ray-cylinder intersection algorithm for accurate 3D picking
-    - Visual feedback with yellow/orange highlighting for selected connections
-    - Properties panel shows connection details (type, bandwidth, status)
-    - Critical fix: Mutable storage pattern for event handlers to access fresh data
-12. ✅ **Improved Lighting and Materials** (2025-11-06) - Professional three-point lighting system with PBR materials
-    - Key light (warm, from above-front), Fill light (cool, from side), Rim light (subtle, from behind)
-    - User-adjustable lighting controls with 4 intensity sliders (Ambient, Key, Fill, Rim)
-    - PBR materials with metallic/roughness properties varying by device type
-    - Metallic nodes (router, firewall) vs matte nodes (server, client)
-13. ✅ **Better Camera Controls** (2025-11-06) - Preset views with smooth animations
-    - 4 camera presets: Top, Front, Side, Isometric
-    - Smooth lerp animation with ease-in-out easing (600ms transitions)
-    - Reset button to return to default isometric view
-    - Compact viewport overlay controls (2×2 grid, top-right corner)
-    - Camera state sync enables dragging from preset positions
-
-**✅ COMPLETED (Phase 4 Additions - UI/UX Polish):**
-14. ✅ **UI Space Optimization** (2025-11-06) - Maximized viewport space
-    - Device Palette narrowed to 75% (256px → 192px)
-    - Properties Panel narrowed to 75% (320px → 240px)
-    - Position/rotation controls made compact (smaller text, reduced padding)
-    - View Controls color-coded (X=red, Y=green, Z=blue)
-    - Camera controls moved to viewport overlay
-15. ✅ **Settings Persistence** (2025-11-06) - UI state survives page refresh/restart
-    - Database table: ui_settings (single row, id=1)
-    - Persists all View Controls (show_grid, show_x/y/z_axis)
-    - Persists all Lighting Controls (ambient, key, fill, rim intensities)
-    - Auto-save on any control change
-    - Auto-load on application startup
-16. ✅ **Code Quality** (2025-11-06) - Clean, warning-free codebase
-    - All compiler warnings fixed
-    - Clippy-clean code
-    - Proper #[allow(unused_variables)] for false positives in reactive closures
-17. ✅ **PNG Export Functionality** (2025-11-06) - High-quality image export with transparency
-    - Export dropdown menu in toolbar with PNG/JSON options
-    - WebGL2 context with preserveDrawingBuffer enabled for frame capture
-    - Transparent background support for clean exports
-    - Fixed dropdown z-index for proper overlay visibility
-18. ✅ **Node Scale Control** (2025-11-06) - Per-node size adjustment
-    - Database migration: `20250106000003_add_node_scale.sql`
-    - Added `scale: f64` field to Node model (default 1.0, range 0.1-5.0)
-    - Properties panel slider for scale adjustment
-    - Real-time viewport rendering with scale transformation
-    - Scale applied to both 3D models and fallback spheres
-19. ✅ **Background Color Control** (2025-11-06) - Customizable viewport background
-    - Extended ViewportVisibility struct with background_color field
-    - 6 preset buttons: Transparent, White, Light, Gray, Dark, Black
-    - Transparent option (None) for PNG exports showing only topology
-    - Black default background (rgb(0,0,0))
-    - Real-time viewport updates via refetch_trigger
-    - ClearState implementation with alpha channel support
-20. ✅ **Connection Color Control** (2025-11-06) - Customizable link colors
-    - Database migration: `20250107000001_add_connection_color.sql`
-    - Added `color: String` field to Connection model ("R,G,B" format)
-    - Properties panel with 13 preset colors (Gray, Black, White, Blue, Green, Yellow, Red, Purple, Pink, Orange, Cyan, Lime, Amber)
-    - Full color palette picker with HTML5 color input
-    - Bidirectional hex↔RGB conversion for user-friendly color selection
-    - Real-time color rendering in 3D viewport
-    - Current color displayed as RGB text (e.g., "128,128,128")
-
-### Phase 3 - COMPLETE ✅
-- ✅ Professional 3-panel layout (device palette, viewport, properties)
-- ✅ Node selection via 3D raycasting with visual feedback (yellow highlight)
-- ✅ Click empty space to deselect
-- ✅ Properties panel loads and displays actual node/connection data
-- ✅ Full CRUD server functions for nodes and connections
-- ✅ Save changes from properties panel with real-time viewport updates
-- ✅ Suspense components for proper loading states (no hydration warnings)
-- ✅ Context-based state sharing across components
-
-## Key Lessons Learned (Phase 4.5 Session)
-
-### 1. Canvas Resize and Viewport Updates
+#### 1. Canvas Resize and Viewport Updates
 **Issue:** Topology shifts when toggling fullscreen or resizing window
 **Root Cause:** Canvas element resizes but WebGL viewport and projection matrix don't update
 **Solution:** Always update canvas resolution on every render
@@ -792,7 +693,7 @@ let viewport = Viewport::new_at_origo(width, height);
 ```
 **Why:** Ensures viewport and projection matrix always match actual canvas size, preventing distortion and off-center rendering
 
-### 2. Bounding Box Calculation for Smart Zoom
+#### 2. Bounding Box Calculation for Smart Zoom
 **Pattern:** Dynamic camera positioning based on scene contents
 **Implementation:**
 ```rust
@@ -811,7 +712,7 @@ let distance = (max_dimension / 2.0) / (fov_radians / 2.0).tan();
 ```
 **Result:** Camera automatically positions to fit entire topology with consistent margin
 
-### 3. Fullscreen Toggle Pattern
+#### 3. Fullscreen Toggle Pattern
 **Anti-pattern:** Two separate signals for left/right panel visibility
 - Leads to state inconsistency
 - Multiple signals of same type in context collide
@@ -833,7 +734,7 @@ provide_context(fullscreen_mode);
 ```
 **Benefits:** Simpler state, single source of truth, keyboard-friendly (F to toggle, Esc to exit)
 
-### 4. RGB Color Storage Format
+#### 4. RGB Color Storage Format
 **Design Decision:** Store colors as "R,G,B" text in database
 **Rationale:**
 - Human-readable in database queries
@@ -862,7 +763,7 @@ format!("#{:02x}{:02x}{:02x}", r, g, b)
 let r = u8::from_str_radix(&hex[1..3], 16)?;
 ```
 
-### 5. Camera Pan State Management
+#### 5. Camera Pan State Management
 **Pattern:** Pan offset changes camera look-at target
 ```rust
 struct CameraState {
@@ -879,6 +780,82 @@ let eye = target + vec3(/* orbit offset from target */);
 let camera = Camera::new_perspective(viewport, eye, target, up, ...);
 ```
 **Result:** Natural camera behavior - pan moves the view center, rotation/zoom orbit around that center
+
+### Phase 5.7 - HDR Environment Lighting Lessons
+
+1. **Reactive Signals in Effects** - Use `.get()` not `.get_untracked()` for reactivity
+   - Changed viewport Effect to track HDR settings with `.get()`
+   - Enables automatic viewport refresh when settings change
+
+2. **HDR + Directional Lights = Overexposure**
+   - HDR environment maps provide comprehensive lighting
+   - Adding directional lights on top causes massive overexposure
+   - Solution: Conditional lighting based on mode
+   - HDR mode: ambient only | Manual mode: full 3-point lighting
+
+3. **Dynamic Signal Reading in Closures**
+   - Pass signals (not values) to render closures for real-time updates
+   - Use `RwSignal<bool>` parameter in function signature
+   - Read signal with `.get_untracked()` each frame in render loop
+   - Enables toggle without reinitializing entire viewport
+
+4. **Blender Texture Workflow**
+   - Image textures must be properly UV-mapped in Blender
+   - Export glTF with embedded textures
+   - Texture colors appear correct in web app (no color space conversion needed)
+   - Albedo texture + HDR environment = perfect Blender match
+
+### Phase 6 - Traffic Monitoring Lessons
+
+1. **Realistic Traffic Modeling**
+   - Use actual link properties (bandwidth, latency, status)
+   - Model congestion effects (latency increases, packet loss)
+   - Random variation within realistic ranges
+   - Different patterns for different connection types
+
+2. **Color-Coded Visualization**
+   - Instant visual feedback with traffic load colors
+   - Manual color override for specific use cases
+   - Proper lighting required for color visibility
+   - Three-tier thresholds (0-40%, 40-70%, 70-100%)
+
+3. **Traffic Data Management**
+   - Separate table for traffic metrics (not in connections table)
+   - Cascade delete when connection removed
+   - HashMap lookup for efficient access in viewport
+   - Real-time updates via refetch trigger
+
+4. **Tooltip Enhancement Pattern**
+   - Enum-based tooltip data (Node vs Connection)
+   - Color-coded metrics for quick interpretation
+   - Display all relevant metrics without clutter
+   - Update tooltip data in mousemove handler
+
+### Phase 6.4.2 - Particle Animation Lessons
+
+1. **Global State for Cross-Closure Synchronization**
+   - `Rc<RefCell<>>` creates NEW instances when closures recreate
+   - `static Mutex<T>` ensures SAME storage across all closures
+   - Critical for animation loop + render function coordination
+   - Prevents "particles updating but not rendering" bugs
+
+2. **Animation Initialization Timing**
+   - Animation setup inside `skip_event_handlers` ONLY runs on first init
+   - Move animation logic OUTSIDE to run on EVERY Effect execution
+   - Check conditions (particles exist AND flag set) before starting
+   - Enables animation to start on refetch, not just page load
+
+3. **requestAnimationFrame Best Practices**
+   - Calculate delta time for frame-rate-independent movement
+   - Check flag before requesting next frame (clean stop)
+   - Store closure in `Rc<RefCell<>>` to access from callback
+   - Use `.forget()` to prevent premature cleanup
+
+4. **Particle Recycling Pattern**
+   - Reset position to 0.0 when reaching 1.0 (seamless loop)
+   - Random starting positions create natural distribution
+   - Direction flag enables bidirectional flows
+   - Speed variation adds visual interest
 
 ## ✅ VERIFIED Configuration (from Leptos 0.7/0.8 docs)
 
@@ -1167,9 +1144,20 @@ ls -lh target/site/pkg/*.wasm
 
 ## Git Repository
 **Repo:** https://github.com/madkrell/ntb.git
-**Tags:** v0.1.0-phase1-complete, v0.1.0-phase2-complete, v0.1.0-phase3-complete, v0.1.0-phase4-complete, v0.1.0-phase5-complete, v0.1.0-phase5.7-complete, v0.1.0-phase6-complete
-**Current Branch:** phase-6.2-traffic-visualization
-**Next Tag:** v0.1.0-phase7 (if continuing with optional features)
+**Current Branch:** main
+**Latest Tag:** v0.1.0-phase6.4.2-complete ✅
+**All Tags:**
+- v0.1.0-phase1-complete
+- v0.1.0-phase2-complete
+- v0.1.0-phase3-complete
+- v0.1.0-phase4-complete
+- v0.1.0-phase5-complete
+- v0.1.0-phase5.5-complete
+- v0.1.0-phase5.7-complete
+- v0.1.0-phase6-complete
+- v0.1.0-phase6.4.2-complete ✅ **(Latest - Particle Animation System)**
+
+**Status:** All core features complete! Ready for optional enhancements (Traffic Dashboard, WebSocket Streaming, etc.)
 
 ## All Known Issues & Solutions
 
