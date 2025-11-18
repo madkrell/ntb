@@ -882,6 +882,40 @@ let camera = Camera::new_perspective(viewport, eye, target, up, ...);
 
 ## ✅ VERIFIED Configuration (from Leptos 0.7/0.8 docs)
 
+### Database Configuration ⚠️ IMPORTANT
+
+**Single Database File:** `ntv.db` (SQLite)
+
+**Configuration:**
+```bash
+# .env file (checked into git)
+DATABASE_URL=sqlite:ntv.db
+
+# src/main.rs (line 24-25)
+let database_url = std::env::var("DATABASE_URL")
+    .unwrap_or_else(|_| "sqlite:ntv.db".to_string());
+```
+
+**⚠️ Historical Note:**
+During the refactoring from "ntv" to "ntb" project name, we intentionally kept the database name as `ntv.db` to preserve data. This is the ONLY active database file. Any other `.db` files (network_topology.db, ntb.db) are empty leftovers and should be deleted.
+
+**Database Schema:**
+- All migrations in `migrations/` directory
+- Tables: topologies, nodes, connections, connection_traffic_metrics, ui_settings, traffic_metrics
+- Migration tracking: `_sqlx_migrations` table
+
+**First-Time Setup:**
+```bash
+# Database is auto-created on first run (create_if_missing = true)
+cargo leptos watch  # Creates ntv.db and runs all migrations
+```
+
+**Verification:**
+```bash
+sqlite3 ntv.db ".tables"  # Should show all 7 tables
+sqlite3 ntv.db "SELECT COUNT(*) FROM nodes;"  # Should show node count
+```
+
 ### Important: NO Leptos.toml Required!
 Modern Leptos projects use `cargo-leptos` and configure everything in `Cargo.toml`.
 The original plan referenced Leptos.toml which is NOT standard.

@@ -12,7 +12,7 @@ Please read these files to understand the current state:
 1. CLAUDE.md - Complete architecture, all phases, all learnings
 2. This file (SESSION-GUIDE.md) - Quick context
 
-Current Status: Phase 6.4.1 COMPLETE! ✅ (Traffic Flow Controls) Ready for Phase 6.4.2 - Particle Animation!
+Current Status: Phase 6.4.2 COMPLETE! ✅ (Particle Animation System) - 60fps animated traffic flows!
 
 **✅ Phase 6.1-6.3 Complete (2025-01-15):**
 Traffic Monitoring with realistic network simulation:
@@ -322,9 +322,9 @@ All core features, visual polish, export/import, traffic monitoring, and flow co
 - **Traffic flow controls** ✅
 - **Swap Source/Target button** ✅
 
-**Git Tag:** v0.1.0-phase6.4.1-complete (ready to create)
+**Git Tag:** v0.1.0-phase6.4.2-complete ✅
 
-**IMMEDIATE NEXT STEP: Phase 6.4.2 - Particle Animation System 🎯**
+**Phase 6 Core Features: COMPLETE!** All traffic monitoring and animation implemented.
 
 **Recommended Next Steps:**
 
@@ -471,27 +471,35 @@ This brings the entire application to life! Instead of just showing a static net
 5. ✅ Swap Source/Target button (reverse connection direction)
 6. ✅ TrafficParticle struct defined (topology_viewport.rs:40-49)
 
-**Phase 6.4.2 - Particle Animation System (IN PROGRESS - Next Steps)**
-1. ⏳ Add particle storage (Vec<TrafficParticle> in Rc<RefCell<>>)
-2. ⏳ Implement spawning logic:
-   - Read traffic metrics from database
-   - Check carries_traffic flag (only spawn if true)
-   - Determine particle count based on utilization:
-     - <40%: 1-3 particles
-     - 40-70%: 3-7 particles
-     - >70%: 7-12 particles
-3. ⏳ Create animation loop:
-   - Use requestAnimationFrame for 60fps updates
-   - Update particle positions (position += speed * delta_time)
-   - Recycle particles at destination (reset position to 0.0)
-4. ⏳ Render particles:
-   - Create small glowing spheres using three-d
-   - Color based on utilization (green/orange/red)
-   - Scale: 0.05-0.1 units for visibility
-5. ⏳ Conditional rendering:
-   - Only render when traffic metrics exist
-   - Only render on connections with carries_traffic=true
-   - Respect flow_direction (forward/backward/bidirectional)
+**Phase 6.4.2 - Particle Animation System ✅ COMPLETE (2025-01-18)**
+1. ✅ Global particle storage (static GLOBAL_PARTICLES: Mutex<Vec<TrafficParticle>>)
+   - Ensures animation loop and render function access SAME data
+   - ANIMATION_RUNNING flag controls animation state
+   - Prevents stale data issues when viewport Effect reruns
+2. ✅ Particle spawning logic:
+   - Reads traffic metrics from database
+   - Checks carries_traffic flag (only spawns if true)
+   - Particle count based on utilization:
+     - <40%: 1-3 particles (green)
+     - 40-70%: 3-7 particles (orange)
+     - >70%: 7-12 particles (red)
+   - Speed varies: 0.15-0.25 (low), 0.25-0.40 (medium), 0.40-0.60 (high)
+3. ✅ 60fps animation loop:
+   - Uses requestAnimationFrame for browser-synchronized updates
+   - Delta time calculation for frame-rate independence
+   - Updates particle positions (position += speed * delta_time)
+   - Recycles particles at destination (reset to 0.0)
+   - Stops cleanly when "Clear Traffic" clicked
+4. ✅ Particle rendering:
+   - Small glowing spheres (radius 0.08) with emissive materials
+   - Colors match utilization (green/orange/red)
+   - Interpolates position along connection path
+   - Respects direction_forward flag for bidirectional flows
+5. ✅ Animation control:
+   - start_particle_animation() / stop_particle_animation() functions
+   - Called from Generate/Clear Traffic buttons
+   - Works on first load (no manual refresh needed)
+   - Animation setup moved outside skip_event_handlers block
 
 **Phase 6.3 - Animated Connections (3-4 hours)**
 1. Particle system for connection animations
@@ -735,11 +743,24 @@ ls -lh target/site/pkg/*.wasm
 
 ### Database Operations
 ```bash
+# ⚠️ IMPORTANT: Single database file: ntv.db (NOT ntb.db!)
+# This was intentionally kept during project rename to preserve data
+
 # Open database
 sqlite3 ntv.db
 
-# Run migrations
+# View tables
+sqlite3 ntv.db ".tables"
+
+# Check data
+sqlite3 ntv.db "SELECT COUNT(*) FROM nodes;"
+
+# Run migrations (normally auto-run on startup)
 sqlx migrate run
+
+# Configuration
+# .env file: DATABASE_URL=sqlite:ntv.db
+# src/main.rs: Falls back to "sqlite:ntv.db" if .env not found
 ```
 
 ## 🐛 Common Issues & Solutions
