@@ -516,7 +516,9 @@ pub fn TopologyViewport(
 
             // Call the stored render function if available
             if let Some(render) = render_fn.borrow().as_ref() {
-                render(camera_state.get_untracked());
+                if let Some(state) = camera_state.try_get_untracked() {
+                    render(state);
+                }
             }
         });
     }
@@ -531,7 +533,9 @@ pub fn TopologyViewport(
 
             // Call the stored render function if available
             if let Some(render) = render_fn.borrow().as_ref() {
-                render(camera_state.get_untracked());
+                if let Some(state) = camera_state.try_get_untracked() {
+                    render(state);
+                }
             }
         });
     }
@@ -611,10 +615,11 @@ pub fn TopologyViewport(
                         get_camera_preset(preset)
                     };
 
-                    let start_state = camera_state.get_untracked();
-
-                    // Animate camera to target position
-                    animate_camera(camera_state, start_state, target_state, render_fn.clone());
+                    // Safely get camera state, skip animation if signal is disposed
+                    if let Some(start_state) = camera_state.try_get_untracked() {
+                        // Animate camera to target position
+                        animate_camera(camera_state, start_state, target_state, render_fn.clone());
+                    }
                 }
             });
         }
@@ -2083,7 +2088,9 @@ fn setup_orbit_controls(
 
     // Store camera state in a non-reactive way for safe access from event handlers
     // This avoids the disposed signal issue entirely
-    let camera_state_snapshot = Arc::new(Mutex::new(camera_state.get_untracked()));
+    // Use try_get_untracked to handle disposed signals gracefully
+    let initial_state = camera_state.try_get_untracked().unwrap_or_default();
+    let camera_state_snapshot = Arc::new(Mutex::new(initial_state));
 
     // Mouse down - start dragging
     {
