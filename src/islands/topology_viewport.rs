@@ -1752,8 +1752,10 @@ async fn initialize_threed_viewport(
     // Store render function so component-level Effect can call it
     *render_fn_storage.borrow_mut() = Some(render_scene.clone());
 
-    // Initial render
-    render_scene(camera_state.get_untracked());
+    // Initial render (use try_get_untracked to handle disposed signal gracefully)
+    if let Some(state) = camera_state.try_get_untracked() {
+        render_scene(state);
+    }
 
     // Set up orbit controls with integrated click handler and tooltip
     // ONLY on first initialization - skip on refetches to avoid duplicate handlers
@@ -2032,8 +2034,10 @@ fn initialize_threed_viewport_test(
     // Store render function so component-level Effect can call it
     *render_fn_storage.borrow_mut() = Some(render_scene.clone());
 
-    // Initial render
-    render_scene(camera_state.get_untracked());
+    // Initial render (use try_get_untracked to handle disposed signal gracefully)
+    if let Some(state) = camera_state.try_get_untracked() {
+        render_scene(state);
+    }
 
     // Set up mouse drag for orbit (no node selection for test scene - use empty storage)
     let empty_nodes = Rc::new(RefCell::new(Vec::new()));
