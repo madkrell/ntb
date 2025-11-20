@@ -1,1281 +1,220 @@
-# Network Topology Builder - Claude Development Notes
+# Network Topology Builder - Development Guide
 
 ## Project Status
-**Current Phase:** Phase 6.4.2 COMPLETE! ✅ (Particle Animation System + Critical Fixes)
-**Last Updated:** 2025-01-19
-**Git Tags:** v0.1.0-phase6.4.2-complete (latest)
-**Architecture:** Regular Leptos Components (Islands removed - see notes below)
-**Database:** ntv.db (SQLite) - See "Database Configuration" section below
+**Phase:** 6.4.3 COMPLETE ✅ | **Updated:** 2025-01-20 | **Tag:** v0.1.0-phase6.4.3-complete
+**Architecture:** Leptos 0.8 (Regular Components) | **Database:** ntv.db (SQLite)
 
-## ✅ What's Complete
-All core features are fully implemented and working:
-- ✅ 3D network topology visualization with glTF/GLB models
-- ✅ Full CRUD operations (nodes, connections, topologies)
-- ✅ Advanced camera controls (pan, zoom, presets, fullscreen)
-- ✅ Customization (colors, scale, lighting, HDR environments)
-- ✅ Export/Import (PNG with transparency, JSON topology backup)
-- ✅ **Traffic monitoring** with realistic simulation
-- ✅ **Color-coded connections** by utilization (green/orange/red)
-- ✅ **Comprehensive tooltips** (4 metrics: utilization, throughput, latency, packet loss)
-- ✅ **60fps particle animation** showing live traffic flows
-- ✅ **Traffic flow controls** (direction, enable/disable per connection)
+## Core Features ✅
+- 3D visualization with glTF/GLB models (full PBR: textures, normals, emissive, alpha)
+- CRUD operations (nodes, connections, topologies)
+- Camera controls (pan, zoom, presets, fullscreen) with bounding box zoom-to-fit
+- Customization (per-node colors, scale, rotation, HDR lighting environments)
+- Export/Import (PNG with transparency, JSON backup/restore)
+- **Traffic monitoring** (mock generator, color-coded utilization, 4-metric tooltips)
+- **60fps particle animation** (flow direction, enable/disable per connection)
+- **Simplified connection creation** (dropdown-based, single-click)
+- Multi-vendor device models (auto-discovery from filesystem)
 
-## 🎯 Recommended Next Steps (All Optional)
+## Optional Next Steps
+1. **Traffic Dashboard** (2-3h): Metrics panel, top-N connections, historical charts, CSV export
+2. **WebSocket Streaming** (2-3h): Live updates via Leptos WebSocket server functions
+3. **UX Polish** (1-2h): Multi-select, keyboard shortcuts, undo/redo, grouping
+4. **Real Integration** (3-5h): SNMP/API connectors for production monitoring
+5. **Documentation**: User guide, developer docs, Docker deployment
 
-**Option 1: Traffic Dashboard** (High Value - 2-3 hours)
-- Metrics panel showing network-wide statistics
-- Top N busiest connections list
-- Historical charts for throughput/latency trends
-- Alert panel for critical connections
-- Export metrics to CSV
+## Critical Architecture Patterns
 
-**Option 2: WebSocket Streaming** (Real-Time Updates - 2-3 hours)
-- Live traffic data streaming using Leptos WebSocket server functions
-- Automatic viewport updates without manual refresh
-- Lower latency, professional monitoring feel
+### Material Rendering (Phase 5.6)
+**Two-path system** (topology_viewport.rs:940-975):
+- **Textured materials**: `PhysicalMaterial::new(&context, gltf_mat)` - no color conversion
+- **Color-only**: Apply sRGB conversion (`linear_to_srgb()` at lines 633-657) to fix three-d bug
+- **Result**: Blender color match + full PBR support (albedo, metallic/roughness, normal, occlusion, emissive, alpha)
 
-**Option 3: Additional UX Polish** (Power User Features - 1-2 hours)
-- Multi-select nodes (Shift+Click)
-- Keyboard shortcuts (Del, Ctrl+S, etc.)
-- Undo/redo functionality
-- Node grouping/labeling
+### HDR Lighting (Phase 5.7)
+**Conditional lighting with dynamic signal reading**:
+- **HDR mode**: Use ONLY ambient light (contains environment map from `public/environments/*.hdr`)
+- **Manual mode**: Use all 4 lights (ambient + key + fill + rim)
+- **Why**: HDR + directional lights = overexposure/washout
+- **Settings**: Persist to database, signals passed to render closure for real-time updates
+- **Dynamic updates**: Lights recreated every frame based on current signal values
+- **Environment map changes**: Trigger full reinit to load new HDR file
 
-**Option 4: Real Network Integration** (Production - 3-5 hours)
-- Replace mock generator with real data sources
-- SNMP integration for network devices
-- API connectors for cloud platforms
-- Transforms demo into production monitoring tool
+### Traffic System (Phase 6)
+**Realistic simulation** (api.rs:1011-1124):
+- **Traffic generation**: 3 intensity levels (Low 10-30%, Medium 30-70%, High 70-95%)
+- **Utilization coloring**: Green (0-40%), Orange (40-70%), Red (70-100%)
+- **Congestion modeling**:
+  - Latency: Base + penalties (0.1-0.3x per % >40%, 0.5-1.5x per % >70%)
+  - Packet loss: Exponential (0-0.1% healthy, 2-5% >90% util)
+  - Utilization: `base + latency_penalty + packet_loss_penalty` (degraded links show red)
+- **Tooltips**: Utilization, throughput, latency, packet loss (all color-coded)
 
-**Option 5: Documentation & Deployment** (Can be done anytime)
-- User guide with screenshots
-- Developer documentation
-- Docker deployment guide
+### Particle Animation (Phase 6.4.2)
+**Global state synchronization** (topology_viewport.rs:51-66):
+```rust
+static GLOBAL_PARTICLES: Mutex<Vec<TrafficParticle>> = Mutex::new(Vec::new());
+static ANIMATION_RUNNING: Mutex<bool> = Mutex::new(false);
+static ANIMATION_LOOP_ID: Mutex<u32> = Mutex::new(0);  // Prevents multiple loops
+```
+- **Loop ID pattern**: Increment on start, old loops check and exit if ID changed
+- **60fps**: `requestAnimationFrame()` with delta time for frame-independent movement
+- **Rendering**: Small spheres (radius 0.08) with emissive glow, position interpolated (0.0-1.0)
+- **Density**: Utilization-based (1-3 low, 3-7 med, 7-12 high)
 
-### three-d API Audit (2025-11-14) ✅
+### Connection Creation (Phase 6.4.3)
+**Simplified dropdown-based approach** (topology_editor.rs:2132-2553):
+- **Old approach (removed)**: Three-state mode (Disabled/SelectingFirst/SelectingSecond) with click-based selection
+- **New approach**: Dropdown in Node Properties Panel showing all available target nodes
+- **Benefits**: Simpler, more reliable, not dependent on 3D viewport event handlers
+- **How it works**:
+  1. Select source node in viewport
+  2. Properties Panel shows "Create Connection" section
+  3. Dropdown lists all other nodes (excludes current node)
+  4. Select target → Click "Create Connection" button
+  5. Connection created with default properties (ethernet, 1000 Mbps, 1.0ms latency)
+- **Preserved features**: All connection properties, traffic visualization, particle animation
 
-**Status:** COMPLETE - See `docs/THREE-D-AUDIT-RESULTS.md` for full report
+## Key Lessons Learned
 
-**Key Findings:**
-- ✅ NTB uses latest three-d 0.18.x (current stable)
-- ✅ Full PBR texture support implemented (albedo, metallic/roughness, normal, occlusion, emissive, alpha)
-- ✅ HDR environment lighting fully compatible with textured materials
-- ✅ No conflicts between image textures and HDR lighting
-- ✅ Color matching solution: Textured materials + HDR environment = perfect Blender match
+### Canvas & WebGL
+- **Canvas resize**: Always update dimensions on EVERY render (not just init)
+  ```rust
+  let width = canvas.client_width() as u32;
+  canvas.set_width(width);
+  canvas.set_height(height);
+  ```
+- **Bounding box zoom**: Dynamic calculation from node positions (not fixed distance)
+  - `distance = (max_dimension * 1.1) / (fov_radians / 2.0).tan()`
 
-**Recommendations:**
-1. **Textured workflow** (already supported) - Solves color space issues
-2. **HDR environment lighting** (not yet implemented) - Solves lighting appearance
-3. **Combined approach** - Matches Blender renders exactly
+### Leptos Patterns
+- **Server functions**: Module NOT behind `#[cfg(feature = "ssr")]` for visibility
+- **Reactive signals**: Use `.get()` in Effects for reactivity, `.get_untracked()` in render loops
+- **Dynamic render updates**: Pass signals to render closures, read with `.get_untracked()` each frame
+- **Visual settings reactivity**: Capture signals (not values) for real-time lighting/background changes
+- **Fullscreen toggle**: Single `RwSignal<bool>` better than separate panel signals (avoids collision)
+- **Event handlers**: Use `Arc<Mutex<>>` snapshot with `.forget()` to prevent disposed signal panics
+- **Context collision**: Wrap same-typed signals in unique struct
 
-### Phase 5.5 - Vendor-Based Model Selection COMPLETE! ✅ (2025-11-08)
+### three-d Library
+- **Color space**: glTF linear RGB → sRGB conversion needed for color-only materials
+- **Emissive glow**: Render with empty lights array `target.render(&camera, mesh, &[])`
+- **Solid meshes**: Use `CpuMesh::cube()`, not cylinder (hollow tubes without end caps)
+- **Lighting conflict**: HDR environment provides full illumination (disable directional lights)
 
-**✅ COMPLETED:**
-27. ✅ **Vendor-Based Device Palette** (2025-11-08) - Multi-vendor model selection system
-   - Database migration: `20250107000003_add_vendor_model.sql`
-   - Added `vendor` and `model_name` fields to Node model
-   - Device Palette buttons now plural: "Routers", "Switches", "Servers", etc.
-   - Added new "Applications" device type
-   - Click any device button to show vendor dropdown
-   - Auto-discovers vendors from filesystem: `public/models/{type}/{vendor}/*.glb`
-   - Auto-discovers vendor icons: `public/icons/vendors/{vendor}.svg`
-   - Generic vendor always shown first as fallback
-   - Component extraction pattern for clean Leptos closure handling
-   - Dynamic z-index layering prevents dropdown overlap issues
+### Animation & State
+- **Global vs local**: `static Mutex<T>` for cross-closure sync, not `Rc<RefCell<>>`
+- **Loop ID counter**: Prevents multiple `requestAnimationFrame` loops running simultaneously
+- **Timing**: Animation setup outside `skip_event_handlers` to run on EVERY Effect execution
 
-28. ✅ **Vendor Auto-Discovery Server Function** (2025-11-08)
-   - `get_vendors_for_type()` scans filesystem for vendor folders
-   - Returns VendorListResponse with vendors and their models
-   - Model display names auto-formatted from filenames (blob-router → Blob Router)
-   - Icon detection with fallback to generic.svg
-   - Sorted: Generic first, then available vendors, then unavailable (no models)
+### Traffic Semantics
+- **Throughput vs Utilization**: Separate calculations (throughput ↓ with degradation, utilization ↑)
+- **Realistic modeling**: Base latency + congestion penalties, exponential packet loss
+- **Database storage**: Separate `connection_traffic_metrics` table (not in connections)
 
-**File Structure:**
+### Visual Controls Reactivity (Phase 6.4.3)
+- **Problem**: Visual settings (lighting, background, grid) captured as static values at init
+- **Solution**: Pass signals to render closure, read dynamically with `.get_untracked()` each frame
+- **Pattern**: Capture `RwSignal<T>` (not `T`), recreate objects (lights, colors) on every frame
+- **Grid/Axes**: Always create all meshes at init, control visibility purely at render time
+- **HDR changes**: Environment map changes trigger reinit (load new HDR), toggle just re-renders
+- **Result**: All visual controls update in real-time without viewport reinitialization
+
+## Database Configuration
+
+**Active Database:** `ntv.db` (SQLite) - AUTO-CREATED on first run
+**Configuration:** `DATABASE_URL=sqlite:ntv.db` (.env file)
+**Tables:** topologies, nodes, connections, connection_traffic_metrics, ui_settings, traffic_metrics
+
+**Key Migrations:**
+- `20250102000002_add_node_rotations.sql` - rotation_x/y/z (degrees)
+- `20250106000003_add_node_scale.sql` - scale (0.1-5.0)
+- `20250107000001_add_connection_color.sql` - color "R,G,B" format
+- `20250107000002_add_node_color.sql` - node color "R,G,B" format
+- `20250107000003_add_vendor_model.sql` - vendor/model_name for multi-vendor
+- `20250114000001_add_environment_lighting.sql` - HDR lighting settings
+- `20250118000001_add_traffic_flow_controls.sql` - carries_traffic, flow_direction
+- `20250119000002_add_baseline_packet_loss.sql` - baseline_packet_loss_pct
+
+**⚠️ Historical Note:** Database kept as `ntv.db` during "ntv→ntb" rename to preserve data.
+
+## Vendor Model System (Phase 5.5)
+
+**Auto-discovery** from filesystem:
 ```
 public/
-├── models/
-│   ├── router/
-│   │   ├── generic/
-│   │   │   └── blob-router.glb
-│   │   ├── cisco/
-│   │   │   ├── asr9000.glb
-│   │   │   └── catalyst.glb
-│   │   └── versa/
-│   │       └── sd-wan.glb
-│   ├── switch/
-│   │   ├── generic/
-│   │   │   └── blob-switch.glb
-│   │   └── cisco/
-│   │       └── nexus.glb
-│   └── application/
-│       ├── generic/
-│       │   └── blob-application.glb
-│       └── cisco/
-│           └── webex.glb
-└── icons/
-    └── vendors/
-        ├── generic.svg
-        ├── cisco.svg
-        └── versa.svg
+├── models/{type}/{vendor}/*.glb  → Auto-discovered models
+└── icons/vendors/{vendor}.svg     → Auto-discovered icons
 ```
 
-**Adding New Vendors (Zero Configuration):**
-1. Create vendor folder: `mkdir -p public/models/router/cisco`
-2. Add models: `cp model.glb public/models/router/cisco/asr9000.glb`
-3. Add icon: `cp logo.svg public/icons/vendors/cisco.svg`
-4. Refresh browser → Cisco automatically appears in Routers dropdown!
+**Adding new vendor:**
+1. `mkdir -p public/models/router/cisco`
+2. `cp model.glb public/models/router/cisco/asr9000.glb`
+3. `cp logo.svg public/icons/vendors/cisco.svg`
+4. Refresh browser → Cisco appears in Routers dropdown
 
-### Phase 5.6 - Full glTF/GLB Material Support COMPLETE! ✅ (2025-11-12)
+**Server function:** `get_vendors_for_type()` scans filesystem, formats display names (blob-router → Blob Router)
 
-**✅ COMPLETED:**
-29. ✅ **Full glTF Material Support** (2025-11-12) - Complete PBR material pipeline with texture support
-   - Fixed material rendering to properly support ALL glTF features
-   - Two-path material system:
-     - **Textured materials**: Use `PhysicalMaterial::new()` for full glTF support (no color conversion)
-     - **Color-only materials**: Apply linear→sRGB conversion to fix three-d color space bug
-   - Now properly supports:
-     - ✅ Albedo/base color textures (image textures)
-     - ✅ Metallic/roughness packed textures
-     - ✅ Normal maps (surface detail)
-     - ✅ Occlusion maps (ambient shadows)
-     - ✅ Emissive textures (glowing LEDs, screens)
-     - ✅ Alpha transparency (glass, transparent parts)
-   - Console logging shows which features are active per material
-   - Texture workflow = perfect Blender color match (no conversion issues!)
+## Build Commands
 
-**Technical Implementation:**
-```rust
-// topology_viewport.rs:940-975
-if has_textures {
-    // Full glTF material with all texture support
-    PhysicalMaterial::new(&context, gltf_mat)
-} else {
-    // Color-only: apply sRGB conversion
-    let corrected_albedo = convert_linear_color_to_srgba(&gltf_mat.albedo);
-    PhysicalMaterial::new_opaque(&context, &CpuMaterial {
-        albedo: corrected_albedo,
-        metallic: gltf_mat.metallic,
-        roughness: gltf_mat.roughness,
-        ..Default::default()
-    })
-}
-```
-
-**Color Space Handling:**
-- **glTF Spec**: Stores `baseColorFactor` in linear RGB space
-- **Textures**: Already in sRGB color space (no conversion needed)
-- **three-d Bug**: Library treats linear values as sRGB without conversion
-- **Solution**:
-  - Textured materials → Use as-is (textures correct)
-  - Color-only → Apply exact sRGB transfer function (gamma 2.4 piecewise)
-
-**sRGB Conversion Formula (lines 633-657):**
-```rust
-fn linear_to_srgb(linear: f32) -> f32 {
-    if linear <= 0.0031308 {
-        linear * 12.92
-    } else {
-        1.055 * linear.powf(1.0 / 2.4) - 0.055
-    }
-}
-```
-
-**Benefits:**
-- Image textures match Blender exactly (recommended workflow)
-- Full PBR material capabilities (industry standard)
-- Normal maps add detail without geometry
-- Emissive materials for glowing LEDs
-- Alpha transparency for glass/screens
-- Proper color space handling
-
-### Phase 5.7 - HDR Environment Lighting COMPLETE! ✅ (2025-11-14)
-
-**✅ COMPLETED:**
-30. ✅ **HDR Environment Lighting System** (2025-11-14) - Realistic studio lighting
-   - Database migration: `20250114000001_add_environment_lighting.sql`
-   - Added `use_environment_lighting` (BOOLEAN) and `environment_map` (TEXT) to ui_settings
-   - HDR file loading with `three-d-asset` hdr feature enabled (Cargo.toml)
-   - Skybox creation from equirectangular HDR maps
-   - `AmbientLight::new_with_environment()` for realistic ambient illumination
-   - Fallback to manual three-point lighting when disabled
-
-31. ✅ **HDR UI Controls** (2025-11-14) - User control over environment lighting
-   - Toggle button in View Controls panel (Enabled/Disabled)
-   - Dropdown selector for HDR environment maps:
-     - Studio Small (2K) - `studio_small_09_2k.hdr`
-     - Studio Loft (2K) - `photo_studio_loft_hall_2k.hdr`
-     - Photo Studio (4K) - `photo_studio_01_4k.hdr`
-     - Docklands (2K) - `docklands_02_2k.hdr`
-   - Real-time viewport updates when settings change
-   - Reactive signal tracking via `.get()` instead of `.get_untracked()`
-
-32. ✅ **Settings Persistence** (2025-11-14) - All UI settings saved to database
-   - Auto-load on page mount via Effect with spawn_local
-   - Auto-save when any setting changes (viewport visibility, lighting, HDR)
-   - `settings_loaded` flag prevents save during initial load
-   - Updated `get_ui_settings()` SQL query to include new columns
-   - Updated `update_ui_settings()` to save HDR preferences
-
-33. ✅ **Conditional Lighting System** (2025-11-14) - Critical fix for HDR + texture compatibility
-   - **Problem:** HDR environment + directional lights caused texture washout
-   - **Root Cause:** All 4 lights (ambient + key + fill + rim) rendered simultaneously with HDR
-   - **Solution:** Conditional lighting in render loop:
-     - HDR mode: Use ONLY ambient light (contains HDR environment)
-     - Manual mode: Use all 4 lights (ambient + key + fill + rim)
-   - **Implementation:** Dynamic signal reading in render closure (topology_viewport.rs:1284-1290)
-   - Pass `use_environment_lighting_signal` to render function for real-time updates
-   - Result: Textured materials now display correctly with HDR lighting
-
-**Technical Implementation:**
-```rust
-// 1. HDR loading (topology_viewport.rs:811-844)
-let skybox_option: Option<Skybox> = if use_environment_lighting {
-    let hdr_url = format!("{}/environments/{}", origin, environment_map);
-    match load_async(&[hdr_url.as_str()]).await {
-        Ok(mut loaded) => {
-            match loaded.deserialize::<three_d_asset::Texture2D>(&environment_map) {
-                Ok(hdr_texture) => {
-                    Some(Skybox::new_from_equirectangular(&context, &hdr_texture))
-                }
-                Err(e) => None,
-            }
-        }
-        Err(e) => None,
-    }
-} else {
-    None
-};
-
-// 2. Ambient light creation (topology_viewport.rs:1212-1224)
-let ambient = if use_environment_lighting && skybox_option.is_some() {
-    let skybox = skybox_option.as_ref().unwrap();
-    Rc::new(AmbientLight::new_with_environment(
-        &context, ambient_intensity, Srgba::WHITE, skybox.texture()
-    ))
-} else {
-    Rc::new(AmbientLight::new(&context, ambient_intensity, Srgba::WHITE))
-};
-
-// 3. Dynamic signal reading in render closure (topology_viewport.rs:1287-1290)
-move |state: CameraState| {
-    // Read HDR environment signal dynamically each frame
-    let use_env_lighting = use_env_lighting_signal
-        .map(|sig| sig.get_untracked())
-        .unwrap_or(use_environment_lighting);
-
-    // ... render code ...
-
-    // 4. Conditional lighting (topology_viewport.rs:1359-1366)
-    if use_env_lighting {
-        // HDR mode: Use ONLY ambient (contains HDR environment)
-        target.render(&camera, mesh_to_render, &[&*ambient]);
-    } else {
-        // Manual mode: Use full three-point lighting
-        target.render(&camera, mesh_to_render, &[&*ambient, &*key_light, &*fill_light, &*rim_light]);
-    }
-}
-```
-
-**HDR Files Location:**
-- **Directory:** `public/environments/`
-- **Source:** Poly Haven (https://polyhaven.com/hdris)
-- **Format:** Equirectangular .hdr files
-- **Sizes:** 2K (6MB) and 4K (24MB) available
-
-**Benefits Achieved:**
-- ✅ Perfect color + lighting match with Blender (when using same HDR)
-- ✅ Realistic reflections on metallic device surfaces
-- ✅ Professional studio appearance
-- ✅ No manual light tuning needed
-- ✅ Settings persist across page refreshes
-- ✅ Textured materials display correctly with HDR (no washout)
-- ✅ Real-time HDR toggle without viewport reinitialization
-
-**Key Lessons Learned (Phase 5.7):**
-
-1. **Reactive Signals in Effects** - Use `.get()` not `.get_untracked()` for reactivity
-   - Changed viewport Effect to track HDR settings with `.get()`
-   - Enables automatic viewport refresh when settings change
-
-2. **HDR + Directional Lights = Overexposure**
-   - HDR environment maps provide comprehensive lighting
-   - Adding directional lights on top causes massive overexposure
-   - Solution: Conditional lighting based on mode
-   - HDR mode: ambient only | Manual mode: full 3-point lighting
-
-3. **Dynamic Signal Reading in Closures**
-   - Pass signals (not values) to render closures for real-time updates
-   - Use `RwSignal<bool>` parameter in function signature
-   - Read signal with `.get_untracked()` each frame in render loop
-   - Enables toggle without reinitializing entire viewport
-
-4. **Blender Texture Workflow**
-   - Image textures must be properly UV-mapped in Blender
-   - Export glTF with embedded textures
-   - Texture colors appear correct in web app (no color space conversion needed)
-   - Albedo texture + HDR environment = perfect Blender match
-
-### Phase 6 - Traffic Monitoring COMPLETE! ✅ (2025-01-15)
-
-**Overview:** Real-time traffic visualization transforms the static 3D network diagram into a live monitoring tool. Mock traffic generator simulates realistic network patterns with color-coded connections showing utilization levels.
-
-**✅ COMPLETED:**
-
-#### Phase 6.1 - Mock Traffic Generator (2025-01-15)
-34. ✅ **Server-Side Traffic Generation** - Realistic network traffic simulation
-   - Server function `generate_mock_traffic()` creates traffic for all active connections
-   - Three intensity levels: Low (10-30%), Medium (30-70%), High (70-95%)
-   - Traffic patterns vary by connection type (Fiber > Ethernet > Wireless)
-   - Respects connection status (only "Active" connections generate traffic)
-   - Uses actual bandwidth from connection properties
-   - Database storage: traffic_metrics table (connection_id, throughput, latency, packet_loss, utilization)
-   - `clear_traffic()` server function removes all traffic data
-
-35. ✅ **Traffic Control UI** - User interface for traffic management
-   - Traffic Controls panel in Properties section (bottom of panel)
-   - "Generate Traffic" button with dropdown intensity selector (Low/Medium/High)
-   - "Clear Traffic" button to reset all traffic data
-   - Real-time viewport updates when traffic is generated/cleared
-   - Button styling with Tailwind CSS (green for generate, red for clear)
-
-#### Phase 6.2 - Traffic Visualization (2025-01-15)
-36. ✅ **Color-Coded Connections** - Visual traffic load indication
-   - Dynamic connection colors based on utilization percentage:
-     - Green: 0-40% utilization (healthy)
-     - Orange: 40-70% utilization (moderate)
-     - Red: 70-100% utilization (heavy/critical)
-   - Color updates in real-time when traffic changes
-   - Manual color override capability (custom colors take precedence)
-   - Traffic data fetched via `get_all_traffic_metrics()` server function
-   - Connection rendering with proper lighting (ambient + directional)
-
-37. ✅ **Traffic Tooltips** - Detailed metrics on hover
-   - Enhanced connection tooltips show utilization percentage
-   - Color-coded utilization display (green/orange/red)
-   - Displays source → target connection name
-   - Tooltip data structure supports both Node and Connection types
-   - Ray-cylinder intersection for accurate hover detection
-
-#### Phase 6.3 - Link Metrics Impact (2025-01-15)
-38. ✅ **Bandwidth-Aware Traffic** - Realistic throughput calculations
-   - Traffic generation uses actual link bandwidth from database
-   - Throughput calculated as: `bandwidth_mbps * utilization_pct / 100.0`
-   - Intensity level determines utilization range, not absolute values
-   - Different connection types have different throughput patterns
-
-39. ✅ **Congestion-Based Latency** - Dynamic latency calculation
-   - Base latency from connection properties (default 10ms)
-   - Congestion penalties based on utilization:
-     - < 40%: Base latency + jitter only
-     - 40-70%: Base + slight congestion penalty (0.1-0.3x per % over 40)
-     - > 70%: Base + significant congestion penalty (0.5-1.5x per % over 70)
-   - Random jitter (-2ms to +3ms) for realistic variation
-   - Higher utilization = higher latency (simulates real network behavior)
-
-40. ✅ **Exponential Packet Loss** - Realistic packet loss patterns
-   - Packet loss increases exponentially with utilization:
-     - < 60%: 0-0.1% (minimal, healthy network)
-     - 60-80%: 0.1-0.5% (occasional drops)
-     - 80-90%: 0.5-2.0% (noticeable degradation)
-     - > 90%: 2-5% (severe congestion)
-   - Random variation within ranges for realism
-   - Models real-world network congestion behavior
-
-41. ✅ **Comprehensive Tooltips** - All metrics displayed
-   - Connection hover tooltips now show 4 metrics:
-     - Utilization (color-coded: green/orange/red)
-     - Throughput in Mbps (blue)
-     - Latency in ms (color-coded: green < 20ms, yellow 20-50ms, orange > 50ms)
-     - Packet Loss in % (color-coded: green < 0.5%, yellow 0.5-2%, red > 2%)
-   - All metrics update in real-time with traffic changes
-   - Clean, readable tooltip design with color coding
-
-**Technical Implementation:**
-
-```rust
-// Traffic generation algorithm (api.rs:1011-1052)
-let utilization_pct = rng.gen_range(utilization_range.clone());
-let throughput_mbps = bandwidth_mbps * utilization_pct / 100.0;
-
-// Congestion-based latency
-let base_latency = connection.latency_ms.unwrap_or(10.0);
-let congestion_penalty = if utilization_pct > 70.0 {
-    (utilization_pct - 70.0) * rng.gen_range(0.5..1.5)
-} else if utilization_pct > 40.0 {
-    (utilization_pct - 40.0) * rng.gen_range(0.1..0.3)
-} else {
-    0.0
-};
-let latency_ms = (base_latency + congestion_penalty + jitter).max(0.1);
-
-// Exponential packet loss
-let packet_loss_pct = if utilization_pct > 90.0 {
-    rng.gen_range(2.0..5.0)
-} else if utilization_pct > 80.0 {
-    rng.gen_range(0.5..2.0)
-} else if utilization_pct > 60.0 {
-    rng.gen_range(0.1..0.5)
-} else {
-    rng.gen_range(0.0..0.1)
-};
-```
-
-**Key Features:**
-- ✅ Realistic traffic simulation using link properties
-- ✅ Three-tier intensity control (Low/Medium/High)
-- ✅ Color-coded connections for instant visual feedback
-- ✅ Comprehensive tooltips with 4 metrics
-- ✅ Congestion-based latency modeling
-- ✅ Exponential packet loss at high utilization
-- ✅ Manual color override capability
-- ✅ Real-time viewport updates
-
-**Database Schema:**
-```sql
-CREATE TABLE IF NOT EXISTS connection_traffic_metrics (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    connection_id INTEGER NOT NULL,
-    throughput_mbps REAL NOT NULL,
-    latency_ms REAL NOT NULL,
-    packet_loss_pct REAL NOT NULL,
-    utilization_pct REAL NOT NULL,
-    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
-);
-```
-
-#### Phase 6.4.1 - Traffic Flow Controls (2025-01-18) ✅ COMPLETE
-
-42. ✅ **Traffic Flow Configuration** - User control over traffic animation
-   - Database migration: `20250118000001_add_traffic_flow_controls.sql`
-   - Added `carries_traffic` (BOOLEAN, default TRUE) - Enable/disable traffic animation per connection
-   - Added `flow_direction` (TEXT, default 'source_to_target') - Control particle direction
-   - SQLite triggers enforce valid directions: 'source_to_target', 'target_to_source', 'bidirectional'
-   - Properties Panel UI: Checkbox to enable/disable traffic + Radio buttons for direction
-   - Updated Connection model with new fields (src/models/connection.rs:19-20)
-   - Updated all SQL queries in api.rs (5 locations: lines 200, 525-526, 580-581, 675-676, 985-986)
-
-43. ✅ **Swap Source/Target Button** - Reverse connection direction
-   - Server function: `swap_connection_direction(id: i64)` (api.rs:1190-1226)
-   - SQL UPDATE swaps source_node_id and target_node_id
-   - UI button in Properties Panel with loading state
-   - Real-time viewport refresh after swap
-   - Use case: Correct connection direction without recreating
-
-44. ✅ **TrafficParticle Struct** - Data structure for animation system
-   - Defined in topology_viewport.rs:40-49
-   - Fields: connection_id, position (0.0-1.0), speed, color, direction_forward
-   - Ready for particle system implementation in Phase 6.4.2
-
-**Database Migration:**
-```sql
--- migrations/20250118000001_add_traffic_flow_controls.sql
-ALTER TABLE connections ADD COLUMN carries_traffic BOOLEAN NOT NULL DEFAULT TRUE;
-ALTER TABLE connections ADD COLUMN flow_direction TEXT NOT NULL DEFAULT 'source_to_target';
-
--- Validation triggers
-CREATE TRIGGER check_flow_direction_insert
-BEFORE INSERT ON connections
-FOR EACH ROW
-WHEN NEW.flow_direction NOT IN ('source_to_target', 'target_to_source', 'bidirectional')
-BEGIN
-    SELECT RAISE(ABORT, 'flow_direction must be one of: source_to_target, target_to_source, bidirectional');
-END;
-```
-
-**Properties Panel UI (topology_editor.rs:2708-2775):**
-```rust
-// Checkbox: Enable/Disable Traffic
-<input
-    type="checkbox"
-    checked=move || carries_traffic.get()
-    on:change=move |ev| carries_traffic.set(event_target_checked(&ev))
-/>
-
-// Radio Buttons: Flow Direction
-<input type="radio" value="source_to_target" checked=move || flow_direction.get() == "source_to_target" />
-<input type="radio" value="target_to_source" checked=move || flow_direction.get() == "target_to_source" />
-<input type="radio" value="bidirectional" checked=move || flow_direction.get() == "bidirectional" />
-
-// Swap Button (topology_editor.rs:2591-2605)
-<button on:click=move |_| { swap_action.dispatch(()); }>
-    "🔄 Swap Source ↔ Target"
-</button>
-```
-
-**TrafficParticle Struct (topology_viewport.rs:40-49):**
-```rust
-#[cfg(feature = "hydrate")]
-#[derive(Clone, Debug)]
-struct TrafficParticle {
-    connection_id: i64,
-    position: f32,  // 0.0 to 1.0 along connection path
-    speed: f32,     // Movement speed per frame (units per second)
-    color: three_d::Srgba,  // Particle color based on utilization
-    direction_forward: bool, // true = source->target, false = target->source
-}
-```
-
-**Key Benefits:**
-- ✅ Users can selectively enable/disable traffic on specific connections
-- ✅ Control traffic flow direction (source→target, target→source, bidirectional)
-- ✅ Quickly reverse connection direction without recreating it
-- ✅ Foundation ready for particle animation system
-- ✅ All new fields stored in database with validation
-
-#### Phase 6.4.2 - Particle Animation System (2025-01-18) ✅ COMPLETE
-
-45. ✅ **Global Particle Storage** - Synchronized state for animation
-   - Replaced `Rc<RefCell<Vec<TrafficParticle>>>` with `static GLOBAL_PARTICLES: Mutex<Vec<TrafficParticle>>`
-   - Ensures animation loop and render function access SAME particle data
-   - `ANIMATION_RUNNING: Mutex<bool>` flag controls animation state
-   - `ANIMATION_FRAME_ID: Mutex<Option<i32>>` tracks requestAnimationFrame ID
-   - Prevents stale data issues when viewport Effect reruns (topology_viewport.rs:51-63)
-
-46. ✅ **Particle Spawning Logic** - Traffic-based particle generation
-   - Spawns particles when "Generate Traffic" button clicked
-   - Density based on utilization: 1-3 particles (<40%), 3-7 (40-70%), 7-12 (>70%)
-   - Color matches connection utilization (green/orange/red)
-   - Speed varies: 0.15-0.25 units/sec (low), 0.25-0.40 (medium), 0.40-0.60 (high)
-   - Respects `carries_traffic` flag (only spawns on enabled connections)
-   - Random starting positions (0.0-0.5) for natural distribution (topology_viewport.rs:1310-1406)
-
-47. ✅ **60fps Animation Loop** - Smooth particle movement
-   - Uses `window.requestAnimationFrame()` for browser-synchronized updates
-   - Delta time calculation for frame-rate-independent movement
-   - Updates particle positions: `position += speed * delta_time`
-   - Particle recycling: Resets to 0.0 when reaching 1.0
-   - Conditional continuation: Only requests next frame if ANIMATION_RUNNING = true
-   - Stops cleanly when "Clear Traffic" clicked (topology_viewport.rs:1793-1895)
-
-48. ✅ **Particle Rendering** - Glowing sphere particles with lighting
-   - Renders particles as small spheres (radius 0.08) with emissive glow
-   - Interpolates position along connection path based on `position` value (0.0-1.0)
-   - Respects `direction_forward` flag for bidirectional flows
-   - Uses PhysicalMaterial with emissive color for glow effect
-   - Renders with proper lighting (ambient + directional or HDR environment)
-   - Reads from GLOBAL_PARTICLES in render closure (topology_viewport.rs:1693-1755)
-
-49. ✅ **Animation Control Functions** - Start/Stop API
-   - `start_particle_animation()` sets ANIMATION_RUNNING = true
-   - `stop_particle_animation()` sets flag to false AND clears particles
-   - Called from Generate Traffic / Clear Traffic buttons BEFORE viewport refetch
-   - Public functions accessible from topology_editor.rs (topology_viewport.rs:89-108)
-
-50. ✅ **Animation Initialization Fix** - Works on first load
-   - Moved animation setup OUTSIDE `skip_event_handlers` block
-   - Allows animation to initialize on EVERY Effect execution (not just first)
-   - Checks `should_start_animation` flag (particles exist AND ANIMATION_RUNNING)
-   - Fixes issue where animation only worked after manual page refresh
-   - Animation now starts immediately when "Generate Traffic" clicked (topology_viewport.rs:1793-1818)
-
-**Technical Implementation:**
-
-```rust
-// Global storage (topology_viewport.rs:51-63)
-#[cfg(feature = "hydrate")]
-static GLOBAL_PARTICLES: Mutex<Vec<TrafficParticle>> = Mutex::new(Vec::new());
-
-#[cfg(feature = "hydrate")]
-static ANIMATION_RUNNING: Mutex<bool> = Mutex::new(false);
-
-// Animation loop (topology_viewport.rs:1858-1888)
-if let Ok(mut particles) = GLOBAL_PARTICLES.lock() {
-    for particle in particles.iter_mut() {
-        particle.position += particle.speed * delta_time as f32;
-        if particle.position >= 1.0 {
-            particle.position = 0.0;  // Recycle
-        }
-    }
-}
-
-// Particle rendering (topology_viewport.rs:1697-1719)
-if let Ok(particles) = GLOBAL_PARTICLES.lock() {
-    for particle in particles.iter() {
-        let position = if particle.direction_forward {
-            source_pos + (target_pos - source_pos) * particle.position
-        } else {
-            target_pos + (source_pos - target_pos) * particle.position
-        };
-
-        let material = PhysicalMaterial::new_opaque(&context, &CpuMaterial {
-            albedo: particle.color,
-            emissive: glow_color,
-            roughness: 0.3,
-            ..Default::default()
-        });
-
-        let mut particle_mesh = Gm::new(Mesh::new(&context, &particle_sphere_cpu), material);
-        particle_mesh.set_transformation(
-            Mat4::from_translation(position) * Mat4::from_scale(particle_radius)
-        );
-        target.render(&camera, &particle_mesh, &[lights...]);
-    }
-}
-```
-
-**Key Features:**
-- ✅ Smooth 60fps animation with delta time synchronization
-- ✅ Utilization-based particle density and speed
-- ✅ Glowing particles with emissive materials
-- ✅ Bidirectional flow support
-- ✅ Clean start/stop without memory leaks
-- ✅ Works on first load (no manual refresh needed)
-- ✅ Global state prevents stale data issues
-
-#### Phase 6.4.2 Critical Improvements (2025-01-19) ✅ COMPLETE
-
-51. ✅ **Particle Speed Bug Fix** - Constant speed regardless of settings changes
-   - **Problem:** Particles sped up on Generate Traffic double-click or settings changes
-   - **Root Cause:** Multiple animation loops running simultaneously
-   - **Solution:** Added ANIMATION_LOOP_ID counter to invalidate old loops
-   - Each loop checks if it's still current before continuing
-   - Old loops automatically stop when new loop starts
-   - Result: Only ONE animation loop runs at a time (topology_viewport.rs:66, 1897-1934)
-
-52. ✅ **Baseline Packet Loss Integration** - Full packet loss modeling
-   - Database migration: `20250119000002_add_baseline_packet_loss.sql`
-   - Added `baseline_packet_loss_pct` field (REAL, 0.0-10.0%, default 0.0%)
-   - Properties Panel input with 0.01% precision
-   - Updated Connection model and all SQL queries (6 locations)
-   - Integrated into throughput calculation with degradation penalties
-   - Tooltip displays total packet loss (baseline + congestion-based)
-
-53. ✅ **Latency Persistence Fix** - Latency values now save correctly
-   - **Problem:** Latency not persisting to database
-   - **Root Cause:** `.filter(|&v| v > 0.0)` excluded 0.0 latency
-   - **Solution:** Changed to `.filter(|&v| v >= 0.0)` to allow 0ms latency
-   - Result: All latency values including 0.0 now persist correctly
-
-54. ✅ **Realistic Utilization Calculation** - Degraded links show as unhealthy
-   - **Problem:** High latency/packet loss reduced throughput BUT also reduced utilization → link showed GREEN
-   - **New Logic:** Throughput still reduced (correct), but utilization calculation uses degradation penalties
-   - Throughput formula: `bandwidth × traffic_level × type_efficiency × rtt_factor × packet_loss_factor`
-   - Utilization formula: `base_utilization + latency_penalty + packet_loss_penalty`
-   - Latency penalty: Each 2ms over 50ms adds 1% utilization
-   - Packet loss penalty: Each 1% packet loss adds 10% utilization
-   - Result: 5% packet loss + 120ms latency = RED link (correctly shows as degraded)
-
-55. ✅ **Error Icon Improvements** - Solid red X for error status
-   - Changed from hollow cylinders to solid box meshes (CpuMesh::cube())
-   - Size reduced: 0.3 → 0.15 (50% smaller)
-   - Thickness optimized: 0.03 for clean appearance
-   - Emissive material with NO lighting (pure bright red glow)
-   - Perpendicular orientation to connection line (using cross products)
-   - Result: Clear, solid red X visible from all angles
-
-**Key Technical Solutions (2025-01-19):**
-
-```rust
-// 1. Animation Loop ID for preventing multiple loops (topology_viewport.rs:66, 1897-1934)
-static ANIMATION_LOOP_ID: Mutex<u32> = Mutex::new(0);
-
-let current_loop_id = if let Ok(mut loop_id) = ANIMATION_LOOP_ID.lock() {
-    *loop_id += 1;
-    *loop_id
-} else {
-    1
-};
-
-// In animation loop - check if still current
-let is_current_loop = if let Ok(loop_id) = ANIMATION_LOOP_ID.lock() {
-    *loop_id == current_loop_id
-} else {
-    false
-};
-
-if !is_current_loop {
-    return; // Stop this loop
-}
-
-// 2. Realistic utilization with degradation penalties (api.rs:1092-1124)
-// Throughput (tooltip): Reduced by latency and packet loss
-let throughput_mbps = bandwidth * traffic_level * type_efficiency * rtt_factor * packet_loss_factor;
-
-// Utilization (color): Increased by degradation
-let base_utilization = (ideal_throughput / bandwidth * 100.0).min(100.0);
-let latency_penalty = if latency > 50.0 { (latency - 50.0) / 2.0 } else { 0.0 };
-let packet_loss_penalty = baseline_packet_loss * 10.0;
-let utilization_pct = (base_utilization + latency_penalty + packet_loss_penalty).min(100.0);
-
-// 3. Solid error icon with emissive material (topology_viewport.rs:2838-2900)
-let box_mesh = CpuMesh::cube(); // Solid instead of hollow cylinder
-let material = PhysicalMaterial::new_opaque(&context, &CpuMaterial {
-    albedo: Srgba::new(255, 0, 0, 255),
-    emissive: Srgba::new(255, 0, 0, 255),
-    roughness: 1.0,
-    metallic: 0.0,
-    ..Default::default()
-});
-// Render with NO lights for pure emissive glow
-target.render(&camera, error_icon, &[]);
-```
-
-**Lessons Learned (Phase 6.4.2 Improvements - 2025-01-19):**
-
-1. **Multiple Animation Loops**
-   - Problem: requestAnimationFrame closures continue running even after new loop starts
-   - Solution: Global loop ID counter - each loop checks if it's still current
-   - Pattern: Increment ID when starting new loop, old loops exit when ID doesn't match
-
-2. **Throughput vs Utilization Semantics**
-   - Throughput: Actual data rate (should decrease with degradation)
-   - Utilization: Link health indicator (should increase with degradation)
-   - Key insight: High packet loss = low throughput BUT high utilization (link is stressed)
-   - Separate calculations for tooltip display vs color coding
-
-3. **Hollow vs Solid Meshes**
-   - Cylinders in three-d are hollow tubes (no end caps)
-   - Cubes are fully solid (all 6 faces rendered)
-   - For solid appearance: use CpuMesh::cube() scaled as rectangular bar
-
-4. **Emissive Material Rendering**
-   - Emissive color alone isn't enough if lights are applied
-   - For pure glow: Render with empty lights array `target.render(&camera, mesh, &[])`
-   - Result: Material shows true emissive color without lighting interference
-
-### Phase 4.5 - UI/UX Polish COMPLETE! ✅ (2025-11-07)
-
-**✅ COMPLETED (Latest Session - Critical Fixes):**
-21. ✅ **Fullscreen Toggle** (2025-11-07) - Single button to hide both panels
-   - Replaced two separate panel toggles with unified fullscreen mode
-   - F key toggles fullscreen mode on/off
-   - Escape key hierarchy: Exit fullscreen first, then deselect
-   - RwSignal<bool> for fullscreen_mode state via context
-   - Layout conditionally renders panels based on fullscreen state
-
-22. ✅ **Camera Pan Controls** (2025-11-07) - Pan viewport separately from rotation
-   - Added pan_x and pan_y to CameraState struct
-   - Middle-mouse button OR Shift+drag to pan
-   - Pan speed scales with camera distance for intuitive feel
-   - Pan target becomes camera look-at point for centered view
-   - Fixes topology shifting when rotating/zooming in fullscreen
-
-23. ✅ **Viewport Centering Fix** (2025-11-07) - Topology stays centered on resize
-   - Root cause: Canvas resize didn't update viewport/projection matrix
-   - Solution: Always query canvas dimensions and update resolution on every render
-   - ```rust
-     let width = canvas.client_width() as u32;
-     let height = canvas.client_height() as u32;
-     canvas.set_width(width);
-     canvas.set_height(height);
-     ```
-   - Fixes: Fullscreen toggle, window resize, panel visibility changes
-
-24. ✅ **Zoom to Fit with Bounding Box** (2025-11-07) - Proper topology fitting
-   - Replaced fixed distance (20.0) with dynamic bounding box calculation
-   - Algorithm:
-     - Iterate all nodes to find min/max X/Y/Z coordinates
-     - Calculate bounding box dimensions
-     - Determine camera distance using FOV math: `distance = (size / 2) / tan(FOV / 2)`
-     - Center camera on bounding box center (pan offset)
-     - 10% margin factor for visual padding
-   - Special handling in camera preset Effect (accesses node data storage)
-
-25. ✅ **Node Color Customization** (2025-11-07) - Full color control per node
-   - Database migration: `20250107000002_add_node_color.sql`
-   - Added `color: String` field to Node model ("R,G,B" format, default "100,150,255")
-   - Properties panel color picker UI:
-     - 13 preset color buttons (Blue, Orange, Green, Red, Purple, Gray, Light Blue, Bright Orange, etc.)
-     - HTML5 color picker with bidirectional hex↔RGB conversion
-     - Current color displayed as RGB text
-   - Viewport rendering updated to parse and apply custom node colors
-   - Fallback to type-based colors if parse fails
-
-26. ✅ **Cloud Node Type** (2025-11-07) - Added missing device type
-   - Added "Cloud" option to Properties Panel node type dropdown
-   - Positioned between "Load Balancer" and "Database"
-   - Matches glTF/GLB model loading (blob-cloud.glb)
-
-## Key Lessons Learned (All Phases)
-
-### Phase 4.5 - UI/UX Polish Lessons
-
-#### 1. Canvas Resize and Viewport Updates
-**Issue:** Topology shifts when toggling fullscreen or resizing window
-**Root Cause:** Canvas element resizes but WebGL viewport and projection matrix don't update
-**Solution:** Always update canvas resolution on every render
-```rust
-// In render function - always get current dimensions
-let width = canvas.client_width() as u32;
-let height = canvas.client_height() as u32;
-canvas.set_width(width);
-canvas.set_height(height);
-let viewport = Viewport::new_at_origo(width, height);
-```
-**Why:** Ensures viewport and projection matrix always match actual canvas size, preventing distortion and off-center rendering
-
-#### 2. Bounding Box Calculation for Smart Zoom
-**Pattern:** Dynamic camera positioning based on scene contents
-**Implementation:**
-```rust
-// Iterate nodes to find bounds
-let mut min_x/max_x/min_y/max_y/min_z/max_z = ...;
-for node in nodes { /* update bounds */ }
-
-// Calculate dimensions and center
-let width = max_x - min_x;
-let center_x = (min_x + max_x) / 2.0;
-
-// Apply margin and calculate distance
-let margin_factor = 1.1;  // 10% margin
-let max_dimension = width.max(height).max(depth) * margin_factor;
-let distance = (max_dimension / 2.0) / (fov_radians / 2.0).tan();
-```
-**Result:** Camera automatically positions to fit entire topology with consistent margin
-
-#### 3. Fullscreen Toggle Pattern
-**Anti-pattern:** Two separate signals for left/right panel visibility
-- Leads to state inconsistency
-- Multiple signals of same type in context collide
-- Complex to manage
-
-**Better pattern:** Single fullscreen mode signal
-```rust
-let fullscreen_mode = RwSignal::new(false);
-provide_context(fullscreen_mode);
-
-// Layout conditionally renders both panels
-{move || {
-    if !fullscreen_mode.get() {
-        Some(view! { <DevicePalette /> })
-    } else {
-        None
-    }
-}}
-```
-**Benefits:** Simpler state, single source of truth, keyboard-friendly (F to toggle, Esc to exit)
-
-#### 4. RGB Color Storage Format
-**Design Decision:** Store colors as "R,G,B" text in database
-**Rationale:**
-- Human-readable in database queries
-- Easy to parse and validate
-- Clear separation between components
-- Flexible for different color spaces
-
-**Conversion Pattern:**
-```rust
-// Parse from database
-let parts: Vec<&str> = node.color.split(',').collect();
-if parts.len() == 3 {
-    if let (Ok(r), Ok(g), Ok(b)) = (
-        parts[0].parse::<u8>(),
-        parts[1].parse::<u8>(),
-        parts[2].parse::<u8>(),
-    ) {
-        Srgba::new(r, g, b, 255)
-    }
-}
-
-// Hex for HTML5 color picker
-format!("#{:02x}{:02x}{:02x}", r, g, b)
-
-// Hex back to RGB
-let r = u8::from_str_radix(&hex[1..3], 16)?;
-```
-
-#### 5. Camera Pan State Management
-**Pattern:** Pan offset changes camera look-at target
-```rust
-struct CameraState {
-    distance: f32,
-    azimuth: f32,
-    elevation: f32,
-    pan_x: f32,    // NEW: horizontal pan
-    pan_y: f32,    // NEW: vertical pan
-}
-
-// Camera calculation
-let target = vec3(state.pan_x, state.pan_y, 0.0);
-let eye = target + vec3(/* orbit offset from target */);
-let camera = Camera::new_perspective(viewport, eye, target, up, ...);
-```
-**Result:** Natural camera behavior - pan moves the view center, rotation/zoom orbit around that center
-
-### Phase 5.7 - HDR Environment Lighting Lessons
-
-1. **Reactive Signals in Effects** - Use `.get()` not `.get_untracked()` for reactivity
-   - Changed viewport Effect to track HDR settings with `.get()`
-   - Enables automatic viewport refresh when settings change
-
-2. **HDR + Directional Lights = Overexposure**
-   - HDR environment maps provide comprehensive lighting
-   - Adding directional lights on top causes massive overexposure
-   - Solution: Conditional lighting based on mode
-   - HDR mode: ambient only | Manual mode: full 3-point lighting
-
-3. **Dynamic Signal Reading in Closures**
-   - Pass signals (not values) to render closures for real-time updates
-   - Use `RwSignal<bool>` parameter in function signature
-   - Read signal with `.get_untracked()` each frame in render loop
-   - Enables toggle without reinitializing entire viewport
-
-4. **Blender Texture Workflow**
-   - Image textures must be properly UV-mapped in Blender
-   - Export glTF with embedded textures
-   - Texture colors appear correct in web app (no color space conversion needed)
-   - Albedo texture + HDR environment = perfect Blender match
-
-### Phase 6 - Traffic Monitoring Lessons
-
-1. **Realistic Traffic Modeling**
-   - Use actual link properties (bandwidth, latency, status)
-   - Model congestion effects (latency increases, packet loss)
-   - Random variation within realistic ranges
-   - Different patterns for different connection types
-
-2. **Color-Coded Visualization**
-   - Instant visual feedback with traffic load colors
-   - Manual color override for specific use cases
-   - Proper lighting required for color visibility
-   - Three-tier thresholds (0-40%, 40-70%, 70-100%)
-
-3. **Traffic Data Management**
-   - Separate table for traffic metrics (not in connections table)
-   - Cascade delete when connection removed
-   - HashMap lookup for efficient access in viewport
-   - Real-time updates via refetch trigger
-
-4. **Tooltip Enhancement Pattern**
-   - Enum-based tooltip data (Node vs Connection)
-   - Color-coded metrics for quick interpretation
-   - Display all relevant metrics without clutter
-   - Update tooltip data in mousemove handler
-
-### Phase 6.4.2 - Particle Animation Lessons
-
-1. **Global State for Cross-Closure Synchronization**
-   - `Rc<RefCell<>>` creates NEW instances when closures recreate
-   - `static Mutex<T>` ensures SAME storage across all closures
-   - Critical for animation loop + render function coordination
-   - Prevents "particles updating but not rendering" bugs
-
-2. **Animation Initialization Timing**
-   - Animation setup inside `skip_event_handlers` ONLY runs on first init
-   - Move animation logic OUTSIDE to run on EVERY Effect execution
-   - Check conditions (particles exist AND flag set) before starting
-   - Enables animation to start on refetch, not just page load
-
-3. **requestAnimationFrame Best Practices**
-   - Calculate delta time for frame-rate-independent movement
-   - Check flag before requesting next frame (clean stop)
-   - Store closure in `Rc<RefCell<>>` to access from callback
-   - Use `.forget()` to prevent premature cleanup
-
-4. **Particle Recycling Pattern**
-   - Reset position to 0.0 when reaching 1.0 (seamless loop)
-   - Random starting positions create natural distribution
-   - Direction flag enables bidirectional flows
-   - Speed variation adds visual interest
-
-## ✅ VERIFIED Configuration (from Leptos 0.7/0.8 docs)
-
-### Database Configuration ⚠️ IMPORTANT
-
-**Single Database File:** `ntv.db` (SQLite)
-
-**Configuration:**
+### Development (Run BOTH in separate terminals):
 ```bash
-# .env file (checked into git)
-DATABASE_URL=sqlite:ntv.db
-
-# src/main.rs (line 24-25)
-let database_url = std::env::var("DATABASE_URL")
-    .unwrap_or_else(|_| "sqlite:ntv.db".to_string());
-```
-
-**⚠️ Historical Note:**
-During the refactoring from "ntv" to "ntb" project name, we intentionally kept the database name as `ntv.db` to preserve data. This is the ONLY active database file. Any other `.db` files (network_topology.db, ntb.db) are empty leftovers and should be deleted.
-
-**Database Schema:**
-- All migrations in `migrations/` directory
-- Tables: topologies, nodes, connections, connection_traffic_metrics, ui_settings, traffic_metrics
-- Migration tracking: `_sqlx_migrations` table
-
-**First-Time Setup:**
-```bash
-# Database is auto-created on first run (create_if_missing = true)
-cargo leptos watch  # Creates ntv.db and runs all migrations
-```
-
-**Verification:**
-```bash
-sqlite3 ntv.db ".tables"  # Should show all 7 tables
-sqlite3 ntv.db "SELECT COUNT(*) FROM nodes;"  # Should show node count
-```
-
-### Important: NO Leptos.toml Required!
-Modern Leptos projects use `cargo-leptos` and configure everything in `Cargo.toml`.
-The original plan referenced Leptos.toml which is NOT standard.
-
-### ⚠️ ARCHITECTURE CHANGE: Islands Removed (2025-11-03)
-
-**Decision:** Removed Leptos islands architecture in favor of regular components.
-
-**Reason:** Islands are designed for content-heavy sites with sparse interactivity. Our Network Topology Visualizer is a fully interactive application where most of the interface needs to respond to user input. Regular Leptos components with standard hydration provide better context sharing and are more appropriate for highly interactive apps.
-
-### Current Leptos Configuration (Cargo.toml)
-```toml
-[dependencies]
-leptos = { version = "0.8" }  # NO islands feature
-leptos_meta = { version = "0.8" }
-leptos_router = { version = "0.8" }
-leptos_axum = { version = "0.8", optional = true }
-
-[features]
-hydrate = [
-    "leptos/hydrate",
-    # NO "leptos/islands"
-    "dep:console_error_panic_hook",
-    "dep:wasm-bindgen",
-    "dep:web-sys",
-    "dep:three-d",
-]
-ssr = [
-    "leptos/ssr",
-    # NO "leptos/islands"
-    "leptos_meta/ssr",
-    "leptos_router/ssr",
-    "dep:axum",
-    "dep:leptos_axum",
-    # ... other deps
-]
-
-[lib]
-crate-type = ["cdylib", "rlib"]  # cdylib required for WASM
-```
-
-### Hydration Setup (Current)
-```rust
-// In shell function (app.rs)
-<HydrationScripts options/>  // NO islands=true
-
-// In lib.rs hydrate entry point
-#[cfg(feature = "hydrate")]
-#[wasm_bindgen::prelude::wasm_bindgen]
-pub fn hydrate() {
-    console_error_panic_hook::set_once();
-    leptos::mount::hydrate_body(app::App);  // Standard hydration
-}
-```
-
-## Server Functions Architecture (CRITICAL DISCOVERY)
-
-**Issue:** Server functions need to be accessible from both client and server, but `#[cfg(feature = "ssr")]` gates module visibility.
-
-**Solution:** Create a **non-feature-gated module** for server functions:
-
-```rust
-// src/lib.rs
-pub mod app;
-pub mod islands;
-pub mod models;
-pub mod api;  // ✅ NOT behind #[cfg(feature = "ssr")]
-
-#[cfg(feature = "ssr")]
-pub mod server;  // Old implementation-specific code
-```
-
-**Why this works:**
-- `#[server]` macro generates client-side stub when `ssr` feature is off
-- Non-feature-gated module makes function signature visible to client
-- SSR-specific implementation is conditionally compiled
-- Leptos handles the HTTP request/response serialization
-
-## Database Migrations
-
-### Phase 4 Migrations
-- `20250102000002_add_node_rotations.sql` - rotation_x/y/z (REAL, default 0.0, stored in degrees)
-- `20250106000003_add_node_scale.sql` - scale (REAL, default 1.0, range 0.1-5.0)
-- `20250107000001_add_connection_color.sql` - color (TEXT, default '128,128,128', format "R,G,B")
-- `20250107000002_add_node_color.sql` - color (TEXT, default '100,150,255', format "R,G,B")
-
-### Phase 5.5 Migrations
-- `20250107000003_add_vendor_model.sql` - vendor (TEXT, default 'generic') and model_name (TEXT, default 'blob-{type}') for multi-vendor support
-
-## Phase 5 - Export & JSON Import/Export ✅ COMPLETE!
-
-### ✅ Completed Features
-1. ✅ **Export topology as PNG image** - COMPLETE! (Phase 4, item 17)
-   - Export dropdown menu in toolbar with PNG/JSON options
-   - WebGL2 context with preserveDrawingBuffer enabled
-   - Transparent background support for clean exports
-   - canvas.toDataURL() for high-quality image capture
-
-2. ✅ **Export topology as JSON** - COMPLETE! (topology_editor.rs:840-931)
-   - Full topology data export (nodes, connections, all properties)
-   - Pretty-formatted JSON with serde_json
-   - Automatic file download with timestamp: `topology-{name}-{timestamp}.json`
-   - Blob API for client-side file generation
-   - Preserves all node properties (position, rotation, scale, color)
-   - Preserves all connection properties (type, bandwidth, color, status)
-
-3. ✅ **Import topology from JSON** - COMPLETE! (topology_editor.rs:933-1274)
-   - File picker UI with drag-and-drop support
-   - JSON validation and parsing
-   - Creates new topology with imported data
-   - Batch node creation via server function
-   - Batch connection creation with proper node ID mapping
-   - Error handling with user-friendly messages
-   - Success notification with new topology name
-   - Automatic switch to newly imported topology
-
-**Implementation Details:**
-```rust
-// Export: Fetches topology data and creates downloadable JSON file
-async fn export_topology_json(topology_id: i64) {
-    let topology_data = get_topology_full(topology_id).await?;
-    let json_string = serde_json::to_string_pretty(&topology_data)?;
-    // Create blob and trigger download...
-}
-
-// Import: Parses JSON file and recreates topology
-async fn import_topology_json(json_content: String) -> Result<ImportResult, String> {
-    let imported: TopologyFull = serde_json::from_str(&json_content)?;
-    let new_topology_id = create_topology(CreateTopology {
-        name: format!("{} (Imported)", imported.topology.name),
-        description: imported.topology.description
-    }).await?;
-    // Batch create nodes and connections...
-}
-```
-
-**UI Integration:**
-- Export dropdown in toolbar: "Export PNG" and "Export JSON" options
-- Import button in toolbar: Opens file picker dialog
-- File validation: Checks JSON structure before import
-- Progress indication during import process
-- Error messages displayed to user if import fails
-
-**Remaining Phase 5 Items (Optional enhancements):**
-4. ⏳ UI polish and optimizations - Loading states, error handling (mostly done)
-5. ⏳ Documentation - User guide with screenshots (can be done anytime)
-
-## Phase 6 - Traffic Monitoring (Future Enhancements - OPTIONAL)
-
-### Status
-**Core traffic monitoring complete!** Phases 6.1-6.3 are fully implemented with realistic traffic generation, color-coded connections, and comprehensive tooltips. Remaining items are optional enhancements for advanced features.
-
-### ✅ Completed Features (Phases 6.1-6.3)
-1. ✅ Mock traffic generator with realistic patterns
-2. ✅ Color-coded connections (green/orange/red by utilization)
-3. ✅ Traffic metrics tooltips (utilization, throughput, latency, packet loss)
-4. ✅ Link properties impact (bandwidth, latency, congestion modeling)
-5. ✅ Three-tier intensity control (Low/Medium/High)
-6. ✅ Manual color override capability
-
-### Optional Future Enhancements
-
-#### 1. Real-Time Traffic Animation (Phase 6.4 - Optional)
-- **Animated connections:** Flowing particles/pulses moving along connection paths
-- **Direction indicators:** Particles move from source to target showing data flow direction
-- **Speed variation:** Faster particles = higher throughput
-- **Particle density:** More particles = more active connection
-- **Implementation:** three-d particle system with instanced rendering
-
-#### 2. Traffic Dashboard (Phase 6.5 - Optional)
-- **Metrics panel (right sidebar or bottom panel):**
-  - Top connections by traffic volume
-  - Total network throughput
-  - Average latency across all connections
-  - Packet loss summary
-- **Historical data:**
-  - Time-series charts showing traffic over time
-  - Sparklines for quick trend visualization
-  - Configurable time windows (1min, 5min, 15min, 1hour)
-- **Alerts panel:**
-  - List of current warnings/errors
-  - Connection health scores
-  - Anomaly detection (sudden spikes/drops)
-
-#### 3. WebSocket Streaming (Phase 6.6 - Optional)
-- **Real-time updates:** Live traffic data streaming to viewport
-- **Leptos Native WebSocket:**
-  ```rust
-  #[server(protocol = Websocket<JsonEncoding, JsonEncoding>)]
-  async fn stream_traffic_data(
-      input: BoxedStream<TrafficRequest, ServerFnError>
-  ) -> Result<BoxedStream<TrafficUpdate, ServerFnError>, ServerFnError> {
-      // Server streams traffic updates every 100-500ms
-      Ok(traffic_stream)
-  }
-  ```
-- **Benefits:** Automatic updates without manual refresh, lower latency
-- **Implementation:** Signal::from_stream() for reactive updates
-
-### Recommended Next Steps
-While Phase 6 core features are complete, here are some high-value next steps to consider:
-
-1. **User Experience Polish**
-   - Add loading states for traffic generation
-   - Toast notifications for successful operations
-   - Better error messaging
-
-2. **Traffic Dashboard (High Value)**
-   - Simple metrics panel showing network-wide stats
-   - Top 5 busiest connections list
-   - Total throughput counter
-   - Average latency display
-
-3. **Animation System (Visual Impact)**
-   - Particle flows along connections
-   - Direction indicators
-   - Speed based on throughput
-   - Makes demos more engaging
-
-4. **Real Integration**
-   - Replace mock generator with real network data sources
-   - SNMP integration for network devices
-   - API connectors for cloud platforms
-   - Transforms from demo tool to production monitoring
-
-## Build Commands (VERIFIED)
-
-### Development Mode
-Run **both** commands in separate terminals:
-```bash
-# Terminal 1: Tailwind CSS watch mode (v4.1.16)
 ./tailwindcss -i style/input.css -o style/output.css --watch
-
-# Terminal 2: Leptos development server with hot reload
 cargo leptos watch
 ```
 
-### Production Build
+### Production:
 ```bash
-# Build optimized CSS first
 ./tailwindcss -i style/input.css -o style/output.css --minify
-
-# Then build Leptos application
 cargo leptos build --release
-
-# Verify code splitting (look for multiple .wasm files)
-ls -lh target/site/pkg/*.wasm
 ```
 
 ## Git Repository
-**Repo:** https://github.com/madkrell/ntb.git
-**Current Branch:** main
-**Latest Tag:** v0.1.0-phase6.4.2-complete ✅
-**All Tags:**
-- v0.1.0-phase1-complete
-- v0.1.0-phase2-complete
-- v0.1.0-phase3-complete
-- v0.1.0-phase4-complete
-- v0.1.0-phase5-complete
-- v0.1.0-phase5.5-complete
-- v0.1.0-phase5.7-complete
-- v0.1.0-phase6-complete
-- v0.1.0-phase6.4.2-complete ✅ **(Latest - Particle Animation System)**
+**URL:** https://github.com/madkrell/ntb.git
+**Branch:** main
+**Latest:** v0.1.0-phase6.4.2-complete ✅
 
-**Status:** All core features complete! Ready for optional enhancements (Traffic Dashboard, WebSocket Streaming, etc.)
+## Architecture Notes
 
-## All Known Issues & Solutions
+### Leptos Configuration
+- **Version:** 0.8 (NO islands feature - fully interactive app)
+- **Hydration:** Standard `leptos::mount::hydrate_body(app::App)`
+- **Crate types:** `["cdylib", "rlib"]` for WASM support
+- **Config location:** `Cargo.toml` (NO Leptos.toml required)
 
-See original CLAUDE.md for complete list. Key patterns to remember:
-1. **Server Functions** - Use leptos_axum::extract() for database access
-2. **Event Handlers** - Use mutable storage (Rc<RefCell<>>) for data access
-3. **Disposed Signals** - Use Arc<Mutex<>> snapshot for event handlers with .forget()
-4. **Context Collision** - Wrap same-typed signals in unique struct
-5. **Canvas Resize** - Always update dimensions on every render
-6. **Bounding Box** - Calculate from actual node positions, not fixed values
+### Color Storage
+- **Format:** "R,G,B" text in database (human-readable, easy parsing)
+- **HTML5 picker:** Hex ↔ RGB conversion
+  ```rust
+  // DB → Display
+  let parts: Vec<&str> = color.split(',').collect();
+  Srgba::new(r, g, b, 255)
+
+  // Picker → DB
+  format!("#{:02x}{:02x}{:02x}", r, g, b)
+  ```
+
+### Camera State
+```rust
+struct CameraState {
+    distance: f32,    // Zoom level
+    azimuth: f32,     // Horizontal rotation
+    elevation: f32,   // Vertical rotation
+    pan_x: f32,       // Horizontal pan offset
+    pan_y: f32,       // Vertical pan offset
+}
+```
+**Controls:** Middle-click or Shift+drag to pan, pan target becomes camera look-at point
+
+## Common Issues & Solutions
+
+1. **Server Functions** → Use `leptos_axum::extract()` for database access
+2. **Event Handlers** → Use mutable storage `Rc<RefCell<>>` for data access
+3. **Disposed Signals** → Use `Arc<Mutex<>>` snapshot with `.forget()`
+4. **Context Collision** → Wrap same-typed signals in unique struct
+5. **Canvas Resize** → Always update dimensions on every render
+6. **Bounding Box** → Calculate from actual node positions, not fixed values
+7. **Latency Persistence** → Use `.filter(|&v| v >= 0.0)` not `> 0.0` to allow 0ms
+8. **Animation Speed** → Loop ID counter prevents multiple animation loops
+9. **Visual Controls Not Working** → Pass signals to render closure, read dynamically each frame
+10. **Grid/Axes Visibility** → Always create all meshes, control visibility at render time
+11. **HDR Environment Changes** → Trigger reinit when environment map changes (load new HDR)

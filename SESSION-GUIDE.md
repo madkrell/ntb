@@ -12,7 +12,7 @@ Please read these files to understand the current state:
 1. CLAUDE.md - Complete architecture, all phases, all learnings
 2. This file (SESSION-GUIDE.md) - Quick context
 
-Current Status: Phase 6.4.2 COMPLETE! ✅ (Particle Animation System + Critical Fixes) - 60fps animated traffic flows with realistic degradation modeling!
+Current Status: Phase 6.4.3 COMPLETE! ✅ (Simplified Connection Creation + Visual Controls Fix) - All controls now fully reactive with dropdown-based connection creation!
 
 **✅ Phase 6.1-6.3 Complete (2025-01-15):**
 Traffic Monitoring with realistic network simulation:
@@ -33,6 +33,19 @@ Traffic Flow Controls - User control over traffic animation
 
 **✅ Phase 6.4.2 Complete (2025-01-19):**
 Particle Animation System + Critical Fixes
+
+**✅ Phase 6.4.3 Complete (2025-01-20):**
+Simplified Connection Creation + Visual Controls Fix
+
+**Phase 6.4.3 Features & Fixes:**
+- ✅ Simplified connection creation (dropdown-based, not click-based)
+- ✅ All old ConnectionMode code removed (enum, signals, button, event handlers)
+- ✅ Connection dropdown in Node Properties Panel
+- ✅ Real-time visual controls (lighting, background, grid/axes, HDR)
+- ✅ Dynamic signal reading in render closure
+- ✅ Grid/axes visibility toggles now working
+- ✅ HDR environment map changes trigger proper reload
+- ✅ All visual settings update without reinitialization
 
 **Phase 6.4.2 Features & Fixes:**
 - ✅ 60fps particle animation with constant speed (0.3 units/sec)
@@ -189,14 +202,17 @@ Next: Optional enhancements (Traffic Dashboard, Animation System, etc.)
    - Create nodes via create_node() server function
    - Grid positioning to avoid overlap (5-column layout)
    - Real-time viewport updates via refetch trigger
-6. ✅ **Grid/Axes visibility controls** (2025-11-05) - Toggle buttons to show/hide elements
+6. ✅ **Grid/Axes visibility controls** (2025-11-05, Fixed 2025-01-20) - Toggle buttons to show/hide elements
    - ViewportVisibility struct pattern prevents context collision
    - Independent toggles for Grid Floor, X Axis (Red), Y Axis (Green), Z Axis (Blue)
    - Z-axis extremely transparent (alpha=25), axes thinned to 0.006
-7. ✅ **Connection creation mode** (2025-11-05) - Click two nodes to create connection
-   - Three-state mode with visual button feedback
+   - **Fix (Phase 6.4.3)**: Always create all meshes, control visibility at render time
+7. ✅ **Connection creation** (2025-11-05, Simplified 2025-01-20) - Dropdown-based single-click creation
+   - **Old approach (removed)**: Three-state click mode with "Connect Nodes" button
+   - **New approach**: Dropdown in Node Properties Panel showing available target nodes
    - Creates connections via create_connection() server function
    - Real-time viewport updates after creation
+   - Simpler, more reliable, not dependent on 3D viewport event handlers
 
 ✅ **COMPLETED - Priority 2 (Visual Polish):**
 8. ✅ **Node Labels/Tooltips** - Show node name on hover in 3D viewport
@@ -327,9 +343,9 @@ All core features, visual polish, export/import, traffic monitoring, and flow co
 - **Traffic flow controls** ✅
 - **Swap Source/Target button** ✅
 
-**Git Tag:** v0.1.0-phase6.4.2-complete ✅
+**Git Tag:** v0.1.0-phase6.4.3-complete ✅
 
-**Phase 6 Core Features: COMPLETE!** All traffic monitoring and animation implemented.
+**Phase 6 Core Features: COMPLETE!** All traffic monitoring, animation, and UX improvements implemented.
 
 **Recommended Next Steps:**
 

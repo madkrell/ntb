@@ -394,10 +394,6 @@ pub fn TopologyViewport(
     #[allow(unused_variables)]
     let selected_item = use_context::<RwSignal<Option<crate::islands::topology_editor::SelectedItem>>>().expect("selected_item context");
 
-    // Get connection mode from context (optional - may not exist)
-    #[allow(unused_variables)]
-    let connection_mode = use_context::<RwSignal<crate::islands::topology_editor::ConnectionMode>>();
-
     // Get grid/axes visibility controls from context (optional - may not exist)
     let viewport_visibility = use_context::<crate::islands::topology_editor::ViewportVisibility>();
     #[allow(unused_variables)]
@@ -488,10 +484,6 @@ pub fn TopologyViewport(
                 // Access topology_data to make Effect reactive to it
                 let data_option = topology_data.get();
 
-                // Read signal values BEFORE entering conditional branches (needed in both branches)
-                // Use .get() instead of .get_untracked() to make Effect reactive to these changes
-                let background_color_val = background_color.get();
-
                 // Wait for topology data to load
                 if let Some(Some(topo_data)) = data_option {
                     // Check if this is a refetch (already initialized)
@@ -510,19 +502,6 @@ pub fn TopologyViewport(
                     let nodes_storage = nodes_data_for_effect.clone();
                     let connections_storage = connections_data_for_effect.clone();
 
-                    // Read signal values BEFORE entering async context
-                    // Use .get() instead of .get_untracked() to make Effect reactive to these changes
-                    let show_grid_val = show_grid.get();
-                    let show_x_val = show_x_axis.get();
-                    let show_y_val = show_y_axis.get();
-                    let show_z_val = show_z_axis.get();
-                    let use_env_lighting_val = use_environment_lighting.get();
-                    let env_map_val = environment_map.get();
-                    let ambient_val = ambient_intensity.get();
-                    let key_light_val = key_light_intensity.get();
-                    let fill_light_val = fill_light_intensity.get();
-                    let rim_light_val = rim_light_intensity.get();
-
                     wasm_bindgen_futures::spawn_local(async move {
                         match initialize_threed_viewport(
                             &canvas,
@@ -534,22 +513,20 @@ pub fn TopologyViewport(
                             nodes_storage,
                             connections_storage,
                             tooltip_data,
-                            show_grid_val,
-                            show_x_val,
-                            show_y_val,
-                            show_z_val,
-                            background_color_val,
-                            use_env_lighting_val,
-                            env_map_val,
-                            ambient_val,
-                            key_light_val,
-                            fill_light_val,
-                            rim_light_val,
-                            connection_mode,
+                            show_grid,
+                            show_x_axis,
+                            show_y_axis,
+                            show_z_axis,
+                            background_color,
+                            use_environment_lighting,
+                            environment_map,
+                            ambient_intensity,
+                            key_light_intensity,
+                            fill_light_intensity,
+                            rim_light_intensity,
                             refetch_trigger,
                             Some(current_topology_id),
                             already_initialized, // Skip event handlers on refetch
-                            Some(use_environment_lighting), // Pass signal for dynamic HDR toggle
                         ).await {
                             Ok(_) => {
                                 // is_initialized was already set before spawning to prevent race condition
@@ -562,7 +539,7 @@ pub fn TopologyViewport(
                     });
                 } else if topology_id.is_none() {
                     // Initialize with test scene if no topology_id
-                    match initialize_threed_viewport_test(&canvas_element, camera_state, selected_node_id, selected_item, render_fn_for_effect.clone(), tooltip_data, background_color_val, connection_mode, refetch_trigger, Some(current_topology_id)) {
+                    match initialize_threed_viewport_test(&canvas_element, camera_state, selected_node_id, selected_item, render_fn_for_effect.clone(), tooltip_data, background_color.get_untracked(), refetch_trigger, Some(current_topology_id)) {
                         Ok(_) => {
                             is_initialized.set(true);
                         }
@@ -610,57 +587,104 @@ pub fn TopologyViewport(
         });
     }
 
-    // Component-level Effect to trigger re-initialization when visibility changes
+    // Component-level Effect to re-render when visibility settings change
+    // NOTE: Just re-renders, does NOT reinitialize (no refetch_trigger increment)
     #[cfg(feature = "hydrate")]
     {
-        if let Some(refetch_trigger) = refetch_trigger {
-            // Track if this is the first run to avoid triggering on initial mount
-            let is_first_run = RwSignal::new(true);
+        let render_fn = render_fn.clone();
+        // Track if this is the first run to avoid triggering on initial mount
+        let is_first_run = RwSignal::new(true);
 
-            let _effect = Effect::new(move || {
-                // Track visibility signals
-                let _grid = show_grid.get();
-                let _x = show_x_axis.get();
-                let _y = show_y_axis.get();
-                let _z = show_z_axis.get();
-                let _bg = background_color.get();
+        let _effect = Effect::new(move || {
+            // Track visibility signals
+            let _grid = show_grid.get();
+            let _x = show_x_axis.get();
+            let _y = show_y_axis.get();
+            let _z = show_z_axis.get();
+            let _bg = background_color.get();
 
-                // Skip the first run (initial mount)
-                if is_first_run.get_untracked() {
-                    is_first_run.set(false);
-                    return;
+            // Skip the first run (initial mount)
+            if is_first_run.get_untracked() {
+                is_first_run.set(false);
+                return;
+            }
+
+            // Just re-render with current camera state (no reinit)
+            if let Some(render) = render_fn.borrow().as_ref() {
+                if let Some(state) = camera_state.try_get_untracked() {
+                    render(state);
                 }
-
-                // Trigger viewport re-initialization
-                refetch_trigger.update(|v| *v += 1);
-            });
-        }
+            }
+        });
     }
 
-    // Component-level Effect to trigger re-initialization when lighting changes
+    // Component-level Effect to re-render when lighting settings change
+    // NOTE: Just re-renders, does NOT reinitialize (no refetch_trigger increment)
     #[cfg(feature = "hydrate")]
     {
-        if let Some(refetch_trigger) = refetch_trigger {
-            // Track if this is the first run to avoid triggering on initial mount
-            let is_first_run = RwSignal::new(true);
+        let render_fn = render_fn.clone();
+        // Track if this is the first run to avoid triggering on initial mount
+        let is_first_run = RwSignal::new(true);
 
-            let _effect = Effect::new(move || {
-                // Track lighting intensity signals
-                let _ambient = ambient_intensity.get();
-                let _key = key_light_intensity.get();
-                let _fill = fill_light_intensity.get();
-                let _rim = rim_light_intensity.get();
+        let _effect = Effect::new(move || {
+            // Track lighting intensity signals
+            let _ambient = ambient_intensity.get();
+            let _key = key_light_intensity.get();
+            let _fill = fill_light_intensity.get();
+            let _rim = rim_light_intensity.get();
 
-                // Skip the first run (initial mount)
-                if is_first_run.get_untracked() {
-                    is_first_run.set(false);
-                    return;
+            // Skip the first run (initial mount)
+            if is_first_run.get_untracked() {
+                is_first_run.set(false);
+                return;
+            }
+
+            // Just re-render with current camera state (no reinit)
+            if let Some(render) = render_fn.borrow().as_ref() {
+                if let Some(state) = camera_state.try_get_untracked() {
+                    render(state);
                 }
+            }
+        });
+    }
 
-                // Trigger viewport re-initialization
-                refetch_trigger.update(|v| *v += 1);
-            });
-        }
+    // Component-level Effect to handle HDR environment changes
+    // NOTE: use_environment_lighting just re-renders, but environment_map requires reinit to load new HDR
+    #[cfg(feature = "hydrate")]
+    {
+        let render_fn = render_fn.clone();
+        // Track if this is the first run to avoid triggering on initial mount
+        let is_first_run = RwSignal::new(true);
+        let prev_env_map = RwSignal::new(environment_map.get_untracked());
+
+        let _effect = Effect::new(move || {
+            // Track HDR environment signals
+            let use_env = use_environment_lighting.get();
+            let env_map = environment_map.get();
+
+            // Skip the first run (initial mount)
+            if is_first_run.get_untracked() {
+                is_first_run.set(false);
+                prev_env_map.set(env_map.clone());
+                return;
+            }
+
+            // Check if environment map changed (requires reinit to load new HDR file)
+            if env_map != prev_env_map.get_untracked() {
+                prev_env_map.set(env_map.clone());
+                // Trigger reinit to load new HDR environment
+                if let Some(trigger) = refetch_trigger {
+                    trigger.update(|v| *v += 1);
+                }
+            } else {
+                // Only use_environment_lighting changed - just re-render (no reinit needed)
+                if let Some(render) = render_fn.borrow().as_ref() {
+                    if let Some(state) = camera_state.try_get_untracked() {
+                        render(state);
+                    }
+                }
+            }
+        });
     }
 
     // Component-level Effect to handle camera preset triggers
@@ -1025,22 +1049,20 @@ async fn initialize_threed_viewport(
     nodes_data_storage: Rc<RefCell<Vec<NodeData>>>,
     connections_data_storage: Rc<RefCell<Vec<ConnectionData>>>,
     tooltip_data: RwSignal<Option<TooltipData>>,
-    show_grid: bool,
-    show_x_axis: bool,
-    show_y_axis: bool,
-    show_z_axis: bool,
-    background_color: Option<(u8, u8, u8)>,
-    use_environment_lighting: bool,
-    environment_map: String,
-    ambient_intensity: f32,
-    key_light_intensity: f32,
-    fill_light_intensity: f32,
-    rim_light_intensity: f32,
-    connection_mode: Option<RwSignal<crate::islands::topology_editor::ConnectionMode>>,
+    show_grid: RwSignal<bool>,
+    show_x_axis: RwSignal<bool>,
+    show_y_axis: RwSignal<bool>,
+    show_z_axis: RwSignal<bool>,
+    background_color: RwSignal<Option<(u8, u8, u8)>>,
+    use_environment_lighting: RwSignal<bool>,
+    environment_map: RwSignal<String>,
+    ambient_intensity: RwSignal<f32>,
+    key_light_intensity: RwSignal<f32>,
+    fill_light_intensity: RwSignal<f32>,
+    rim_light_intensity: RwSignal<f32>,
     refetch_trigger: Option<RwSignal<u32>>,
     current_topology_id: Option<RwSignal<i64>>,
     skip_event_handlers: bool, // Set to true on refetches to avoid duplicate handlers
-    use_environment_lighting_signal: Option<RwSignal<bool>>, // ADDED: Signal for dynamic HDR toggle
 ) -> Result<(), String> {
     use web_sys::WebGl2RenderingContext as GL;
     use three_d::*;
@@ -1072,8 +1094,13 @@ async fn initialize_threed_viewport(
     let context = Context::from_gl_context(std::sync::Arc::new(gl))
         .map_err(|e| format!("Failed to create three-d Context: {:?}", e))?;
 
+    // Read initial values from signals for initialization
+    let use_environment_lighting_val = use_environment_lighting.get_untracked();
+    let environment_map_val = environment_map.get_untracked();
+
     // Load HDR environment map (if environment lighting is enabled)
-    let skybox_option: Option<Skybox> = if use_environment_lighting {
+    // Wrap in Rc so it can be cloned for the render closure
+    let skybox_option: Option<Rc<Skybox>> = if use_environment_lighting_val {
         use three_d_asset::io::load_async;
 
         // Build full URL from window.location
@@ -1081,20 +1108,20 @@ async fn initialize_threed_viewport(
         let location = window.location();
         let origin = location.origin().expect("no origin");
 
-        let hdr_url = format!("{}/environments/{}", origin, environment_map);
+        let hdr_url = format!("{}/environments/{}", origin, environment_map_val);
         web_sys::console::log_1(&format!("Loading HDR environment: {}", hdr_url).into());
 
         match load_async(&[hdr_url.as_str()]).await {
             Ok(mut loaded) => {
-                match loaded.deserialize::<three_d_asset::Texture2D>(&environment_map) {
+                match loaded.deserialize::<three_d_asset::Texture2D>(&environment_map_val) {
                     Ok(hdr_texture) => {
                         // Create skybox from equirectangular HDR
                         let skybox = Skybox::new_from_equirectangular(&context, &hdr_texture);
-                        web_sys::console::log_1(&format!("✓ HDR environment loaded: {}", environment_map).into());
-                        Some(skybox)
+                        web_sys::console::log_1(&format!("✓ HDR environment loaded: {}", environment_map_val).into());
+                        Some(Rc::new(skybox))
                     }
                     Err(e) => {
-                        web_sys::console::error_1(&format!("✗ Failed to deserialize HDR {}: {:?}", environment_map, e).into());
+                        web_sys::console::error_1(&format!("✗ Failed to deserialize HDR {}: {:?}", environment_map_val, e).into());
                         None
                     }
                 }
@@ -1385,13 +1412,13 @@ async fn initialize_threed_viewport(
         }
     }
 
-    // Create grid and axes for spatial reference (based on visibility settings)
+    // Create grid and axes for spatial reference (always create all meshes, visibility controlled at render time)
     let grid_axes_meshes = create_grid_and_axes(
         &context,
-        show_grid,
-        show_x_axis,
-        show_y_axis,
-        show_z_axis,
+        true, // Always create grid
+        true, // Always create X axis
+        true, // Always create Y axis
+        true, // Always create Z axis
     );
 
     // Fetch latest traffic metrics for traffic visualization (Phase 6.2)
@@ -1603,48 +1630,8 @@ async fn initialize_threed_viewport(
         }
     }
 
-    // Create professional lighting setup with user-controlled intensities
-    // Ambient light - either environment-based or simple flat lighting
-    let ambient = if use_environment_lighting && skybox_option.is_some() {
-        // Use HDR environment lighting for realistic ambient illumination
-        let skybox = skybox_option.as_ref().unwrap();
-        Rc::new(AmbientLight::new_with_environment(
-            &context,
-            ambient_intensity,
-            Srgba::WHITE,
-            skybox.texture(),
-        ))
-    } else {
-        // Fallback to simple ambient light
-        Rc::new(AmbientLight::new(&context, ambient_intensity, Srgba::WHITE))
-    };
-
-    // Key light - Main directional light from above-front with warm tone
-    // Direction: from upper-front-right toward origin
-    let key_light = Rc::new(DirectionalLight::new(
-        &context,
-        key_light_intensity,
-        Srgba::new(255, 248, 240, 255), // Warm white (slight yellow tint)
-        vec3(-0.5, -0.3, -1.0),
-    ));
-
-    // Fill light - Softer light from the side with cool tone to reduce harsh shadows
-    // Direction: from left side
-    let fill_light = Rc::new(DirectionalLight::new(
-        &context,
-        fill_light_intensity,
-        Srgba::new(200, 220, 255, 255), // Cool white (slight blue tint)
-        vec3(1.0, 0.5, -0.3),
-    ));
-
-    // Rim/back light - Subtle light from behind to highlight edges and add depth
-    // Direction: from behind and below
-    let rim_light = Rc::new(DirectionalLight::new(
-        &context,
-        rim_light_intensity,
-        Srgba::new(220, 230, 255, 255), // Subtle cool highlight
-        vec3(0.3, 0.8, 0.5),
-    ));
+    // NOTE: Lights will be created dynamically in render closure based on current signal values
+    // This allows real-time updates when intensity settings change
 
     // Update storage containers with new data (for event handlers to reference)
     *nodes_data_storage.borrow_mut() = nodes_data;
@@ -1671,22 +1658,78 @@ async fn initialize_threed_viewport(
         let connection_meshes = connection_meshes.clone();
         let error_icons = error_icons.clone(); // Clone for render closure
         let grid_axes_meshes = grid_axes_meshes.clone();
-        let ambient = ambient.clone();
-        let key_light = key_light.clone();
-        let fill_light = fill_light.clone();
-        let rim_light = rim_light.clone();
         let canvas = canvas.clone();
         let connection_positions = connection_positions.clone(); // Capture connection positions for particle interpolation
         let particle_sphere_cpu = particle_sphere_cpu.clone(); // Shared sphere geometry
         let selected_node_id_signal = selected_node_id_signal; // Capture signal for render closure
         let selected_item_signal = selected_item_signal; // Capture signal for connection selection
-        let use_env_lighting_signal = use_environment_lighting_signal; // Capture HDR signal (not value!)
+        let skybox_option = skybox_option.clone(); // Capture skybox for HDR environment
+
+        // Capture signals (not values!) for dynamic reading
+        let show_grid = show_grid;
+        let show_x_axis = show_x_axis;
+        let show_y_axis = show_y_axis;
+        let show_z_axis = show_z_axis;
+        let background_color = background_color;
+        let use_environment_lighting = use_environment_lighting;
+        let environment_map = environment_map;
+        let ambient_intensity = ambient_intensity;
+        let key_light_intensity = key_light_intensity;
+        let fill_light_intensity = fill_light_intensity;
+        let rim_light_intensity = rim_light_intensity;
 
         move |state: CameraState| {
-            // Read HDR environment signal dynamically each frame (if available)
-            let use_env_lighting = use_env_lighting_signal
-                .map(|sig| sig.get_untracked())
-                .unwrap_or(use_environment_lighting); // Fallback to initial value
+            // Read all visual settings dynamically from signals
+            let show_grid_val = show_grid.get_untracked();
+            let show_x_val = show_x_axis.get_untracked();
+            let show_y_val = show_y_axis.get_untracked();
+            let show_z_val = show_z_axis.get_untracked();
+            let background_color_val = background_color.get_untracked();
+            let use_env_lighting = use_environment_lighting.get_untracked();
+            let _env_map_val = environment_map.get_untracked();
+            let ambient_val = ambient_intensity.get_untracked();
+            let key_light_val = key_light_intensity.get_untracked();
+            let fill_light_val = fill_light_intensity.get_untracked();
+            let rim_light_val = rim_light_intensity.get_untracked();
+
+            // Create lights dynamically based on current intensity values
+            let ambient = if use_env_lighting && skybox_option.is_some() {
+                // Use HDR environment lighting for realistic ambient illumination
+                let skybox = skybox_option.as_ref().unwrap();
+                Rc::new(AmbientLight::new_with_environment(
+                    &context,
+                    ambient_val,
+                    Srgba::WHITE,
+                    skybox.texture(),
+                ))
+            } else {
+                // Fallback to simple ambient light
+                Rc::new(AmbientLight::new(&context, ambient_val, Srgba::WHITE))
+            };
+
+            // Key light - Main directional light from above-front with warm tone
+            let key_light = Rc::new(DirectionalLight::new(
+                &context,
+                key_light_val,
+                Srgba::new(255, 248, 240, 255), // Warm white (slight yellow tint)
+                vec3(-0.5, -0.3, -1.0),
+            ));
+
+            // Fill light - Softer light from the side with cool tone
+            let fill_light = Rc::new(DirectionalLight::new(
+                &context,
+                fill_light_val,
+                Srgba::new(200, 220, 255, 255), // Cool white (slight blue tint)
+                vec3(1.0, 0.5, -0.3),
+            ));
+
+            // Rim/back light - Subtle light from behind to highlight edges
+            let rim_light = Rc::new(DirectionalLight::new(
+                &context,
+                rim_light_val,
+                Srgba::new(220, 230, 255, 255), // Subtle cool highlight
+                vec3(0.3, 0.8, 0.5),
+            ));
             // Always get current canvas dimensions (handles window resize and fullscreen toggle)
             let width = canvas.client_width() as u32;
             let height = canvas.client_height() as u32;
@@ -1715,7 +1758,7 @@ async fn initialize_threed_viewport(
                 1000.0,
             );
 
-            let clear_state = match background_color {
+            let clear_state = match background_color_val {
                 Some((r, g, b)) => ClearState::color_and_depth(
                     r as f32 / 255.0,
                     g as f32 / 255.0,
@@ -1728,9 +1771,27 @@ async fn initialize_threed_viewport(
             let target = RenderTarget::screen(&context, width, height);
             target.clear(clear_state);
 
-            // Render grid and axes first (background reference)
-            for mesh in grid_axes_meshes.borrow().iter() {
-                target.render(&camera, mesh, &[]);
+            // Render grid and axes if visible
+            let grid_axes = grid_axes_meshes.borrow();
+            if show_grid_val {
+                for mesh in grid_axes.grid.iter() {
+                    target.render(&camera, mesh, &[]);
+                }
+            }
+            if show_x_val {
+                if let Some(ref mesh) = grid_axes.x_axis {
+                    target.render(&camera, mesh, &[]);
+                }
+            }
+            if show_y_val {
+                if let Some(ref mesh) = grid_axes.y_axis {
+                    target.render(&camera, mesh, &[]);
+                }
+            }
+            if show_z_val {
+                if let Some(ref mesh) = grid_axes.z_axis {
+                    target.render(&camera, mesh, &[]);
+                }
             }
 
             // Get currently selected item (untracked - we handle reactivity via Effect)
@@ -1856,6 +1917,7 @@ async fn initialize_threed_viewport(
     // Set up orbit controls with integrated click handler and tooltip
     // ONLY on first initialization - skip on refetches to avoid duplicate handlers
     if !skip_event_handlers {
+        web_sys::console::log_1(&"🔧 Setting up event handlers (skip_event_handlers=false)".into());
         let _camera_snapshot = setup_orbit_controls(
             canvas,
             camera_state,
@@ -1865,13 +1927,15 @@ async fn initialize_threed_viewport(
             selected_node_id_signal,
             selected_item_signal,
             tooltip_data,
-            connection_mode,
             refetch_trigger,
             current_topology_id,
         )?;
-        // NOTE: camera_snapshot is available here but event handlers manage it internally
-        // Camera preset Effect syncs snapshot via the camera_state signal's render calls
+        web_sys::console::log_1(&"✅ Event handlers setup complete".into());
+    } else {
+        web_sys::console::log_1(&"⏭️ Skipping event handler setup (skip_event_handlers=true)".into());
     }
+    // NOTE: camera_snapshot is available here but event handlers manage it internally
+    // Camera preset Effect syncs snapshot via the camera_state signal's render calls
 
     // Particle animation loop setup (Phase 6.4.2)
     // IMPORTANT: This runs on EVERY Effect execution (not just first init)
@@ -2009,7 +2073,6 @@ fn initialize_threed_viewport_test(
     render_fn_storage: Rc<RefCell<Option<Rc<dyn Fn(CameraState)>>>>,
     tooltip_data: RwSignal<Option<TooltipData>>,
     background_color: Option<(u8, u8, u8)>,
-    connection_mode: Option<RwSignal<crate::islands::topology_editor::ConnectionMode>>,
     refetch_trigger: Option<RwSignal<u32>>,
     current_topology_id: Option<RwSignal<i64>>,
 ) -> Result<(), String> {
@@ -2157,7 +2220,7 @@ fn initialize_threed_viewport_test(
     // Set up mouse drag for orbit (no node selection for test scene - use empty storage)
     let empty_nodes = Rc::new(RefCell::new(Vec::new()));
     let empty_connections = Rc::new(RefCell::new(Vec::new()));
-    let _camera_snapshot = setup_orbit_controls(canvas, camera_state, render_fn_storage.clone(), empty_nodes, empty_connections, selected_node_id_signal, selected_item_signal, tooltip_data, connection_mode, refetch_trigger, current_topology_id)?;
+    let _camera_snapshot = setup_orbit_controls(canvas, camera_state, render_fn_storage.clone(), empty_nodes, empty_connections, selected_node_id_signal, selected_item_signal, tooltip_data, refetch_trigger, current_topology_id)?;
 
     Ok(())
 }
@@ -2174,9 +2237,8 @@ fn setup_orbit_controls(
     selected_node_id_signal: RwSignal<Option<i64>>,
     selected_item_signal: RwSignal<Option<crate::islands::topology_editor::SelectedItem>>,
     tooltip_data: RwSignal<Option<TooltipData>>,
-    connection_mode: Option<RwSignal<crate::islands::topology_editor::ConnectionMode>>,
-    refetch_trigger: Option<RwSignal<u32>>,
-    current_topology_id: Option<RwSignal<i64>>,
+    _refetch_trigger: Option<RwSignal<u32>>,
+    _current_topology_id: Option<RwSignal<i64>>,
 ) -> Result<std::sync::Arc<std::sync::Mutex<CameraState>>, String> {
     use web_sys::{MouseEvent, WheelEvent};
     use three_d::*;
@@ -2264,6 +2326,7 @@ fn setup_orbit_controls(
                 {
                     use web_sys::Element;
                     let nodes = nodes_data.borrow(); // Borrow from storage
+                    web_sys::console::log_1(&format!("🔍 Node data count: {}", nodes.len()).into());
                     let rect = canvas_clone.unchecked_ref::<Element>().get_bounding_client_rect();
                     let x = e.client_x() as f64 - rect.left();
                     let y = e.client_y() as f64 - rect.top();
@@ -2324,126 +2387,41 @@ fn setup_orbit_controls(
                     // Handle node click based on connection mode
                     let selected_id = closest_node.map(|(id, _)| id);
 
-                    // Check connection mode (if available)
-                    let current_mode = if let Some(mode_signal) = connection_mode {
-                        if !*is_disposed.lock().unwrap() {
-                            Some(mode_signal.get_untracked())
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-
-
+                    // Normal selection mode - check nodes first, then connections
                     if !*is_disposed.lock().unwrap() {
-                        match current_mode {
-                            Some(crate::islands::topology_editor::ConnectionMode::Disabled) | None => {
-                                // Normal selection mode - check nodes first, then connections
-                                if selected_id.is_some() {
-                                    // Node was clicked
-                                    selected_node_id_signal.set(selected_id);
-                                    selected_item_signal.set(selected_id.map(crate::islands::topology_editor::SelectedItem::Node));
-                                } else {
-                                    // No node clicked - check for connection clicks using stored data
-                                    let connections = connections_data.borrow();
-                                    let mut closest_connection: Option<(i64, f32)> = None;
+                        if selected_id.is_some() {
+                            // Node was clicked
+                            selected_node_id_signal.set(selected_id);
+                            selected_item_signal.set(selected_id.map(crate::islands::topology_editor::SelectedItem::Node));
+                        } else {
+                            // No node clicked - check for connection clicks using stored data
+                            let connections = connections_data.borrow();
+                            let mut closest_connection: Option<(i64, f32)> = None;
 
-                                    for conn in connections.iter() {
-                                        if let Some(t) = ray_cylinder_intersection(
-                                            eye,
-                                            ray_dir,
-                                            conn.source_pos,
-                                            conn.target_pos,
-                                            conn.radius,
-                                        ) {
-                                            match closest_connection {
-                                                None => closest_connection = Some((conn.id, t)),
-                                                Some((_, prev_t)) if t < prev_t => closest_connection = Some((conn.id, t)),
-                                                _ => {}
-                                            }
-                                        }
-                                    }
-
-                                    if let Some((conn_id, _)) = closest_connection {
-                                        // Connection was clicked
-                                        selected_node_id_signal.set(None);
-                                        selected_item_signal.set(Some(crate::islands::topology_editor::SelectedItem::Connection(conn_id)));
-                                    } else {
-                                        // Empty space clicked - deselect
-                                        selected_node_id_signal.set(None);
-                                        selected_item_signal.set(None);
+                            for conn in connections.iter() {
+                                if let Some(t) = ray_cylinder_intersection(
+                                    eye,
+                                    ray_dir,
+                                    conn.source_pos,
+                                    conn.target_pos,
+                                    conn.radius,
+                                ) {
+                                    match closest_connection {
+                                        None => closest_connection = Some((conn.id, t)),
+                                        Some((_, prev_t)) if t < prev_t => closest_connection = Some((conn.id, t)),
+                                        _ => {}
                                     }
                                 }
                             }
-                            Some(crate::islands::topology_editor::ConnectionMode::SelectingFirstNode) => {
-                                // First node selected - transition to selecting second node
-                                if let Some(node_id) = selected_id {
-                                    if let Some(mode_signal) = connection_mode {
-                                        mode_signal.set(crate::islands::topology_editor::ConnectionMode::SelectingSecondNode {
-                                            first_node_id: node_id,
-                                        });
-                                    } else {
-                                        web_sys::console::error_1(&"  ERROR: connection_mode is None!".into());
-                                    }
-                                    // Also update selection to show which node was picked
-                                    selected_node_id_signal.set(selected_id);
-                                    selected_item_signal.set(selected_id.map(crate::islands::topology_editor::SelectedItem::Node));
-                                } else {
-                                    // Clicked empty space - deselect to ensure render happens
-                                    selected_node_id_signal.set(None);
-                                    selected_item_signal.set(None);
-                                }
-                            }
-                            Some(crate::islands::topology_editor::ConnectionMode::SelectingSecondNode { first_node_id }) => {
-                                // Second node selected - create connection
-                                if let Some(second_node_id) = selected_id {
-                                    // Create connection via server function
-                                    if let (Some(mode_signal), Some(trigger), Some(topo_id_signal)) = (connection_mode, refetch_trigger, current_topology_id) {
-                                        let topology_id = topo_id_signal.get_untracked();
 
-                                        // Spawn async task to create connection
-                                        wasm_bindgen_futures::spawn_local(async move {
-                                            use crate::api::create_connection;
-                                            use crate::models::CreateConnection;
-
-                                            let data = CreateConnection {
-                                                topology_id,
-                                                source_node_id: first_node_id,
-                                                target_node_id: second_node_id,
-                                                connection_type: Some("ethernet".to_string()),
-                                                bandwidth_mbps: Some(1000),
-                                                latency_ms: Some(1.0),
-                                                baseline_packet_loss_pct: Some(0.0), // Default 0% (no packet loss)
-                                                status: Some("active".to_string()),
-                                                color: None, // Use default color
-                                                metadata: None,
-                                            };
-
-                                            match create_connection(data).await {
-                                                Ok(_conn) => {
-                                                    // Stay in connection mode - reset to SelectingFirstNode so user can create more connections
-                                                    mode_signal.set(crate::islands::topology_editor::ConnectionMode::SelectingFirstNode);
-                                                    // Trigger viewport refetch to show new connection
-                                                    trigger.update(|v| *v += 1);
-                                                }
-                                                Err(e) => {
-                                                    web_sys::console::error_1(&format!("✗ Failed to create connection: {}", e).into());
-                                                    // On error, also go back to SelectingFirstNode to allow retry
-                                                    mode_signal.set(crate::islands::topology_editor::ConnectionMode::SelectingFirstNode);
-                                                }
-                                            }
-                                        });
-                                    }
-                                } else {
-                                    // Clicked empty space in SelectingSecondNode - cancel and go back to first node selection
-                                    if let Some(mode_signal) = connection_mode {
-                                        mode_signal.set(crate::islands::topology_editor::ConnectionMode::SelectingFirstNode);
-                                    }
-                                    // Deselect to trigger re-render
-                                    selected_node_id_signal.set(None);
-                                    selected_item_signal.set(None);
-                                }
+                            if let Some((conn_id, _)) = closest_connection {
+                                // Connection was clicked
+                                selected_node_id_signal.set(None);
+                                selected_item_signal.set(Some(crate::islands::topology_editor::SelectedItem::Connection(conn_id)));
+                            } else {
+                                // Empty space clicked - deselect
+                                selected_node_id_signal.set(None);
+                                selected_item_signal.set(None);
                             }
                         }
                     }
@@ -2691,16 +2669,24 @@ fn setup_orbit_controls(
 
 /// Create grid floor and XYZ axes for spatial reference (Blender-style)
 #[cfg(feature = "hydrate")]
+struct GridAxesMeshes {
+    grid: Vec<three_d::Gm<three_d::Mesh, three_d::ColorMaterial>>,
+    x_axis: Option<three_d::Gm<three_d::Mesh, three_d::ColorMaterial>>,
+    y_axis: Option<three_d::Gm<three_d::Mesh, three_d::ColorMaterial>>,
+    z_axis: Option<three_d::Gm<three_d::Mesh, three_d::ColorMaterial>>,
+}
+
+#[cfg(feature = "hydrate")]
 fn create_grid_and_axes(
     context: &three_d::Context,
     show_grid: bool,
     show_x_axis: bool,
     show_y_axis: bool,
     show_z_axis: bool,
-) -> Vec<three_d::Gm<three_d::Mesh, three_d::ColorMaterial>> {
+) -> GridAxesMeshes {
     use three_d::*;
 
-    let mut meshes = Vec::new();
+    let mut grid_meshes = Vec::new();
 
     // Grid parameters (Blender convention: XY plane floor, Z is up)
     let grid_size = 10; // 10 units in each direction from origin
@@ -2722,7 +2708,7 @@ fn create_grid_and_axes(
             let end = vec3(grid_size as f32 * grid_spacing, y, grid_z);
 
             if let Some(line_mesh) = create_line_cylinder(context, start, end, grid_line_thickness, grid_color, &cylinder_cpu_mesh) {
-                meshes.push(line_mesh);
+                grid_meshes.push(line_mesh);
             }
         }
 
@@ -2733,7 +2719,7 @@ fn create_grid_and_axes(
             let end = vec3(x, grid_size as f32 * grid_spacing, grid_z);
 
             if let Some(line_mesh) = create_line_cylinder(context, start, end, grid_line_thickness, grid_color, &cylinder_cpu_mesh) {
-                meshes.push(line_mesh);
+                grid_meshes.push(line_mesh);
             }
         }
     }
@@ -2742,48 +2728,53 @@ fn create_grid_and_axes(
     let axis_length = 15.0;
 
     // X axis (Red) - left to right on floor
-    if show_x_axis {
-        if let Some(x_axis) = create_line_cylinder(
+    let x_axis = if show_x_axis {
+        create_line_cylinder(
             context,
             vec3(-axis_length, 0.0, 0.0),
             vec3(axis_length, 0.0, 0.0),
             axis_line_thickness,
             Srgba::new(200, 80, 80, 200), // Faint red with transparency
             &cylinder_cpu_mesh,
-        ) {
-            meshes.push(x_axis);
-        }
-    }
+        )
+    } else {
+        None
+    };
 
     // Y axis (Green) - front to back on floor, along three-d Y coordinate
-    if show_y_axis {
-        if let Some(y_axis) = create_line_cylinder(
+    let y_axis = if show_y_axis {
+        create_line_cylinder(
             context,
             vec3(0.0, -axis_length, 0.0),
             vec3(0.0, axis_length, 0.0),
             axis_line_thickness,
             Srgba::new(80, 200, 80, 200), // Faint green with transparency
             &cylinder_cpu_mesh,
-        ) {
-            meshes.push(y_axis);
-        }
-    }
+        )
+    } else {
+        None
+    };
 
     // Z axis (Blue) - vertical up/down, along three-d Z coordinate
-    if show_z_axis {
-        if let Some(z_axis) = create_line_cylinder(
+    let z_axis = if show_z_axis {
+        create_line_cylinder(
             context,
             vec3(0.0, 0.0, -axis_length),
             vec3(0.0, 0.0, axis_length),
             axis_line_thickness,
             Srgba::new(80, 160, 240, 25), // Extremely transparent blue (barely visible)
             &cylinder_cpu_mesh,
-        ) {
-            meshes.push(z_axis);
-        }
-    }
+        )
+    } else {
+        None
+    };
 
-    meshes
+    GridAxesMeshes {
+        grid: grid_meshes,
+        x_axis,
+        y_axis,
+        z_axis,
+    }
 }
 
 /// Helper function to create a thin cylinder between two points (for lines)

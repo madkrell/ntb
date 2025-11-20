@@ -1,24 +1,12 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use crate::islands::TopologyViewport;
-use crate::api::{get_node, update_node, get_connection, update_connection, create_node, delete_node, delete_connection, swap_connection_direction, get_topologies, delete_topology, update_topology, get_ui_settings, update_ui_settings, get_vendors_for_type};
-use crate::models::{UpdateNode, UpdateConnection, CreateNode, UpdateUISettings, UpdateTopology};
+use crate::api::{get_node, update_node, get_connection, update_connection, create_node, delete_node, delete_connection, swap_connection_direction, get_topologies, delete_topology, update_topology, get_ui_settings, update_ui_settings, get_vendors_for_type, get_topology_full, create_topology, create_connection as create_connection_fn};
+use crate::models::{UpdateNode, UpdateConnection, CreateNode, UpdateUISettings, UpdateTopology, CreateTopology, CreateConnection};
 
-// Import these only when hydrating (for JSON import/export)
-#[cfg(feature = "hydrate")]
-use crate::api::{get_topology_full, create_topology, create_connection as create_connection_fn};
+// Import these only when hydrating
 #[cfg(feature = "hydrate")]
 use web_sys;
-#[cfg(feature = "hydrate")]
-use crate::models::{CreateTopology, CreateConnection};
-
-/// Connection creation mode state
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ConnectionMode {
-    Disabled,
-    SelectingFirstNode,
-    SelectingSecondNode { first_node_id: i64 },
-}
 
 /// Grid and axes visibility settings
 #[derive(Clone, Copy)]
@@ -213,9 +201,6 @@ pub fn TopologyEditor(
     // Create refetch trigger - increment this to reload viewport data
     let refetch_trigger = RwSignal::new(0u32);
 
-    // Connection creation mode state
-    let connection_mode = RwSignal::new(ConnectionMode::Disabled);
-
     // Grid and axes visibility controls (wrapped in struct to avoid context collision)
     // Initialize with defaults, will be updated from database
     let viewport_visibility = ViewportVisibility {
@@ -328,7 +313,6 @@ pub fn TopologyEditor(
     provide_context(selected_item);
     provide_context(refetch_trigger);
     provide_context(current_topology_id);
-    provide_context(connection_mode);
     provide_context(viewport_visibility);
     provide_context(lighting_settings);
     provide_context(camera_controls);
@@ -1465,7 +1449,6 @@ fn DevicePalette() -> impl IntoView {
     // Get context
     let current_topology_id = use_context::<RwSignal<i64>>().expect("current_topology_id context");
     let refetch_trigger = use_context::<RwSignal<u32>>().expect("refetch_trigger context");
-    let connection_mode = use_context::<RwSignal<ConnectionMode>>().expect("connection_mode context");
 
     // Grid and axes visibility controls - extract from struct
     let _viewport_visibility = use_context::<ViewportVisibility>().expect("viewport_visibility context");
@@ -1555,41 +1538,6 @@ fn DevicePalette() -> impl IntoView {
         <div class="w-48 bg-gray-800 border-r border-gray-700 flex flex-col">
             <div class="h-12 border-b border-gray-700 flex items-center px-3">
                 <h2 class="text-sm font-semibold text-gray-300">"Device Palette"</h2>
-            </div>
-
-            // Connection creation button
-            <div class="p-2 border-b border-gray-700">
-                <button
-                    class="w-full p-2 rounded border transition flex items-center gap-2 text-left"
-                    class:bg-purple-600=move || connection_mode.get() != ConnectionMode::Disabled
-                    class:hover:bg-purple-700=move || connection_mode.get() != ConnectionMode::Disabled
-                    class:border-purple-500=move || connection_mode.get() != ConnectionMode::Disabled
-                    class:bg-gray-700=move || connection_mode.get() == ConnectionMode::Disabled
-                    class:hover:bg-gray-600=move || connection_mode.get() == ConnectionMode::Disabled
-                    class:border-gray-600=move || connection_mode.get() == ConnectionMode::Disabled
-                    on:click=move |_| {
-                        let current_mode = connection_mode.get();
-                        if current_mode == ConnectionMode::Disabled {
-                            connection_mode.set(ConnectionMode::SelectingFirstNode);
-                        } else {
-                            connection_mode.set(ConnectionMode::Disabled);
-                        }
-                    }
-                >
-                    <span class="text-lg">"🔗"</span>
-                    <div class="flex-1">
-                        <div class="text-xs font-medium">"Connect Nodes"</div>
-                        <div class="text-[10px] text-gray-400">
-                            {move || {
-                                match connection_mode.get() {
-                                    ConnectionMode::Disabled => "Click to activate",
-                                    ConnectionMode::SelectingFirstNode => "Select first node",
-                                    ConnectionMode::SelectingSecondNode { .. } => "Select second node",
-                                }
-                            }}
-                        </div>
-                    </div>
-                </button>
             </div>
 
             <div class="flex-1 overflow-y-auto p-2 space-y-2">
@@ -2078,6 +2026,9 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
     // Get refetch trigger from context
     let refetch_trigger = use_context::<RwSignal<u32>>().expect("refetch_trigger context");
 
+    // Get current_topology_id from context
+    let current_topology_id = use_context::<RwSignal<i64>>().expect("current_topology_id context");
+
     // Get selected_item from context to clear selection after deletion
     let selected_item = use_context::<RwSignal<Option<SelectedItem>>>().expect("selected_item context");
 
@@ -2174,6 +2125,63 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
             // Clear selection
             selected_item.set(None);
             // Trigger viewport refetch
+            refetch_trigger.update(|v| *v += 1);
+        }
+    });
+
+    // Load all nodes in topology for connection dropdown
+    let all_nodes = Resource::new(
+        move || current_topology_id.get(),
+        |tid| async move {
+            match get_topology_full(tid).await {
+                Ok(topo) => topo.nodes,
+                Err(_) => Vec::new(),
+            }
+        }
+    );
+
+    // Selected target node for connection creation
+    let connection_target = RwSignal::new(String::new());
+
+    // Connection creation action
+    let create_connection_action = Action::new(move |_: &()| {
+        let target_str = connection_target.get_untracked();
+        async move {
+            if let Ok(target_id) = target_str.parse::<i64>() {
+                if target_id == node_id {
+                    return Err(leptos::server_fn::error::ServerFnError::ServerError(
+                        "Cannot connect node to itself".to_string()
+                    ));
+                }
+
+                let data = CreateConnection {
+                    topology_id: current_topology_id.get_untracked(),
+                    source_node_id: node_id,
+                    target_node_id: target_id,
+                    connection_type: Some("ethernet".to_string()),
+                    bandwidth_mbps: Some(1000),
+                    latency_ms: Some(1.0),
+                    baseline_packet_loss_pct: Some(0.0),
+                    status: Some("active".to_string()),
+                    color: None,
+                    metadata: None,
+                };
+
+                create_connection_fn(data).await
+            } else {
+                Err(leptos::server_fn::error::ServerFnError::ServerError(
+                    "Please select a target node".to_string()
+                ))
+            }
+        }
+    });
+
+    // Trigger viewport refetch on successful connection creation
+    Effect::new(move || {
+        if let Some(Ok(_)) = create_connection_action.value().get() {
+            // Clear the dropdown selection
+            connection_target.set(String::new());
+            // Trigger viewport refetch to show new connection
             refetch_trigger.update(|v| *v += 1);
         }
     });
@@ -2485,8 +2493,63 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                                         }}
                                     </div>
 
+                                    // Connection creation section
+                                    <div class="pt-4 border-t border-gray-700">
+                                        <label class="block text-xs font-medium text-gray-400 mb-2">
+                                            "Create Connection"
+                                        </label>
+                                        <select
+                                            class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500 mb-2"
+                                            prop:value=move || connection_target.get()
+                                            on:change=move |ev| connection_target.set(event_target_value(&ev))
+                                        >
+                                            <option value="">"-- Select target node --"</option>
+                                            {move || {
+                                                all_nodes.get().map(|nodes| {
+                                                    nodes.into_iter()
+                                                        .filter(|n| n.id != node_id)  // Exclude current node
+                                                        .map(|n| view! {
+                                                            <option value={n.id.to_string()}>
+                                                                {format!("{} ({})", n.name, n.node_type)}
+                                                            </option>
+                                                        })
+                                                        .collect_view()
+                                                })
+                                            }}
+                                        </select>
+                                        <button
+                                            class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                            on:click=move |_| { create_connection_action.dispatch(()); }
+                                            disabled=move || create_connection_action.pending().get() || connection_target.get().is_empty()
+                                        >
+                                            {move || if create_connection_action.pending().get() {
+                                                "Creating..."
+                                            } else {
+                                                "Create Connection"
+                                            }}
+                                        </button>
+
+                                        // Show connection creation result
+                                        {move || {
+                                            create_connection_action.value().get().map(|result| {
+                                                match result {
+                                                    Ok(_) => view! {
+                                                        <div class="mt-2 text-xs text-green-400 text-center">
+                                                            "✓ Connection created"
+                                                        </div>
+                                                    }.into_any(),
+                                                    Err(e) => view! {
+                                                        <div class="mt-2 text-xs text-red-400 text-center">
+                                                            {format!("Error: {}", e)}
+                                                        </div>
+                                                    }.into_any(),
+                                                }
+                                            })
+                                        }}
+                                    </div>
+
                                     // Delete button group
-                                    <div>
+                                    <div class="pt-4 border-t border-gray-700">
                                         <button
                                             class="w-full px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
                                             on:click=move |_| { delete_action.dispatch(()); }
