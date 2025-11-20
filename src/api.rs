@@ -1,15 +1,15 @@
 use crate::models::{
-    Topology, CreateTopology, UpdateTopology, TopologyFull,
-    Node, CreateNode, UpdateNode,
-    Connection, CreateConnection, UpdateConnection,
-    UISettings, UpdateUISettings,
-    VendorListResponse, VendorInfo, ModelInfo,
-    ConnectionTrafficMetric,
+    Connection, ConnectionTrafficMetric, CreateConnection, CreateNode, CreateTopology, Node,
+    Topology, TopologyFull, UISettings, UpdateConnection, UpdateNode, UpdateTopology,
+    UpdateUISettings, VendorListResponse,
 };
 use leptos::prelude::*;
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ssr")]
-use sqlx::SqlitePool;
+use crate::models::{ModelInfo, VendorInfo};
+#[cfg(feature = "ssr")]
+use sqlx::{FromRow, Row, SqlitePool};
 
 /// Get all topologies from the database
 #[server(GetTopologies, "/api")]
@@ -51,20 +51,18 @@ pub async fn create_topology(data: CreateTopology) -> Result<Topology, ServerFnE
             .await
             .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
-        let result = sqlx::query(
-            "INSERT INTO topologies (name, description) VALUES (?, ?)"
-        )
-        .bind(&data.name)
-        .bind(&data.description)
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+        let result = sqlx::query("INSERT INTO topologies (name, description) VALUES (?, ?)")
+            .bind(&data.name)
+            .bind(&data.description)
+            .execute(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
 
         let id = result.last_insert_rowid();
 
         // Fetch the created topology
         let topology = sqlx::query_as::<_, Topology>(
-            "SELECT id, name, description, created_at, updated_at FROM topologies WHERE id = ?"
+            "SELECT id, name, description, created_at, updated_at FROM topologies WHERE id = ?",
         )
         .bind(id)
         .fetch_one(&pool)
@@ -115,13 +113,14 @@ pub async fn update_topology(id: i64, data: UpdateTopology) -> Result<Topology, 
 
         query = query.bind(id);
 
-        query.execute(&pool)
+        query
+            .execute(&pool)
             .await
             .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
 
         // Fetch and return updated topology
         let topology = sqlx::query_as::<_, Topology>(
-            "SELECT id, name, description, created_at, updated_at FROM topologies WHERE id = ?"
+            "SELECT id, name, description, created_at, updated_at FROM topologies WHERE id = ?",
         )
         .bind(id)
         .fetch_one(&pool)
@@ -178,7 +177,7 @@ pub async fn get_topology_full(id: i64) -> Result<TopologyFull, ServerFnError> {
 
         // Fetch topology
         let topology = sqlx::query_as::<_, Topology>(
-            "SELECT id, name, description, created_at, updated_at FROM topologies WHERE id = ?"
+            "SELECT id, name, description, created_at, updated_at FROM topologies WHERE id = ?",
         )
         .bind(id)
         .fetch_one(&pool)
@@ -275,7 +274,9 @@ pub async fn create_node(data: CreateNode) -> Result<Node, ServerFnError> {
         let scale = data.scale.unwrap_or(1.0);
         let color = data.color.unwrap_or_else(|| "100,150,255".to_string()); // Default blue
         let vendor = data.vendor.unwrap_or_else(|| "generic".to_string());
-        let model_name = data.model_name.unwrap_or_else(|| format!("blob-{}", data.node_type));
+        let model_name = data
+            .model_name
+            .unwrap_or_else(|| format!("blob-{}", data.node_type));
 
         let result = sqlx::query(
             "INSERT INTO nodes (topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata)
@@ -332,6 +333,18 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
         let Extension(pool) = extract::<Extension<SqlitePool>>()
             .await
             .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+        // Get topology_id for undo history
+        let topology_id: i64 = sqlx::query_scalar("SELECT topology_id FROM nodes WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Node not found: {}", e)))?;
+
+        // Save undo history before updating
+        save_node_undo_history(&pool, id, topology_id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to save undo history: {}", e)))?;
 
         // Build dynamic UPDATE query based on which fields are provided
         let mut updates = Vec::new();
@@ -455,7 +468,8 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
 
         query = query.bind(id);
 
-        query.execute(&pool)
+        query
+            .execute(&pool)
             .await
             .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
 
@@ -490,6 +504,40 @@ pub async fn delete_node(id: i64) -> Result<(), ServerFnError> {
             .await
             .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
+        // Get topology_id and save undo history before deleting
+        let topology_id: i64 = sqlx::query_scalar("SELECT topology_id FROM nodes WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Node not found: {}", e)))?;
+
+        // Get the node before deletion
+        let node = sqlx::query_as::<_, Node>(
+            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata, created_at, updated_at
+             FROM nodes WHERE id = ?"
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Node not found: {}", e)))?;
+
+        // Serialize node to JSON for undo
+        let previous_state = serde_json::to_string(&node)
+            .map_err(|e| ServerFnError::new(format!("JSON serialization error: {}", e)))?;
+
+        // Insert into undo_history with action_type = 'delete'
+        sqlx::query(
+            "INSERT INTO undo_history (topology_id, entity_type, entity_id, action_type, previous_state)
+             VALUES (?, 'node', ?, 'delete', ?)"
+        )
+        .bind(topology_id)
+        .bind(id)
+        .bind(previous_state)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to save undo history: {}", e)))?;
+
+        // Now delete the node
         sqlx::query("DELETE FROM nodes WHERE id = ?")
             .bind(id)
             .execute(&pool)
@@ -552,7 +600,9 @@ pub async fn create_connection(data: CreateConnection) -> Result<Connection, Ser
             .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
         // Use defaults if not provided
-        let conn_type = data.connection_type.unwrap_or_else(|| "ethernet".to_string());
+        let conn_type = data
+            .connection_type
+            .unwrap_or_else(|| "ethernet".to_string());
         let status = data.status.unwrap_or_else(|| "active".to_string());
         let color = data.color.unwrap_or_else(|| "128,128,128".to_string());
 
@@ -597,7 +647,10 @@ pub async fn create_connection(data: CreateConnection) -> Result<Connection, Ser
 
 /// Update an existing connection
 #[server(UpdateConnectionFn, "/api")]
-pub async fn update_connection(id: i64, data: UpdateConnection) -> Result<Connection, ServerFnError> {
+pub async fn update_connection(
+    id: i64,
+    data: UpdateConnection,
+) -> Result<Connection, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
         use axum::Extension;
@@ -606,6 +659,19 @@ pub async fn update_connection(id: i64, data: UpdateConnection) -> Result<Connec
         let Extension(pool) = extract::<Extension<SqlitePool>>()
             .await
             .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+        // Get topology_id for undo history
+        let topology_id: i64 =
+            sqlx::query_scalar("SELECT topology_id FROM connections WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .map_err(|e| ServerFnError::new(format!("Connection not found: {}", e)))?;
+
+        // Save undo history before updating
+        save_connection_undo_history(&pool, id, topology_id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to save undo history: {}", e)))?;
 
         // Build dynamic UPDATE query
         let mut query_str = "UPDATE connections SET updated_at = CURRENT_TIMESTAMP".to_string();
@@ -673,7 +739,8 @@ pub async fn update_connection(id: i64, data: UpdateConnection) -> Result<Connec
 
         query = query.bind(id);
 
-        query.execute(&pool)
+        query
+            .execute(&pool)
             .await
             .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
 
@@ -708,6 +775,40 @@ pub async fn delete_connection(id: i64) -> Result<(), ServerFnError> {
             .await
             .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
+        // Get topology_id and save undo history before deleting
+        let topology_id: i64 = sqlx::query_scalar("SELECT topology_id FROM connections WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Connection not found: {}", e)))?;
+
+        // Get the connection before deletion
+        let connection = sqlx::query_as::<_, Connection>(
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, baseline_packet_loss_pct, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
+             FROM connections WHERE id = ?"
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Connection not found: {}", e)))?;
+
+        // Serialize connection to JSON for undo
+        let previous_state = serde_json::to_string(&connection)
+            .map_err(|e| ServerFnError::new(format!("JSON serialization error: {}", e)))?;
+
+        // Insert into undo_history with action_type = 'delete'
+        sqlx::query(
+            "INSERT INTO undo_history (topology_id, entity_type, entity_id, action_type, previous_state)
+             VALUES (?, 'connection', ?, 'delete', ?)"
+        )
+        .bind(topology_id)
+        .bind(id)
+        .bind(previous_state)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to save undo history: {}", e)))?;
+
+        // Now delete the connection
         sqlx::query("DELETE FROM connections WHERE id = ?")
             .bind(id)
             .execute(&pool)
@@ -741,7 +842,7 @@ pub async fn swap_connection_direction(id: i64) -> Result<Connection, ServerFnEr
              SET source_node_id = target_node_id,
                  target_node_id = source_node_id,
                  updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?"
+             WHERE id = ?",
         )
         .bind(id)
         .execute(&pool)
@@ -921,11 +1022,14 @@ pub async fn get_vendors_for_type(node_type: String) -> Result<VendorListRespons
             .map_err(|e| ServerFnError::new(format!("Failed to read models directory: {}", e)))?;
 
         for entry in entries {
-            let entry = entry.map_err(|e| ServerFnError::new(format!("Failed to read directory entry: {}", e)))?;
+            let entry = entry.map_err(|e| {
+                ServerFnError::new(format!("Failed to read directory entry: {}", e))
+            })?;
             let path = entry.path();
 
             if path.is_dir() {
-                let vendor_name = path.file_name()
+                let vendor_name = path
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("unknown")
                     .to_string();
@@ -939,12 +1043,13 @@ pub async fn get_vendors_for_type(node_type: String) -> Result<VendorListRespons
                             let model_path = model_entry.path();
                             if let Some(ext) = model_path.extension() {
                                 if ext == "glb" {
-                                    if let Some(file_name) = model_path.file_name().and_then(|n| n.to_str()) {
+                                    if let Some(file_name) =
+                                        model_path.file_name().and_then(|n| n.to_str())
+                                    {
                                         // Remove .glb extension for storage
                                         let file_name_no_ext = file_name.trim_end_matches(".glb");
-                                        let display_name = file_name_no_ext
-                                            .replace("-", " ")
-                                            .replace("_", " ");
+                                        let display_name =
+                                            file_name_no_ext.replace("-", " ").replace("_", " ");
 
                                         models.push(ModelInfo {
                                             file_name: file_name_no_ext.to_string(),
@@ -961,7 +1066,8 @@ pub async fn get_vendors_for_type(node_type: String) -> Result<VendorListRespons
                 let icon_path = format!("public/icons/vendors/{}.svg", vendor_name);
                 let has_icon = Path::new(&icon_path).exists();
 
-                let display_name = capitalize_words(&vendor_name.replace("-", " ").replace("_", " "));
+                let display_name =
+                    capitalize_words(&vendor_name.replace("-", " ").replace("_", " "));
 
                 vendors.push(VendorInfo {
                     name: vendor_name,
@@ -988,10 +1094,7 @@ pub async fn get_vendors_for_type(node_type: String) -> Result<VendorListRespons
             }
         });
 
-        Ok(VendorListResponse {
-            node_type,
-            vendors,
-        })
+        Ok(VendorListResponse { node_type, vendors })
     }
 
     #[cfg(not(feature = "ssr"))]
@@ -1021,7 +1124,10 @@ fn capitalize_words(s: &str) -> String {
 /// Generate mock traffic data for a specific topology
 /// This simulates realistic network traffic patterns for demonstration purposes
 #[server(GenerateMockTraffic, "/api")]
-pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> Result<usize, ServerFnError> {
+pub async fn generate_mock_traffic(
+    topology_id: i64,
+    traffic_level: String,
+) -> Result<usize, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
         use axum::Extension;
@@ -1049,14 +1155,14 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
         // Individual link properties (bandwidth, latency, type) determine actual utilization
         // This allows per-link automatic traffic level calculation based on throughput
         let traffic_multiplier = match traffic_level.as_str() {
-            "low" => 0.3,       // 30% baseline activity
-            "medium" => 0.6,    // 60% baseline activity
-            "high" => 0.9,      // 90% baseline activity
-            _ => 0.6,           // default to medium
+            "low" => 0.3,    // 30% baseline activity
+            "medium" => 0.6, // 60% baseline activity
+            "high" => 0.9,   // 90% baseline activity
+            _ => 0.6,        // default to medium
         };
 
-        use rand::SeedableRng;
         use rand::Rng;
+        use rand::SeedableRng;
         // Use StdRng which is Send-safe for async contexts
         let mut rng = rand::rngs::StdRng::from_entropy();
         let current_timestamp = std::time::SystemTime::now()
@@ -1079,11 +1185,11 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
 
             // Connection type affects throughput efficiency
             let type_efficiency = match connection.connection_type.as_str() {
-                "Fiber" => 0.95,        // Fiber is most efficient
-                "Ethernet" => 0.85,     // Ethernet slightly less
-                "Wireless" => 0.70,     // Wireless has more overhead
-                "VPN" => 0.75,          // VPN has encryption overhead
-                _ => 0.80,              // Default efficiency
+                "Fiber" => 0.95,    // Fiber is most efficient
+                "Ethernet" => 0.85, // Ethernet slightly less
+                "Wireless" => 0.70, // Wireless has more overhead
+                "VPN" => 0.75,      // VPN has encryption overhead
+                _ => 0.80,          // Default efficiency
             };
 
             // Calculate realistic throughput using Mathis formula
@@ -1098,7 +1204,11 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
                 1.0
             };
 
-            let base_throughput = bandwidth_capacity * traffic_multiplier * type_efficiency * rtt_factor * packet_loss_factor;
+            let base_throughput = bandwidth_capacity
+                * traffic_multiplier
+                * type_efficiency
+                * rtt_factor
+                * packet_loss_factor;
             let throughput_variance = rng.gen_range(0.8..1.2); // ±20% variance for realism
             let throughput_mbps = (base_throughput * throughput_variance).max(0.1);
 
@@ -1121,7 +1231,8 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
             let packet_loss_penalty = baseline_packet_loss * 10.0; // Each 1% packet loss adds 10% utilization
 
             // Final utilization = base + degradation penalties
-            let utilization_pct = (base_utilization + latency_penalty + packet_loss_penalty).min(100.0);
+            let utilization_pct =
+                (base_utilization + latency_penalty + packet_loss_penalty).min(100.0);
 
             // Packets per second (roughly 1000 packets per Mbps for standard Ethernet)
             let packets_per_sec = (throughput_mbps * 1000.0) as i64;
@@ -1168,7 +1279,7 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
                 "INSERT INTO connection_traffic_metrics
                  (connection_id, timestamp, throughput_mbps, packets_per_sec, latency_ms,
                   packet_loss_pct, utilization_pct, bytes_transferred, packets_transferred)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(connection.id)
             .bind(current_timestamp)
@@ -1197,12 +1308,14 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
 
 /// Get latest traffic metrics for all connections in a topology
 #[server(GetConnectionTrafficMetrics, "/api")]
-pub async fn get_connection_traffic_metrics(topology_id: i64) -> Result<Vec<ConnectionTrafficMetric>, ServerFnError> {
+pub async fn get_connection_traffic_metrics(
+    topology_id: i64,
+) -> Result<Vec<ConnectionTrafficMetric>, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
+        use crate::models::ConnectionTrafficMetric;
         use axum::Extension;
         use leptos_axum::extract;
-        use crate::models::ConnectionTrafficMetric;
 
         let Extension(pool) = extract::<Extension<SqlitePool>>()
             .await
@@ -1220,7 +1333,7 @@ pub async fn get_connection_traffic_metrics(topology_id: i64) -> Result<Vec<Conn
              ) latest ON ctm.connection_id = latest.connection_id
                      AND ctm.timestamp = latest.max_timestamp
              WHERE c.topology_id = ?
-             ORDER BY ctm.utilization_pct DESC"
+             ORDER BY ctm.utilization_pct DESC",
         )
         .bind(topology_id)
         .fetch_all(&pool)
@@ -1239,7 +1352,9 @@ pub async fn get_connection_traffic_metrics(topology_id: i64) -> Result<Vec<Conn
 /// Get latest traffic metric for each connection (for real-time visualization)
 /// Returns a map of connection_id -> latest metric
 #[server(GetLatestTrafficMetrics, "/api")]
-pub async fn get_latest_traffic_metrics(topology_id: i64) -> Result<std::collections::HashMap<i64, ConnectionTrafficMetric>, ServerFnError> {
+pub async fn get_latest_traffic_metrics(
+    topology_id: i64,
+) -> Result<std::collections::HashMap<i64, ConnectionTrafficMetric>, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
         use axum::Extension;
@@ -1265,7 +1380,7 @@ pub async fn get_latest_traffic_metrics(topology_id: i64) -> Result<std::collect
             ) latest ON latest.connection_id = ctm.connection_id
                     AND latest.max_timestamp = ctm.timestamp
             WHERE c.topology_id = ?
-            "#
+            "#,
         )
         .bind(topology_id)
         .bind(topology_id)
@@ -1304,7 +1419,7 @@ pub async fn clear_traffic_data(topology_id: i64) -> Result<usize, ServerFnError
             WHERE connection_id IN (
                 SELECT id FROM connections WHERE topology_id = ?
             )
-            "#
+            "#,
         )
         .bind(topology_id)
         .execute(&pool)
@@ -1335,15 +1450,14 @@ pub async fn clean_old_traffic_metrics() -> Result<usize, ServerFnError> {
         let one_hour_ago = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs() as i64 - 3600;
+            .as_secs() as i64
+            - 3600;
 
-        let result = sqlx::query(
-            "DELETE FROM connection_traffic_metrics WHERE timestamp < ?"
-        )
-        .bind(one_hour_ago)
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(format!("Failed to clean old metrics: {}", e)))?;
+        let result = sqlx::query("DELETE FROM connection_traffic_metrics WHERE timestamp < ?")
+            .bind(one_hour_ago)
+            .execute(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to clean old metrics: {}", e)))?;
 
         Ok(result.rows_affected() as usize)
     }
@@ -1366,12 +1480,11 @@ pub async fn get_last_topology_id() -> Result<Option<i64>, ServerFnError> {
             .await
             .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
-        let result: Option<(Option<i64>,)> = sqlx::query_as(
-            "SELECT last_topology_id FROM ui_settings WHERE id = 1"
-        )
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+        let result: Option<(Option<i64>,)> =
+            sqlx::query_as("SELECT last_topology_id FROM ui_settings WHERE id = 1")
+                .fetch_optional(&pool)
+                .await
+                .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
 
         Ok(result.and_then(|(id,)| id))
     }
@@ -1431,20 +1544,18 @@ pub async fn create_blank_topology() -> Result<Topology, ServerFnError> {
 
         let name = format!("New Topology #{}", timestamp);
 
-        let result = sqlx::query(
-            "INSERT INTO topologies (name, description) VALUES (?, ?)"
-        )
-        .bind(&name)
-        .bind(Some("Created via UI"))
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+        let result = sqlx::query("INSERT INTO topologies (name, description) VALUES (?, ?)")
+            .bind(&name)
+            .bind(Some("Created via UI"))
+            .execute(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
 
         let id = result.last_insert_rowid();
 
         // Fetch the created topology
         let topology = sqlx::query_as::<_, Topology>(
-            "SELECT id, name, description, created_at, updated_at FROM topologies WHERE id = ?"
+            "SELECT id, name, description, created_at, updated_at FROM topologies WHERE id = ?",
         )
         .bind(id)
         .fetch_one(&pool)
@@ -1452,6 +1563,297 @@ pub async fn create_blank_topology() -> Result<Topology, ServerFnError> {
         .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
 
         Ok(topology)
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}
+
+// ============================================================================
+// UNDO FUNCTIONALITY
+// ============================================================================
+
+/// Helper function to save undo history for node updates
+#[cfg(feature = "ssr")]
+async fn save_node_undo_history(
+    pool: &SqlitePool,
+    node_id: i64,
+    topology_id: i64,
+) -> Result<(), sqlx::Error> {
+    // Get current state of the node before update
+    let node = sqlx::query_as::<_, Node>(
+        "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata, created_at, updated_at
+         FROM nodes WHERE id = ?"
+    )
+    .bind(node_id)
+    .fetch_one(pool)
+    .await?;
+
+    // Serialize node to JSON
+    let previous_state = serde_json::to_string(&node)
+        .map_err(|e| sqlx::Error::Protocol(format!("JSON serialization error: {}", e)))?;
+
+    // Insert into undo_history
+    sqlx::query(
+        "INSERT INTO undo_history (topology_id, entity_type, entity_id, action_type, previous_state)
+         VALUES (?, 'node', ?, 'update', ?)"
+    )
+    .bind(topology_id)
+    .bind(node_id)
+    .bind(previous_state)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Helper function to save undo history for connection updates
+#[cfg(feature = "ssr")]
+async fn save_connection_undo_history(
+    pool: &SqlitePool,
+    connection_id: i64,
+    topology_id: i64,
+) -> Result<(), sqlx::Error> {
+    // Get current state of the connection before update
+    let connection = sqlx::query_as::<_, Connection>(
+        "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, baseline_packet_loss_pct, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
+         FROM connections WHERE id = ?"
+    )
+    .bind(connection_id)
+    .fetch_one(pool)
+    .await?;
+
+    // Serialize connection to JSON
+    let previous_state = serde_json::to_string(&connection)
+        .map_err(|e| sqlx::Error::Protocol(format!("JSON serialization error: {}", e)))?;
+
+    // Insert into undo_history
+    sqlx::query(
+        "INSERT INTO undo_history (topology_id, entity_type, entity_id, action_type, previous_state)
+         VALUES (?, 'connection', ?, 'update', ?)"
+    )
+    .bind(topology_id)
+    .bind(connection_id)
+    .bind(previous_state)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+#[cfg_attr(feature = "ssr", derive(FromRow))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UndoHistoryEntry {
+    pub id: i64,
+    pub entity_type: String,
+    pub entity_id: i64,
+    pub action_type: String,
+    pub timestamp: String,
+}
+
+/// Get undo history for a topology (last 5 entries)
+#[server(GetUndoHistory, "/api")]
+pub async fn get_undo_history(topology_id: i64) -> Result<Vec<UndoHistoryEntry>, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+
+        let Extension(pool) = extract::<Extension<SqlitePool>>()
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+        let entries = sqlx::query_as::<_, UndoHistoryEntry>(
+            "SELECT id, entity_type, entity_id, action_type, timestamp
+             FROM undo_history
+             WHERE topology_id = ?
+             ORDER BY timestamp DESC
+             LIMIT 5",
+        )
+        .bind(topology_id)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+        Ok(entries)
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        unreachable!("Server function called on client")
+    }
+}
+
+/// Undo the last change in a topology
+#[server(UndoLastChange, "/api")]
+pub async fn undo_last_change(topology_id: i64) -> Result<bool, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use axum::Extension;
+        use leptos_axum::extract;
+
+        let Extension(pool) = extract::<Extension<SqlitePool>>()
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
+
+        // Get the most recent undo entry
+        let entry = sqlx::query(
+            "SELECT id, entity_type, entity_id, action_type, previous_state
+             FROM undo_history
+             WHERE topology_id = ?
+             ORDER BY timestamp DESC
+             LIMIT 1",
+        )
+        .bind(topology_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+        if let Some(row) = entry {
+            let undo_id: i64 = row.get("id");
+            let entity_type: String = row.get("entity_type");
+            let entity_id: i64 = row.get("entity_id");
+            let action_type: String = row.get("action_type");
+            let previous_state: String = row.get("previous_state");
+
+            // Restore the previous state based on entity type and action type
+            if action_type == "update" {
+                // For updates, restore to the previous state
+                if entity_type == "node" {
+                    let node: Node = serde_json::from_str(&previous_state).map_err(|e| {
+                        ServerFnError::new(format!("JSON deserialization error: {}", e))
+                    })?;
+
+                    // Restore node to previous state
+                    sqlx::query(
+                        "UPDATE nodes SET name = ?, node_type = ?, vendor = ?, model_name = ?, ip_address = ?,
+                         position_x = ?, position_y = ?, position_z = ?, rotation_x = ?, rotation_y = ?, rotation_z = ?,
+                         scale = ?, color = ?, metadata = ?, updated_at = CURRENT_TIMESTAMP
+                         WHERE id = ?"
+                    )
+                    .bind(&node.name)
+                    .bind(&node.node_type)
+                    .bind(&node.vendor)
+                    .bind(&node.model_name)
+                    .bind(&node.ip_address)
+                    .bind(node.position_x)
+                    .bind(node.position_y)
+                    .bind(node.position_z)
+                    .bind(node.rotation_x)
+                    .bind(node.rotation_y)
+                    .bind(node.rotation_z)
+                    .bind(node.scale)
+                    .bind(&node.color)
+                    .bind(&node.metadata)
+                    .bind(entity_id)
+                    .execute(&pool)
+                    .await
+                    .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+                } else if entity_type == "connection" {
+                    let connection: Connection =
+                        serde_json::from_str(&previous_state).map_err(|e| {
+                            ServerFnError::new(format!("JSON deserialization error: {}", e))
+                        })?;
+
+                    // Restore connection to previous state
+                    sqlx::query(
+                        "UPDATE connections SET connection_type = ?, bandwidth_mbps = ?, latency_ms = ?,
+                         baseline_packet_loss_pct = ?, status = ?, color = ?, carries_traffic = ?, flow_direction = ?,
+                         metadata = ?, updated_at = CURRENT_TIMESTAMP
+                         WHERE id = ?"
+                    )
+                    .bind(&connection.connection_type)
+                    .bind(connection.bandwidth_mbps)
+                    .bind(connection.latency_ms)
+                    .bind(connection.baseline_packet_loss_pct)
+                    .bind(&connection.status)
+                    .bind(&connection.color)
+                    .bind(connection.carries_traffic)
+                    .bind(&connection.flow_direction)
+                    .bind(&connection.metadata)
+                    .bind(entity_id)
+                    .execute(&pool)
+                    .await
+                    .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+                }
+            } else if action_type == "delete" {
+                // For deletions, recreate the deleted entity
+                if entity_type == "node" {
+                    let node: Node = serde_json::from_str(&previous_state).map_err(|e| {
+                        ServerFnError::new(format!("JSON deserialization error: {}", e))
+                    })?;
+
+                    // Recreate the deleted node
+                    sqlx::query(
+                        "INSERT INTO nodes (id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata, created_at, updated_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    )
+                    .bind(node.id)
+                    .bind(node.topology_id)
+                    .bind(&node.name)
+                    .bind(&node.node_type)
+                    .bind(&node.vendor)
+                    .bind(&node.model_name)
+                    .bind(&node.ip_address)
+                    .bind(node.position_x)
+                    .bind(node.position_y)
+                    .bind(node.position_z)
+                    .bind(node.rotation_x)
+                    .bind(node.rotation_y)
+                    .bind(node.rotation_z)
+                    .bind(node.scale)
+                    .bind(&node.color)
+                    .bind(&node.metadata)
+                    .bind(&node.created_at)
+                    .bind(&node.updated_at)
+                    .execute(&pool)
+                    .await
+                    .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+                } else if entity_type == "connection" {
+                    let connection: Connection = serde_json::from_str(&previous_state).map_err(|e| {
+                        ServerFnError::new(format!("JSON deserialization error: {}", e))
+                    })?;
+
+                    // Recreate the deleted connection
+                    sqlx::query(
+                        "INSERT INTO connections (id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, baseline_packet_loss_pct, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    )
+                    .bind(connection.id)
+                    .bind(connection.topology_id)
+                    .bind(connection.source_node_id)
+                    .bind(connection.target_node_id)
+                    .bind(&connection.connection_type)
+                    .bind(connection.bandwidth_mbps)
+                    .bind(connection.latency_ms)
+                    .bind(connection.baseline_packet_loss_pct)
+                    .bind(&connection.status)
+                    .bind(&connection.color)
+                    .bind(connection.carries_traffic)
+                    .bind(&connection.flow_direction)
+                    .bind(&connection.metadata)
+                    .bind(&connection.created_at)
+                    .bind(&connection.updated_at)
+                    .execute(&pool)
+                    .await
+                    .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+                }
+            }
+
+            // Delete the undo history entry that was just applied
+            sqlx::query("DELETE FROM undo_history WHERE id = ?")
+                .bind(undo_id)
+                .execute(&pool)
+                .await
+                .map_err(|e| ServerFnError::new(format!("Database error: {}", e)))?;
+
+            Ok(true)
+        } else {
+            // No undo history available
+            Ok(false)
+        }
     }
 
     #[cfg(not(feature = "ssr"))]

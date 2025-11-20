@@ -1,10 +1,21 @@
+use crate::api::{
+    create_connection as create_connection_fn, create_node, delete_connection, delete_node,
+    delete_topology, get_connection, get_node, get_topologies, get_topology_full, get_ui_settings,
+    get_undo_history, get_vendors_for_type, swap_connection_direction, undo_last_change,
+    update_connection, update_node, update_topology, update_ui_settings,
+};
+use crate::islands::TopologyViewport;
+use crate::models::{
+    CreateConnection, CreateNode, UpdateConnection, UpdateNode, UpdateTopology, UpdateUISettings,
+};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use crate::islands::TopologyViewport;
-use crate::api::{get_node, update_node, get_connection, update_connection, create_node, delete_node, delete_connection, swap_connection_direction, get_topologies, delete_topology, update_topology, get_ui_settings, update_ui_settings, get_vendors_for_type, get_topology_full, create_topology, create_connection as create_connection_fn};
-use crate::models::{UpdateNode, UpdateConnection, CreateNode, UpdateUISettings, UpdateTopology, CreateTopology, CreateConnection};
 
 // Import these only when hydrating
+#[cfg(feature = "hydrate")]
+use crate::api::create_topology;
+#[cfg(feature = "hydrate")]
+use crate::models::CreateTopology;
 #[cfg(feature = "hydrate")]
 use web_sys;
 
@@ -55,7 +66,10 @@ fn VendorSection(
     vendor: crate::models::VendorInfo,
     node_type: String,
     name_prefix: String,
-    create_node_action: Action<(String, String, String, String), Result<crate::models::Node, leptos::prelude::ServerFnError>>,
+    create_node_action: Action<
+        (String, String, String, String),
+        Result<crate::models::Node, leptos::prelude::ServerFnError>,
+    >,
     dropdown_open: RwSignal<bool>,
 ) -> impl IntoView {
     // Clone values for use in closures
@@ -135,7 +149,10 @@ fn VendorSection(
 fn VendorDropdown(
     node_type: String,
     name_prefix: String,
-    create_node_action: Action<(String, String, String, String), Result<crate::models::Node, leptos::prelude::ServerFnError>>,
+    create_node_action: Action<
+        (String, String, String, String),
+        Result<crate::models::Node, leptos::prelude::ServerFnError>,
+    >,
     dropdown_open: RwSignal<bool>,
 ) -> impl IntoView {
     // Clone for use in Resource
@@ -144,9 +161,7 @@ fn VendorDropdown(
     // Fetch vendors for this node type
     let vendors_resource = Resource::new(
         move || node_type_for_resource.clone(),
-        |node_type| async move {
-            get_vendors_for_type(node_type).await
-        },
+        |node_type| async move { get_vendors_for_type(node_type).await },
     );
 
     view! {
@@ -253,7 +268,7 @@ pub fn TopologyEditor(
     {
         use wasm_bindgen::prelude::*;
         use wasm_bindgen::JsCast;
-        use web_sys::{KeyboardEvent, window};
+        use web_sys::{window, KeyboardEvent};
 
         let fullscreen_mode_kb = fullscreen_mode;
         let selected_item_kb = selected_item;
@@ -274,7 +289,7 @@ pub fn TopologyEditor(
                 "f" | "F" => {
                     e.prevent_default();
                     fullscreen_mode_kb.update(|v| *v = !*v);
-                },
+                }
                 "Escape" => {
                     e.prevent_default();
                     // If in fullscreen, exit fullscreen first
@@ -285,7 +300,7 @@ pub fn TopologyEditor(
                         selected_item_kb.set(None);
                         selected_node_id_kb.set(None);
                     }
-                },
+                }
                 "Delete" | "Backspace" if !e.meta_key() && !e.ctrl_key() => {
                     // Delete selected item (node or connection)
                     if let Some(_item) = selected_item_kb.get_untracked() {
@@ -293,16 +308,18 @@ pub fn TopologyEditor(
                         // Trigger deletion via server function
                         // (We'll implement this with actions below)
                     }
-                },
+                }
                 _ => {}
             }
         }) as Box<dyn FnMut(KeyboardEvent)>);
 
         if let Some(window) = window() {
-            window.add_event_listener_with_callback(
-                "keydown",
-                keydown_handler.as_ref().unchecked_ref()
-            ).ok();
+            window
+                .add_event_listener_with_callback(
+                    "keydown",
+                    keydown_handler.as_ref().unchecked_ref(),
+                )
+                .ok();
         }
 
         keydown_handler.forget();
@@ -331,14 +348,26 @@ pub fn TopologyEditor(
                     viewport_visibility.show_x_axis.set(settings.show_x_axis);
                     viewport_visibility.show_y_axis.set(settings.show_y_axis);
                     viewport_visibility.show_z_axis.set(settings.show_z_axis);
-                    viewport_visibility.use_environment_lighting.set(settings.use_environment_lighting);
-                    viewport_visibility.environment_map.set(settings.environment_map.clone());
+                    viewport_visibility
+                        .use_environment_lighting
+                        .set(settings.use_environment_lighting);
+                    viewport_visibility
+                        .environment_map
+                        .set(settings.environment_map.clone());
 
                     // Update lighting settings
-                    lighting_settings.ambient_intensity.set(settings.ambient_intensity as f32);
-                    lighting_settings.key_light_intensity.set(settings.key_light_intensity as f32);
-                    lighting_settings.fill_light_intensity.set(settings.fill_light_intensity as f32);
-                    lighting_settings.rim_light_intensity.set(settings.rim_light_intensity as f32);
+                    lighting_settings
+                        .ambient_intensity
+                        .set(settings.ambient_intensity as f32);
+                    lighting_settings
+                        .key_light_intensity
+                        .set(settings.key_light_intensity as f32);
+                    lighting_settings
+                        .fill_light_intensity
+                        .set(settings.fill_light_intensity as f32);
+                    lighting_settings
+                        .rim_light_intensity
+                        .set(settings.rim_light_intensity as f32);
 
                     // Trigger viewport refresh to apply loaded settings
                     refetch_trigger.update(|v| *v += 1);
@@ -368,7 +397,6 @@ pub fn TopologyEditor(
 
         // Only save if settings have been loaded (prevents save during initial load)
         if loaded {
-
             // Trigger viewport refresh for environment lighting changes
             refetch_trigger.update(|v| *v += 1);
 
@@ -386,7 +414,7 @@ pub fn TopologyEditor(
                     environment_map: Some(env_map.clone()),
                 };
                 match update_ui_settings(data).await {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(e) => leptos::logging::error!("Failed to save viewport settings: {}", e),
                 }
             });
@@ -404,7 +432,6 @@ pub fn TopologyEditor(
 
         // Only save if settings have been loaded (prevents save during initial load)
         if loaded {
-
             // Trigger viewport refresh for lighting changes
             refetch_trigger.update(|v| *v += 1);
 
@@ -422,7 +449,7 @@ pub fn TopologyEditor(
                     environment_map: None,
                 };
                 match update_ui_settings(data).await {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(e) => leptos::logging::error!("Failed to save lighting settings: {}", e),
                 }
             });
@@ -478,8 +505,7 @@ pub enum SelectedItem {
 /// Fullscreen mode toggle button
 #[component]
 fn PanelToggleButtons() -> impl IntoView {
-    let fullscreen_mode = use_context::<RwSignal<bool>>()
-        .expect("fullscreen_mode context");
+    let fullscreen_mode = use_context::<RwSignal<bool>>().expect("fullscreen_mode context");
 
     view! {
         <button
@@ -504,7 +530,8 @@ fn TopToolbar() -> impl IntoView {
     // Get current topology ID from context
     let current_topology_id = use_context::<RwSignal<i64>>().expect("current_topology_id context");
     let refetch_trigger = use_context::<RwSignal<u32>>().expect("refetch_trigger context");
-    let selected_item = use_context::<RwSignal<Option<SelectedItem>>>().expect("selected_item context");
+    let selected_item =
+        use_context::<RwSignal<Option<SelectedItem>>>().expect("selected_item context");
 
     // Create a signal to trigger topology list refresh
     let topology_list_trigger = RwSignal::new(0u32);
@@ -512,9 +539,7 @@ fn TopToolbar() -> impl IntoView {
     // Load list of topologies (reactive to topology_list_trigger)
     let topologies = Resource::new(
         move || topology_list_trigger.get(),
-        |_| async move {
-            get_topologies().await.ok().unwrap_or_default()
-        }
+        |_| async move { get_topologies().await.ok().unwrap_or_default() },
     );
 
     // Provide topology list trigger to child components
@@ -532,10 +557,14 @@ fn TopToolbar() -> impl IntoView {
         let topology_id = current_topology_id.get_untracked();
         let name = new_name.clone();
         async move {
-            update_topology(topology_id, UpdateTopology {
-                name: Some(name),
-                description: None,
-            }).await
+            update_topology(
+                topology_id,
+                UpdateTopology {
+                    name: Some(name),
+                    description: None,
+                },
+            )
+            .await
         }
     });
 
@@ -548,11 +577,9 @@ fn TopToolbar() -> impl IntoView {
     });
 
     // Create new topology action
-    let create_new_topology_action = Action::new(move |_: &()| {
-        async move {
-            use crate::api::create_blank_topology;
-            create_blank_topology().await
-        }
+    let create_new_topology_action = Action::new(move |_: &()| async move {
+        use crate::api::create_blank_topology;
+        create_blank_topology().await
     });
 
     // After creating new topology, switch to it
@@ -572,9 +599,7 @@ fn TopToolbar() -> impl IntoView {
     // Delete topology action
     let delete_topology_action = Action::new(move |_: &()| {
         let topology_id = current_topology_id.get_untracked();
-        async move {
-            delete_topology(topology_id).await
-        }
+        async move { delete_topology(topology_id).await }
     });
 
     // After deleting, switch to another topology if available
@@ -785,6 +810,9 @@ fn TopToolbar() -> impl IntoView {
             // Spacer
             <div class="flex-1"></div>
 
+            // Undo button
+            <UndoButton />
+
             // Panel visibility toggle buttons
             <PanelToggleButtons />
 
@@ -794,6 +822,50 @@ fn TopToolbar() -> impl IntoView {
             // Export dropdown menu
             <ExportDropdown />
         </div>
+    }
+}
+
+/// Undo button for reverting the last change
+#[component]
+fn UndoButton() -> impl IntoView {
+    let current_topology_id = use_context::<RwSignal<i64>>().expect("current_topology_id context");
+    let refetch_trigger = use_context::<RwSignal<u32>>().expect("refetch_trigger context");
+
+    // Check if undo history is available (use LocalResource to avoid hydration warnings)
+    let has_undo = LocalResource::new(move || {
+        let topology_id = current_topology_id.get();
+        let _ = refetch_trigger.get(); // Track refetch trigger for reactivity
+        async move {
+            match get_undo_history(topology_id).await {
+                Ok(history) => !history.is_empty(),
+                Err(_) => false,
+            }
+        }
+    });
+
+    // Undo action
+    let undo_action = Action::new(move |_: &()| {
+        let topology_id = current_topology_id.get_untracked();
+        async move { undo_last_change(topology_id).await }
+    });
+
+    // Trigger viewport refresh on successful undo
+    Effect::new(move || {
+        if let Some(Ok(true)) = undo_action.value().get() {
+            refetch_trigger.update(|v| *v += 1);
+        }
+    });
+
+    view! {
+        <button
+            class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+            on:click=move |_| { undo_action.dispatch(()); }
+            disabled=move || !has_undo.get().unwrap_or(false) || undo_action.pending().get()
+            title="Undo last change (Ctrl+Z)"
+        >
+            <span>"↶"</span>
+            <span>"Undo"</span>
+        </button>
     }
 }
 
@@ -821,9 +893,12 @@ fn ExportDropdown() -> impl IntoView {
 
                 let closure = wasm_bindgen::prelude::Closure::wrap(Box::new(move |_: MouseEvent| {
                     show_dropdown_clone.set(false);
-                }) as Box<dyn Fn(MouseEvent)>);
+                })
+                    as Box<dyn Fn(MouseEvent)>);
 
-                document.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref()).ok();
+                document
+                    .add_event_listener_with_callback("click", closure.as_ref().unchecked_ref())
+                    .ok();
                 closure.forget();
             }
         });
@@ -951,7 +1026,7 @@ fn ExportDropdown() -> impl IntoView {
 #[cfg(feature = "hydrate")]
 async fn export_canvas(format: &str, resolution_multiplier: u32) {
     use wasm_bindgen::JsCast;
-    use web_sys::{HtmlCanvasElement, CanvasRenderingContext2d};
+    use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
     let window = match web_sys::window() {
         Some(w) => w,
@@ -1023,8 +1098,12 @@ async fn export_canvas(format: &str, resolution_multiplier: u32) {
         };
 
         // Scale and draw
-        context.scale(resolution_multiplier as f64, resolution_multiplier as f64).ok();
-        context.draw_image_with_html_canvas_element(&canvas, 0.0, 0.0).ok();
+        context
+            .scale(resolution_multiplier as f64, resolution_multiplier as f64)
+            .ok();
+        context
+            .draw_image_with_html_canvas_element(&canvas, 0.0, 0.0)
+            .ok();
 
         temp_canvas
     } else {
@@ -1066,7 +1145,13 @@ async fn export_canvas(format: &str, resolution_multiplier: u32) {
         html_element.click();
     }
 
-    web_sys::console::log_1(&format!("Exported as {} at {}x resolution", format, resolution_multiplier).into());
+    web_sys::console::log_1(
+        &format!(
+            "Exported as {} at {}x resolution",
+            format, resolution_multiplier
+        )
+        .into(),
+    );
 }
 
 /// Export topology as JSON file
@@ -1143,7 +1228,8 @@ async fn export_topology_json(topology_id: i64) {
 
     // Generate filename with topology name and timestamp
     let timestamp = js_sys::Date::new_0().get_time() as i64;
-    let filename = format!("topology-{}-{}.json",
+    let filename = format!(
+        "topology-{}-{}.json",
         topology_data.topology.name.replace(" ", "_").to_lowercase(),
         timestamp
     );
@@ -1169,7 +1255,8 @@ fn ImportDropdown() -> impl IntoView {
     let import_status = RwSignal::new(None::<Result<String, String>>);
     let refetch_trigger = use_context::<RwSignal<u32>>().expect("refetch_trigger context");
     let current_topology_id = use_context::<RwSignal<i64>>().expect("current_topology_id context");
-    let topology_list_trigger = use_context::<RwSignal<u32>>().expect("topology_list_trigger context");
+    let topology_list_trigger =
+        use_context::<RwSignal<u32>>().expect("topology_list_trigger context");
 
     // Close dropdown when clicking outside
     #[cfg(feature = "hydrate")]
@@ -1185,9 +1272,12 @@ fn ImportDropdown() -> impl IntoView {
 
                 let closure = wasm_bindgen::prelude::Closure::wrap(Box::new(move |_: MouseEvent| {
                     show_dropdown_clone.set(false);
-                }) as Box<dyn Fn(MouseEvent)>);
+                })
+                    as Box<dyn Fn(MouseEvent)>);
 
-                document.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref()).ok();
+                document
+                    .add_event_listener_with_callback("click", closure.as_ref().unchecked_ref())
+                    .ok();
                 closure.forget();
             }
         });
@@ -1228,7 +1318,9 @@ fn ImportDropdown() -> impl IntoView {
                     // Small delay using JavaScript setTimeout to ensure the topology list has refreshed
                     let promise = js_sys::Promise::new(&mut |resolve, _| {
                         let window = window().expect("no window");
-                        window.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 150).ok();
+                        window
+                            .set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 150)
+                            .ok();
                     });
                     JsFuture::from(promise).await.ok();
                 }
@@ -1356,8 +1448,8 @@ async fn import_topology_json(json_content: String) -> Result<ImportResult, Stri
     use crate::models::TopologyFull;
 
     // Parse JSON
-    let topology_data: TopologyFull = serde_json::from_str(&json_content)
-        .map_err(|e| format!("Invalid JSON format: {}", e))?;
+    let topology_data: TopologyFull =
+        serde_json::from_str(&json_content).map_err(|e| format!("Invalid JSON format: {}", e))?;
 
     // Validate topology data
     if topology_data.nodes.is_empty() {
@@ -1410,10 +1502,18 @@ async fn import_topology_json(json_content: String) -> Result<ImportResult, Stri
     // Import connections
     for connection in &topology_data.connections {
         // Map old node IDs to new node IDs
-        let new_source_id = node_id_map.get(&connection.source_node_id)
-            .ok_or_else(|| format!("Source node ID {} not found in mapping", connection.source_node_id))?;
-        let new_target_id = node_id_map.get(&connection.target_node_id)
-            .ok_or_else(|| format!("Target node ID {} not found in mapping", connection.target_node_id))?;
+        let new_source_id = node_id_map.get(&connection.source_node_id).ok_or_else(|| {
+            format!(
+                "Source node ID {} not found in mapping",
+                connection.source_node_id
+            )
+        })?;
+        let new_target_id = node_id_map.get(&connection.target_node_id).ok_or_else(|| {
+            format!(
+                "Target node ID {} not found in mapping",
+                connection.target_node_id
+            )
+        })?;
 
         let create_conn_data = CreateConnection {
             topology_id: new_topology_id,
@@ -1435,7 +1535,8 @@ async fn import_topology_json(json_content: String) -> Result<ImportResult, Stri
 
     Ok(ImportResult {
         topology_id: new_topology_id,
-        message: format!("Successfully imported '{}' with {} nodes and {} connections",
+        message: format!(
+            "Successfully imported '{}' with {} nodes and {} connections",
             new_topology_name,
             topology_data.nodes.len(),
             topology_data.connections.len()
@@ -1451,7 +1552,8 @@ fn DevicePalette() -> impl IntoView {
     let refetch_trigger = use_context::<RwSignal<u32>>().expect("refetch_trigger context");
 
     // Grid and axes visibility controls - extract from struct
-    let _viewport_visibility = use_context::<ViewportVisibility>().expect("viewport_visibility context");
+    let _viewport_visibility =
+        use_context::<ViewportVisibility>().expect("viewport_visibility context");
 
     // Lighting settings - extract from struct
     let _lighting_settings = use_context::<LightingSettings>().expect("lighting_settings context");
@@ -1478,54 +1580,56 @@ fn DevicePalette() -> impl IntoView {
     ];
 
     // Action to create a node
-    let create_node_action = Action::new(move |(node_type, name_prefix, vendor, model_name): &(String, String, String, String)| {
-        let node_type = node_type.clone();
-        let name_prefix = name_prefix.clone();
-        let vendor = vendor.clone();
-        let model_name = model_name.clone();
+    let create_node_action = Action::new(
+        move |(node_type, name_prefix, vendor, model_name): &(String, String, String, String)| {
+            let node_type = node_type.clone();
+            let name_prefix = name_prefix.clone();
+            let vendor = vendor.clone();
+            let model_name = model_name.clone();
 
-        async move {
-            // Get current topology_id
-            let tid = current_topology_id.get_untracked();
+            async move {
+                // Get current topology_id
+                let tid = current_topology_id.get_untracked();
 
-            // Increment counter for unique name and position
-            let count = node_counter.get_untracked();
-            node_counter.update(|c| *c += 1);
+                // Increment counter for unique name and position
+                let count = node_counter.get_untracked();
+                node_counter.update(|c| *c += 1);
 
-            // Generate unique name
-            let name = format!("{}-{}", name_prefix, count + 1);
+                // Generate unique name
+                let name = format!("{}-{}", name_prefix, count + 1);
 
-            // Calculate position in a grid to avoid overlap
-            // Grid: 5 columns, spacing of 3.0 units
-            let col = (count % 5) as f64;
-            let row = (count / 5) as f64;
-            let position_x = col * 3.0 - 6.0;  // Center the grid around origin
-            let position_y = 0.0;               // On the floor
-            let position_z = row * 3.0 - 3.0;  // Rows going back
+                // Calculate position in a grid to avoid overlap
+                // Grid: 5 columns, spacing of 3.0 units
+                let col = (count % 5) as f64;
+                let row = (count / 5) as f64;
+                let position_x = col * 3.0 - 6.0; // Center the grid around origin
+                let position_y = 0.0; // On the floor
+                let position_z = row * 3.0 - 3.0; // Rows going back
 
-            // Create node data
-            let data = CreateNode {
-                topology_id: tid,
-                name,
-                node_type,
-                vendor: Some(vendor),
-                model_name: Some(model_name),
-                ip_address: None,
-                position_x: Some(position_x),
-                position_y: Some(position_y),
-                position_z: Some(position_z),
-                rotation_x: None, // Will use default 90°
-                rotation_y: None, // Will use default 0°
-                rotation_z: None, // Will use default 0°
-                scale: None, // Will use default 1.0
-                color: None, // Will use default blue
-                metadata: None,
-            };
+                // Create node data
+                let data = CreateNode {
+                    topology_id: tid,
+                    name,
+                    node_type,
+                    vendor: Some(vendor),
+                    model_name: Some(model_name),
+                    ip_address: None,
+                    position_x: Some(position_x),
+                    position_y: Some(position_y),
+                    position_z: Some(position_z),
+                    rotation_x: None, // Will use default 90°
+                    rotation_y: None, // Will use default 0°
+                    rotation_z: None, // Will use default 0°
+                    scale: None,      // Will use default 1.0
+                    color: None,      // Will use default blue
+                    metadata: None,
+                };
 
-            // Call server function
-            create_node(data).await
-        }
-    });
+                // Call server function
+                create_node(data).await
+            }
+        },
+    );
 
     // Trigger viewport refetch on successful node creation
     Effect::new(move || {
@@ -1710,15 +1814,14 @@ fn DevicePalette() -> impl IntoView {
 
 /// Right properties panel
 #[component]
-fn PropertiesPanel(
-    selected_item: RwSignal<Option<SelectedItem>>,
-) -> impl IntoView {
+fn PropertiesPanel(selected_item: RwSignal<Option<SelectedItem>>) -> impl IntoView {
     // Collapsible section states
     let view_controls_open = RwSignal::new(true);
     let lighting_controls_open = RwSignal::new(false);
 
     // Get context for controls
-    let viewport_visibility = use_context::<ViewportVisibility>().expect("viewport_visibility context");
+    let viewport_visibility =
+        use_context::<ViewportVisibility>().expect("viewport_visibility context");
     let show_grid = viewport_visibility.show_grid;
     let show_x_axis = viewport_visibility.show_x_axis;
     let show_y_axis = viewport_visibility.show_y_axis;
@@ -2030,15 +2133,11 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
     let current_topology_id = use_context::<RwSignal<i64>>().expect("current_topology_id context");
 
     // Get selected_item from context to clear selection after deletion
-    let selected_item = use_context::<RwSignal<Option<SelectedItem>>>().expect("selected_item context");
+    let selected_item =
+        use_context::<RwSignal<Option<SelectedItem>>>().expect("selected_item context");
 
     // Load node data from server
-    let node_data = Resource::new(
-        move || node_id,
-        |id| async move {
-            get_node(id).await.ok()
-        }
-    );
+    let node_data = Resource::new(move || node_id, |id| async move { get_node(id).await.ok() });
 
     // Create signals for editable fields
     let name = RwSignal::new(String::new());
@@ -2055,6 +2154,9 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
     let scale = RwSignal::new(1.0);
     let color = RwSignal::new(String::from("100,150,255")); // Default blue
 
+    // Track whether initial data has loaded (prevents auto-save during initial load)
+    let node_loaded = RwSignal::new(false);
+
     // Populate signals when data loads
     // NOTE: Swap Y and Z to match Blender convention in UI
     // Database stores: position_y (vertical in DB), position_z (depth in DB)
@@ -2067,13 +2169,15 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
             model_name.set(node.model_name);
             ip_address.set(node.ip_address.unwrap_or_default());
             position_x.set(node.position_x);
-            position_y.set(node.position_z);  // UI Y ← DB Z (horizontal)
-            position_z.set(node.position_y);  // UI Z ← DB Y (vertical)
+            position_y.set(node.position_z); // UI Y ← DB Z (horizontal)
+            position_z.set(node.position_y); // UI Z ← DB Y (vertical)
             rotation_x.set(node.rotation_x);
             rotation_y.set(node.rotation_y);
             rotation_z.set(node.rotation_z);
             scale.set(node.scale);
             color.set(node.color);
+            // Mark as loaded after initial data population
+            node_loaded.set(true);
         }
     });
 
@@ -2089,8 +2193,8 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
             model_name: Some(model_name.get_untracked()),
             ip_address: Some(ip_address.get_untracked()).filter(|s| !s.is_empty()),
             position_x: Some(position_x.get_untracked()),
-            position_y: Some(position_z.get_untracked()),  // DB Y ← UI Z (vertical)
-            position_z: Some(position_y.get_untracked()),  // DB Z ← UI Y (horizontal)
+            position_y: Some(position_z.get_untracked()), // DB Y ← UI Z (vertical)
+            position_z: Some(position_y.get_untracked()), // DB Z ← UI Y (horizontal)
             rotation_x: Some(rotation_x.get_untracked()),
             rotation_y: Some(rotation_y.get_untracked()),
             rotation_z: Some(rotation_z.get_untracked()),
@@ -2099,9 +2203,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
             metadata: None,
         };
 
-        async move {
-            update_node(node_id, update_data).await
-        }
+        async move { update_node(node_id, update_data).await }
     });
 
     // Trigger viewport refetch on successful save
@@ -2112,12 +2214,31 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
         }
     });
 
-    // Delete action
-    let delete_action = Action::new(move |_: &()| {
-        async move {
-            delete_node(node_id).await
+    // Auto-save effect: Save when any field changes
+    Effect::new(move || {
+        // Track all editable fields
+        let _name_val = name.get();
+        let _type_val = node_type.get();
+        let _vendor_val = vendor.get();
+        let _model_val = model_name.get();
+        let _ip_val = ip_address.get();
+        let _pos_x = position_x.get();
+        let _pos_y = position_y.get();
+        let _pos_z = position_z.get();
+        let _rot_x = rotation_x.get();
+        let _rot_y = rotation_y.get();
+        let _rot_z = rotation_z.get();
+        let _scale_val = scale.get();
+        let _color_val = color.get();
+
+        // Only auto-save if data has been loaded (prevents save during initial load)
+        if node_loaded.get() {
+            save_action.dispatch(());
         }
     });
+
+    // Delete action
+    let delete_action = Action::new(move |_: &()| async move { delete_node(node_id).await });
 
     // Clear selection and trigger refetch on successful deletion
     Effect::new(move || {
@@ -2137,7 +2258,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                 Ok(topo) => topo.nodes,
                 Err(_) => Vec::new(),
             }
-        }
+        },
     );
 
     // Selected target node for connection creation
@@ -2150,7 +2271,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
             if let Ok(target_id) = target_str.parse::<i64>() {
                 if target_id == node_id {
                     return Err(leptos::server_fn::error::ServerFnError::ServerError(
-                        "Cannot connect node to itself".to_string()
+                        "Cannot connect node to itself".to_string(),
                     ));
                 }
 
@@ -2170,7 +2291,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
                 create_connection_fn(data).await
             } else {
                 Err(leptos::server_fn::error::ServerFnError::ServerError(
-                    "Please select a target node".to_string()
+                    "Please select a target node".to_string(),
                 ))
             }
         }
@@ -2604,14 +2725,13 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
     let refetch_trigger = use_context::<RwSignal<u32>>().expect("refetch_trigger context");
 
     // Get selected_item from context to clear selection after deletion
-    let selected_item = use_context::<RwSignal<Option<SelectedItem>>>().expect("selected_item context");
+    let selected_item =
+        use_context::<RwSignal<Option<SelectedItem>>>().expect("selected_item context");
 
     // Load connection data from server
     let connection_data = Resource::new(
         move || connection_id,
-        |id| async move {
-            get_connection(id).await.ok()
-        }
+        |id| async move { get_connection(id).await.ok() },
     );
 
     // Create signals for editable fields
@@ -2624,6 +2744,9 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
     let carries_traffic = RwSignal::new(true); // Default enabled for traffic animation
     let flow_direction = RwSignal::new(String::from("source_to_target")); // Default source to target
 
+    // Track whether initial data has loaded (prevents auto-save during initial load)
+    let connection_loaded = RwSignal::new(false);
+
     // Populate signals when data loads
     Effect::new(move || {
         if let Some(Some(connection)) = connection_data.get() {
@@ -2635,6 +2758,8 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
             color.set(connection.color);
             carries_traffic.set(connection.carries_traffic);
             flow_direction.set(connection.flow_direction);
+            // Mark as loaded after initial data population
+            connection_loaded.set(true);
         }
     });
 
@@ -2644,7 +2769,8 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
             connection_type: Some(connection_type.get_untracked()),
             bandwidth_mbps: Some(bandwidth_mbps.get_untracked()).filter(|&v| v > 0),
             latency_ms: Some(latency_ms.get_untracked()).filter(|&v| v >= 0.0),
-            baseline_packet_loss_pct: Some(baseline_packet_loss_pct.get_untracked()).filter(|&v| v >= 0.0),
+            baseline_packet_loss_pct: Some(baseline_packet_loss_pct.get_untracked())
+                .filter(|&v| v >= 0.0),
             status: Some(status.get_untracked()),
             color: Some(color.get_untracked()),
             carries_traffic: Some(carries_traffic.get_untracked()),
@@ -2652,9 +2778,7 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
             metadata: None,
         };
 
-        async move {
-            update_connection(connection_id, update_data).await
-        }
+        async move { update_connection(connection_id, update_data).await }
     });
 
     // Trigger viewport refetch on successful save
@@ -2664,25 +2788,27 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
         }
     });
 
-    // Auto-save when traffic flow settings change
+    // Auto-save effect: Save when any field changes
     Effect::new(move || {
-        // Track changes to carries_traffic and flow_direction
+        // Track all editable fields
+        let _type_val = connection_type.get();
+        let _bandwidth_val = bandwidth_mbps.get();
+        let _latency_val = latency_ms.get();
+        let _packet_loss_val = baseline_packet_loss_pct.get();
+        let _status_val = status.get();
+        let _color_val = color.get();
         let _carries = carries_traffic.get();
         let _direction = flow_direction.get();
 
-        // Skip on first load (when data is being populated from Resource)
-        if connection_data.get().is_some() {
-            // Debounce: only save if we have a valid connection loaded
+        // Only auto-save if data has been loaded (prevents save during initial load)
+        if connection_loaded.get() {
             save_action.dispatch(());
         }
     });
 
     // Delete action
-    let delete_action = Action::new(move |_: &()| {
-        async move {
-            delete_connection(connection_id).await
-        }
-    });
+    let delete_action =
+        Action::new(move |_: &()| async move { delete_connection(connection_id).await });
 
     // Clear selection and trigger refetch on successful deletion
     Effect::new(move || {
@@ -2695,11 +2821,8 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
     });
 
     // Swap direction action
-    let swap_action = Action::new(move |_: &()| {
-        async move {
-            swap_connection_direction(connection_id).await
-        }
-    });
+    let swap_action =
+        Action::new(move |_: &()| async move { swap_connection_direction(connection_id).await });
 
     // Trigger viewport refetch on successful swap
     Effect::new(move || {

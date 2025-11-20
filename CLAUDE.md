@@ -1,7 +1,7 @@
 # Network Topology Builder - Development Guide
 
 ## Project Status
-**Phase:** 6.4.3 COMPLETE ✅ | **Updated:** 2025-01-20 | **Tag:** v0.1.0-phase6.4.3-complete
+**Phase:** 6.4.4 COMPLETE ✅ | **Updated:** 2025-01-20 | **Tag:** v0.1.0-phase6.4.4-complete
 **Architecture:** Leptos 0.8 (Regular Components) | **Database:** ntv.db (SQLite)
 
 ## Core Features ✅
@@ -14,6 +14,8 @@
 - **60fps particle animation** (flow direction, enable/disable per connection)
 - **Simplified connection creation** (dropdown-based, single-click)
 - Multi-vendor device models (auto-discovery from filesystem)
+- **Auto-save** (all node & connection properties save automatically on change)
+- **Undo** (reverses last 5 changes to nodes/connections per topology)
 
 ## Optional Next Steps
 1. **Traffic Dashboard** (2-3h): Metrics panel, top-N connections, historical charts, CSV export
@@ -119,11 +121,39 @@ static ANIMATION_LOOP_ID: Mutex<u32> = Mutex::new(0);  // Prevents multiple loop
 - **HDR changes**: Environment map changes trigger reinit (load new HDR), toggle just re-renders
 - **Result**: All visual controls update in real-time without viewport reinitialization
 
+### Auto-Save & Undo System (Phase 6.4.4)
+**Auto-save pattern** (topology_editor.rs:2118-2139, 2700-2716):
+- **Loading flag**: `node_loaded` / `connection_loaded` signal prevents auto-save during initial data load
+- **Effect pattern**: Track ALL editable fields with `.get()` in Effect, trigger save when any changes
+- **Benefits**: Removes explicit Save button requirement, more intuitive UX like modern apps
+- **Example**:
+  ```rust
+  let node_loaded = RwSignal::new(false);
+  Effect::new(move || {
+      // Track all fields
+      let _name = name.get();
+      let _color = color.get();
+      // ... all other fields
+
+      if node_loaded.get() {  // Only after initial load
+          save_action.dispatch(());
+      }
+  });
+  ```
+
+**Undo system** (api.rs:1488-1696, migrations/20250120000001_add_undo_history.sql):
+- **Database table**: `undo_history` stores JSON snapshots of entity state before updates
+- **Trigger**: SQLite trigger auto-maintains last 5 entries per topology (prevents bloat)
+- **Helpers**: `save_node_undo_history()` / `save_connection_undo_history()` called before updates
+- **Restore**: `undo_last_change()` deserializes JSON and restores previous state, then deletes entry
+- **UI**: Undo button in toolbar, disabled when no history available, triggers viewport refresh
+- **Scope**: Per-topology (undo only affects current topology)
+
 ## Database Configuration
 
 **Active Database:** `ntv.db` (SQLite) - AUTO-CREATED on first run
 **Configuration:** `DATABASE_URL=sqlite:ntv.db` (.env file)
-**Tables:** topologies, nodes, connections, connection_traffic_metrics, ui_settings, traffic_metrics
+**Tables:** topologies, nodes, connections, connection_traffic_metrics, ui_settings, traffic_metrics, undo_history
 
 **Key Migrations:**
 - `20250102000002_add_node_rotations.sql` - rotation_x/y/z (degrees)
@@ -134,6 +164,7 @@ static ANIMATION_LOOP_ID: Mutex<u32> = Mutex::new(0);  // Prevents multiple loop
 - `20250114000001_add_environment_lighting.sql` - HDR lighting settings
 - `20250118000001_add_traffic_flow_controls.sql` - carries_traffic, flow_direction
 - `20250119000002_add_baseline_packet_loss.sql` - baseline_packet_loss_pct
+- `20250120000001_add_undo_history.sql` - undo_history table with auto-trim trigger (last 5)
 
 **⚠️ Historical Note:** Database kept as `ntv.db` during "ntv→ntb" rename to preserve data.
 

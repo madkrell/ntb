@@ -659,7 +659,7 @@ pub fn TopologyViewport(
 
         let _effect = Effect::new(move || {
             // Track HDR environment signals
-            let use_env = use_environment_lighting.get();
+            let _use_env = use_environment_lighting.get();
             let env_map = environment_map.get();
 
             // Skip the first run (initial mount)
@@ -1109,7 +1109,6 @@ async fn initialize_threed_viewport(
         let origin = location.origin().expect("no origin");
 
         let hdr_url = format!("{}/environments/{}", origin, environment_map_val);
-        web_sys::console::log_1(&format!("Loading HDR environment: {}", hdr_url).into());
 
         match load_async(&[hdr_url.as_str()]).await {
             Ok(mut loaded) => {
@@ -1117,7 +1116,6 @@ async fn initialize_threed_viewport(
                     Ok(hdr_texture) => {
                         // Create skybox from equirectangular HDR
                         let skybox = Skybox::new_from_equirectangular(&context, &hdr_texture);
-                        web_sys::console::log_1(&format!("✓ HDR environment loaded: {}", environment_map_val).into());
                         Some(Rc::new(skybox))
                     }
                     Err(e) => {
@@ -1917,7 +1915,6 @@ async fn initialize_threed_viewport(
     // Set up orbit controls with integrated click handler and tooltip
     // ONLY on first initialization - skip on refetches to avoid duplicate handlers
     if !skip_event_handlers {
-        web_sys::console::log_1(&"🔧 Setting up event handlers (skip_event_handlers=false)".into());
         let _camera_snapshot = setup_orbit_controls(
             canvas,
             camera_state,
@@ -1930,9 +1927,6 @@ async fn initialize_threed_viewport(
             refetch_trigger,
             current_topology_id,
         )?;
-        web_sys::console::log_1(&"✅ Event handlers setup complete".into());
-    } else {
-        web_sys::console::log_1(&"⏭️ Skipping event handler setup (skip_event_handlers=true)".into());
     }
     // NOTE: camera_snapshot is available here but event handlers manage it internally
     // Camera preset Effect syncs snapshot via the camera_state signal's render calls
@@ -2326,7 +2320,6 @@ fn setup_orbit_controls(
                 {
                     use web_sys::Element;
                     let nodes = nodes_data.borrow(); // Borrow from storage
-                    web_sys::console::log_1(&format!("🔍 Node data count: {}", nodes.len()).into());
                     let rect = canvas_clone.unchecked_ref::<Element>().get_bounding_client_rect();
                     let x = e.client_x() as f64 - rect.left();
                     let y = e.client_y() as f64 - rect.top();
