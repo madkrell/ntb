@@ -14,6 +14,7 @@ pub struct Connection {
     pub connection_type: String,
     pub bandwidth_mbps: Option<i64>,
     pub latency_ms: Option<f64>,
+    pub baseline_packet_loss_pct: Option<f64>, // Baseline packet loss percentage (0.0-10.0%)
     pub status: String,
     pub color: String, // RGB color as "R,G,B" format (e.g., "128,128,128")
     pub carries_traffic: bool, // Whether this connection carries traffic for animations
@@ -32,6 +33,7 @@ pub struct CreateConnection {
     pub connection_type: Option<String>,
     pub bandwidth_mbps: Option<i64>,
     pub latency_ms: Option<f64>,
+    pub baseline_packet_loss_pct: Option<f64>,
     pub status: Option<String>,
     pub color: Option<String>,
     pub metadata: Option<String>,
@@ -43,6 +45,7 @@ pub struct UpdateConnection {
     pub connection_type: Option<String>,
     pub bandwidth_mbps: Option<i64>,
     pub latency_ms: Option<f64>,
+    pub baseline_packet_loss_pct: Option<f64>,
     pub status: Option<String>,
     pub color: Option<String>,
     pub carries_traffic: Option<bool>,

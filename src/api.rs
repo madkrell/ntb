@@ -197,7 +197,7 @@ pub async fn get_topology_full(id: i64) -> Result<TopologyFull, ServerFnError> {
 
         // Fetch all connections for this topology
         let connections = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, baseline_packet_loss_pct, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
              FROM connections WHERE topology_id = ? ORDER BY created_at"
         )
         .bind(id)
@@ -522,7 +522,7 @@ pub async fn get_connection(id: i64) -> Result<Connection, ServerFnError> {
             .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
         let connection = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, baseline_packet_loss_pct, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
              FROM connections WHERE id = ?"
         )
         .bind(id)
@@ -557,8 +557,8 @@ pub async fn create_connection(data: CreateConnection) -> Result<Connection, Ser
         let color = data.color.unwrap_or_else(|| "128,128,128".to_string());
 
         let result = sqlx::query(
-            "INSERT INTO connections (topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, metadata)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO connections (topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, baseline_packet_loss_pct, status, color, metadata)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(data.topology_id)
         .bind(data.source_node_id)
@@ -566,6 +566,7 @@ pub async fn create_connection(data: CreateConnection) -> Result<Connection, Ser
         .bind(&conn_type)
         .bind(&data.bandwidth_mbps)
         .bind(&data.latency_ms)
+        .bind(&data.baseline_packet_loss_pct)
         .bind(&status)
         .bind(&color)
         .bind(&data.metadata)
@@ -577,7 +578,7 @@ pub async fn create_connection(data: CreateConnection) -> Result<Connection, Ser
 
         // Fetch the created connection
         let connection = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, baseline_packet_loss_pct, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
              FROM connections WHERE id = ?"
         )
         .bind(id)
@@ -618,6 +619,9 @@ pub async fn update_connection(id: i64, data: UpdateConnection) -> Result<Connec
         if let Some(_) = data.latency_ms {
             query_str.push_str(", latency_ms = ?");
         }
+        if let Some(_) = data.baseline_packet_loss_pct {
+            query_str.push_str(", baseline_packet_loss_pct = ?");
+        }
         if let Some(_) = data.status {
             query_str.push_str(", status = ?");
         }
@@ -648,6 +652,9 @@ pub async fn update_connection(id: i64, data: UpdateConnection) -> Result<Connec
         if let Some(latency) = data.latency_ms {
             query = query.bind(latency);
         }
+        if let Some(packet_loss) = data.baseline_packet_loss_pct {
+            query = query.bind(packet_loss);
+        }
         if let Some(ref status) = data.status {
             query = query.bind(status);
         }
@@ -672,7 +679,7 @@ pub async fn update_connection(id: i64, data: UpdateConnection) -> Result<Connec
 
         // Fetch the updated connection
         let connection = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, baseline_packet_loss_pct, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
              FROM connections WHERE id = ?"
         )
         .bind(id)
@@ -743,7 +750,7 @@ pub async fn swap_connection_direction(id: i64) -> Result<Connection, ServerFnEr
 
         // Fetch the updated connection
         let connection = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, baseline_packet_loss_pct, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
              FROM connections WHERE id = ?"
         )
         .bind(id)
@@ -1026,7 +1033,7 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
 
         // Get all connections for this topology
         let connections = sqlx::query_as::<_, Connection>(
-            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
+            "SELECT id, topology_id, source_node_id, target_node_id, connection_type, bandwidth_mbps, latency_ms, baseline_packet_loss_pct, status, color, carries_traffic, flow_direction, metadata, created_at, updated_at
              FROM connections WHERE topology_id = ?"
         )
         .bind(topology_id)
@@ -1038,13 +1045,14 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
             return Ok(0);
         }
 
-        // Traffic level ranges for predictable color visualization
-        // Each level maps to a specific utilization range
-        let (min_util, max_util) = match traffic_level.as_str() {
-            "low" => (10.0, 35.0),      // Green (< 40%)
-            "medium" => (45.0, 65.0),   // Orange (40-70%)
-            "high" => (75.0, 95.0),     // Red (> 70%)
-            _ => (45.0, 65.0),          // default to medium
+        // Traffic level acts as a BASELINE activity multiplier
+        // Individual link properties (bandwidth, latency, type) determine actual utilization
+        // This allows per-link automatic traffic level calculation based on throughput
+        let traffic_multiplier = match traffic_level.as_str() {
+            "low" => 0.3,       // 30% baseline activity
+            "medium" => 0.6,    // 60% baseline activity
+            "high" => 0.9,      // 90% baseline activity
+            _ => 0.6,           // default to medium
         };
 
         use rand::SeedableRng;
@@ -1059,19 +1067,61 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
         let mut metrics_created = 0;
 
         for connection in connections {
-            // Skip inactive connections
+            // Skip inactive or error connections
             if connection.status != "active" {
                 continue;
             }
 
-            // Get bandwidth capacity (default to 1000 Mbps if not set)
-            let bandwidth_capacity = connection.bandwidth_mbps.unwrap_or(1000) as f64;
+            // Get link properties with realistic defaults
+            let bandwidth_capacity = connection.bandwidth_mbps.unwrap_or(1000) as f64; // Default: 1 Gbps
+            let base_latency = connection.latency_ms.unwrap_or(10.0); // Default: 10ms
+            let baseline_packet_loss = connection.baseline_packet_loss_pct.unwrap_or(0.0); // Default: 0% (no packet loss)
 
-            // Generate utilization within the specified range for this traffic level
-            let utilization_pct = rng.gen_range(min_util..max_util);
+            // Connection type affects throughput efficiency
+            let type_efficiency = match connection.connection_type.as_str() {
+                "Fiber" => 0.95,        // Fiber is most efficient
+                "Ethernet" => 0.85,     // Ethernet slightly less
+                "Wireless" => 0.70,     // Wireless has more overhead
+                "VPN" => 0.75,          // VPN has encryption overhead
+                _ => 0.80,              // Default efficiency
+            };
 
-            // Calculate throughput based on utilization and bandwidth capacity
-            let throughput_mbps = (bandwidth_capacity * utilization_pct / 100.0).max(0.1);
+            // Calculate realistic throughput using Mathis formula
+            // Throughput = Bandwidth × TrafficLevel × TypeEfficiency × RTT_factor × PacketLoss_factor
+
+            // Calculate base throughput (for display purposes - what user sees in tooltip)
+            // This SHOULD be reduced by latency/packet loss to show realistic throughput
+            let rtt_factor = 1.0 / (1.0 + base_latency / 50.0); // Higher latency = lower throughput
+            let packet_loss_factor = if baseline_packet_loss > 0.0 {
+                1.0 / (1.0 + baseline_packet_loss / 10.0) // Higher packet loss = lower throughput
+            } else {
+                1.0
+            };
+
+            let base_throughput = bandwidth_capacity * traffic_multiplier * type_efficiency * rtt_factor * packet_loss_factor;
+            let throughput_variance = rng.gen_range(0.8..1.2); // ±20% variance for realism
+            let throughput_mbps = (base_throughput * throughput_variance).max(0.1);
+
+            // Calculate utilization for COLOR/HEALTH (NOT just throughput/bandwidth)
+            // Key insight: degraded links (high latency, packet loss) should show ORANGE/RED even with low throughput
+            // Because the link is UNHEALTHY, not just underutilized
+
+            // Start with base traffic level utilization (ignoring degradation)
+            let ideal_throughput = bandwidth_capacity * traffic_multiplier * type_efficiency;
+            let base_utilization = (ideal_throughput / bandwidth_capacity * 100.0).min(100.0);
+
+            // Degradation factors INCREASE apparent utilization (makes link appear more stressed)
+            let latency_penalty = if base_latency > 50.0 {
+                // High latency increases apparent utilization
+                (base_latency - 50.0) / 2.0 // Each 2ms over 50ms adds 1% utilization
+            } else {
+                0.0
+            };
+
+            let packet_loss_penalty = baseline_packet_loss * 10.0; // Each 1% packet loss adds 10% utilization
+
+            // Final utilization = base + degradation penalties
+            let utilization_pct = (base_utilization + latency_penalty + packet_loss_penalty).min(100.0);
 
             // Packets per second (roughly 1000 packets per Mbps for standard Ethernet)
             let packets_per_sec = (throughput_mbps * 1000.0) as i64;
@@ -1090,9 +1140,10 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
             let jitter = rng.gen_range(-2.0..3.0); // Natural network jitter
             let latency_ms = (base_latency + congestion_penalty + jitter).max(0.1);
 
-            // Packet loss: increases exponentially with utilization
-            // Real networks experience packet loss when buffers overflow at high utilization
-            let packet_loss_base: f64 = if utilization_pct > 90.0 {
+            // Packet loss: baseline + congestion-based
+            // Baseline packet loss is the inherent loss rate of the link (user-configured)
+            // Congestion packet loss increases exponentially with utilization (simulated)
+            let congestion_packet_loss: f64 = if utilization_pct > 90.0 {
                 // Critical: severe packet loss
                 rng.gen_range(2.0..5.0)
             } else if utilization_pct > 80.0 {
@@ -1105,7 +1156,8 @@ pub async fn generate_mock_traffic(topology_id: i64, traffic_level: String) -> R
                 // Low: minimal packet loss
                 rng.gen_range(0.0..0.1)
             };
-            let packet_loss_pct = packet_loss_base.min(10.0);
+            // Total packet loss = baseline (from link properties) + congestion (from utilization)
+            let packet_loss_pct = (baseline_packet_loss + congestion_packet_loss).min(100.0);
 
             // Calculate bytes and packets transferred (for 1 second interval)
             let bytes_transferred = (throughput_mbps * 125000.0) as i64; // Convert Mbps to bytes/sec

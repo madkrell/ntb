@@ -62,6 +62,9 @@ static ANIMATION_RUNNING: Mutex<bool> = Mutex::new(false);
 #[cfg(feature = "hydrate")]
 static ANIMATION_FRAME_ID: Mutex<Option<i32>> = Mutex::new(None);
 
+#[cfg(feature = "hydrate")]
+static ANIMATION_LOOP_ID: Mutex<u32> = Mutex::new(0);
+
 /// Helper function to determine particle count based on utilization
 #[cfg(feature = "hydrate")]
 fn get_particle_count(utilization_pct: f64) -> usize {
@@ -74,16 +77,14 @@ fn get_particle_count(utilization_pct: f64) -> usize {
     }
 }
 
-/// Helper function to calculate particle speed based on throughput
-/// Higher throughput = faster particles (more visually engaging)
+/// Helper function to get constant particle speed
+/// All particles move at the same speed regardless of traffic level or throughput
+/// This provides consistent visual feedback - only color changes based on utilization
 #[cfg(feature = "hydrate")]
-fn get_particle_speed(throughput_mbps: f64) -> f32 {
-    // Base speed: 0.5 units/second
-    // Scale by log10(throughput) for visual variety
-    // Clamp between 0.3 and 1.5 units/second
-    let base_speed = 0.5;
-    let speed_multiplier = (throughput_mbps.max(1.0).log10() * 0.3).clamp(0.6, 3.0);
-    (base_speed * speed_multiplier) as f32
+fn get_particle_speed() -> f32 {
+    // Constant speed for all particles: 0.3 units/second
+    // This is the "low" speed baseline - medium and high use the same speed
+    0.3
 }
 
 /// Public function to start particle animation (called by Generate Traffic button)
@@ -104,6 +105,75 @@ pub fn stop_particle_animation() {
     // Clear particles
     if let Ok(mut particles) = GLOBAL_PARTICLES.lock() {
         particles.clear();
+    }
+}
+
+/// Public async function to spawn traffic particles based on current topology
+/// Called by "Generate Traffic" button after metrics are generated
+#[cfg(feature = "hydrate")]
+pub async fn spawn_traffic_particles(topology_id: i64) {
+    use crate::api::{get_topology_full, get_latest_traffic_metrics};
+
+    // Fetch topology data with connections
+    let topology_data = match get_topology_full(topology_id).await {
+        Ok(data) => data,
+        Err(_) => return, // Silent fail
+    };
+
+    // Fetch latest traffic metrics (already returns HashMap<i64, ConnectionTrafficMetric>)
+    let metrics = match get_latest_traffic_metrics(topology_id).await {
+        Ok(map) => map,
+        Err(_) => return, // Silent fail
+    };
+
+    // Spawn particles
+    let mut spawned_particles = Vec::new();
+    for conn in &topology_data.connections {
+        // Only spawn particles if carries_traffic is true, traffic metrics exist, AND status is not "Error"
+        if conn.carries_traffic && !conn.status.eq_ignore_ascii_case("error") {
+            if let Some(metric) = metrics.get(&conn.id) {
+                let particle_count = get_particle_count(metric.utilization_pct);
+                let particle_speed = get_particle_speed(); // Constant speed for all particles
+                let particle_color = get_traffic_color(metric.utilization_pct);
+
+                // Determine which directions to spawn particles
+                let spawn_forward = conn.flow_direction == "source_to_target" || conn.flow_direction == "bidirectional";
+                let spawn_backward = conn.flow_direction == "target_to_source" || conn.flow_direction == "bidirectional";
+
+                // Spawn particles evenly spaced along the connection
+                for i in 0..particle_count {
+                    let spacing = 1.0 / (particle_count as f32);
+                    let initial_position = (i as f32) * spacing;
+
+                    // Spawn forward particles
+                    if spawn_forward {
+                        spawned_particles.push(TrafficParticle {
+                            connection_id: conn.id,
+                            position: initial_position,
+                            speed: particle_speed,
+                            color: particle_color,
+                            direction_forward: true,
+                        });
+                    }
+
+                    // Spawn backward particles (offset by half spacing for better distribution)
+                    if spawn_backward {
+                        spawned_particles.push(TrafficParticle {
+                            connection_id: conn.id,
+                            position: initial_position + spacing * 0.5,
+                            speed: particle_speed,
+                            color: particle_color,
+                            direction_forward: false,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Store in global particle storage (REPLACE existing particles, don't add)
+    if let Ok(mut particles) = GLOBAL_PARTICLES.lock() {
+        *particles = spawned_particles;
     }
 }
 
@@ -1336,11 +1406,9 @@ async fn initialize_threed_viewport(
     // Shared cylinder mesh for all connections (for efficiency)
     let cylinder_cpu_mesh = CpuMesh::cylinder(16);
 
-    // Clear any existing particles when viewport reinitializes
-    // (they will be respawned when Generate Traffic button is clicked)
-    if let Ok(mut particles) = GLOBAL_PARTICLES.lock() {
-        particles.clear();
-    }
+    // DO NOT clear or respawn particles here!
+    // Particles should ONLY be spawned by the "Generate Traffic" button
+    // This prevents particles from multiplying when viewport reinitializes due to settings changes
 
     // Build connection position map for particle interpolation
     // Maps connection_id -> (source_pos, target_pos)
@@ -1357,58 +1425,6 @@ async fn initialize_threed_viewport(
 
     // Shared sphere CPU mesh for all particles
     let particle_sphere_cpu = Rc::new(CpuMesh::sphere(8));
-
-    // Spawn particles based on traffic metrics and connection settings
-    if let Some(ref metrics) = traffic_metrics {
-        let mut spawned_particles = Vec::new();
-        for conn in &topology_data.connections {
-            // Only spawn particles if carries_traffic is true and traffic metrics exist
-            if conn.carries_traffic {
-                if let Some(metric) = metrics.get(&conn.id) {
-                    let particle_count = get_particle_count(metric.utilization_pct);
-                    let particle_speed = get_particle_speed(metric.throughput_mbps);
-                    let particle_color = get_traffic_color(metric.utilization_pct);
-
-                    // Determine which directions to spawn particles
-                    let spawn_forward = conn.flow_direction == "source_to_target" || conn.flow_direction == "bidirectional";
-                    let spawn_backward = conn.flow_direction == "target_to_source" || conn.flow_direction == "bidirectional";
-
-                    // Spawn particles evenly spaced along the connection
-                    for i in 0..particle_count {
-                        let spacing = 1.0 / (particle_count as f32);
-                        let initial_position = (i as f32) * spacing;
-
-                        // Spawn forward particles
-                        if spawn_forward {
-                            spawned_particles.push(TrafficParticle {
-                                connection_id: conn.id,
-                                position: initial_position,
-                                speed: particle_speed,
-                                color: particle_color,
-                                direction_forward: true,
-                            });
-                        }
-
-                        // Spawn backward particles (offset by half spacing for better distribution)
-                        if spawn_backward {
-                            spawned_particles.push(TrafficParticle {
-                                connection_id: conn.id,
-                                position: initial_position + spacing * 0.5,
-                                speed: particle_speed,
-                                color: particle_color,
-                                direction_forward: false,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        // Store in global particle storage
-        if let Ok(mut particles) = GLOBAL_PARTICLES.lock() {
-            *particles = spawned_particles;
-        }
-    }
 
     // Create connection meshes (lines between nodes) - both normal and selected versions
     let mut connection_meshes = Vec::new();
@@ -1521,6 +1537,72 @@ async fn initialize_threed_viewport(
         }
     }
 
+    // Create error icons for connections with "Error" status (Phase 6.4.2)
+    let mut error_icons = Vec::new();
+    for conn in &topology_data.connections {
+        if conn.status.eq_ignore_ascii_case("error") {
+            if let (Some(&start_pos), Some(&end_pos)) = (
+                node_positions.get(&conn.source_node_id),
+                node_positions.get(&conn.target_node_id),
+            ) {
+                // Calculate midpoint of connection
+                let midpoint = vec3(
+                    (start_pos.x + end_pos.x) / 2.0,
+                    (start_pos.y + end_pos.y) / 2.0,
+                    (start_pos.z + end_pos.z) / 2.0,
+                );
+
+                // Create two crossed cylinders forming an "X" shape perpendicular to the connection
+                let icon_size = 0.15; // Size of the X icon (smaller)
+                let icon_thickness = 0.03; // Thickness of the X bars
+
+                // Calculate connection direction vector (normalized)
+                let conn_dir = (end_pos - start_pos).normalize();
+
+                // Create two perpendicular vectors to the connection direction
+                // Use world up (0,1,0) as reference, unless connection is vertical
+                let world_up = vec3(0.0, 1.0, 0.0);
+                let right = if conn_dir.cross(world_up).magnitude() > 0.01 {
+                    conn_dir.cross(world_up).normalize()
+                } else {
+                    // Connection is vertical, use world right instead
+                    vec3(1.0, 0.0, 0.0)
+                };
+                let up = conn_dir.cross(right).normalize();
+
+                // Create X icon in the plane perpendicular to connection
+                // First diagonal bar (from top-right to bottom-left in perpendicular plane)
+                let diagonal1_start = midpoint + (right + up) * (icon_size / 2.0);
+                let diagonal1_end = midpoint - (right + up) * (icon_size / 2.0);
+
+                // Second diagonal bar (from top-left to bottom-right in perpendicular plane)
+                let diagonal2_start = midpoint + (-right + up) * (icon_size / 2.0);
+                let diagonal2_end = midpoint - (-right + up) * (icon_size / 2.0);
+
+                // Create both diagonal bars with solid red emissive material
+                if let Some(bar1) = create_emissive_line_cylinder(
+                    &context,
+                    diagonal1_start,
+                    diagonal1_end,
+                    icon_thickness,
+                    &cylinder_cpu_mesh,
+                ) {
+                    error_icons.push(bar1);
+                }
+
+                if let Some(bar2) = create_emissive_line_cylinder(
+                    &context,
+                    diagonal2_start,
+                    diagonal2_end,
+                    icon_thickness,
+                    &cylinder_cpu_mesh,
+                ) {
+                    error_icons.push(bar2);
+                }
+            }
+        }
+    }
+
     // Create professional lighting setup with user-controlled intensities
     // Ambient light - either environment-based or simple flat lighting
     let ambient = if use_environment_lighting && skybox_option.is_some() {
@@ -1571,6 +1653,7 @@ async fn initialize_threed_viewport(
     // Wrap meshes in Rc<RefCell> for render closure
     let node_meshes = Rc::new(RefCell::new(node_meshes));
     let connection_meshes = Rc::new(RefCell::new(connection_meshes));
+    let error_icons = Rc::new(RefCell::new(error_icons)); // Error icons for connections with "Error" status
     let grid_axes_meshes = Rc::new(RefCell::new(grid_axes_meshes)); // RefCell so we can update it
 
     // Get canvas dimensions
@@ -1586,6 +1669,7 @@ async fn initialize_threed_viewport(
         let context = context.clone();
         let node_meshes = node_meshes.clone();
         let connection_meshes = connection_meshes.clone();
+        let error_icons = error_icons.clone(); // Clone for render closure
         let grid_axes_meshes = grid_axes_meshes.clone();
         let ambient = ambient.clone();
         let key_light = key_light.clone();
@@ -1667,6 +1751,13 @@ async fn initialize_threed_viewport(
                 } else {
                     target.render(&camera, mesh_to_render, &[&*ambient, &*key_light, &*fill_light, &*rim_light]);
                 }
+            }
+
+            // Render error icons for connections with "Error" status (Phase 6.4.2)
+            let error_icons_to_render = error_icons.borrow();
+            for error_icon in error_icons_to_render.iter() {
+                // Error icons rendered WITHOUT lights to show pure emissive glow (solid bright red)
+                target.render(&camera, error_icon, &[]);
             }
 
             // Get currently selected node ID (untracked - we handle reactivity via Effect)
@@ -1808,6 +1899,14 @@ async fn initialize_threed_viewport(
         use std::cell::RefCell;
 
         // Cancel any existing animation loop before starting new one
+        // Increment loop ID to invalidate old loops
+        let current_loop_id = if let Ok(mut loop_id) = ANIMATION_LOOP_ID.lock() {
+            *loop_id += 1;
+            *loop_id
+        } else {
+            1
+        };
+
         if let Ok(mut frame_id) = ANIMATION_FRAME_ID.lock() {
             if let Some(id) = *frame_id {
                 if let Some(window) = web_sys::window() {
@@ -1828,6 +1927,17 @@ async fn initialize_threed_viewport(
             let camera_state_clone = camera_state;
 
             let anim_fn = Closure::wrap(Box::new(move |timestamp: f64| {
+                // Check if this loop is still the current one
+                let is_current_loop = if let Ok(loop_id) = ANIMATION_LOOP_ID.lock() {
+                    *loop_id == current_loop_id
+                } else {
+                    false
+                };
+
+                if !is_current_loop {
+                    // This loop has been superseded, stop running
+                    return;
+                }
                 // Calculate delta time (time since last frame)
                 let delta_time = if let Some(last_time) = *last_frame_time.borrow() {
                     (timestamp - last_time) / 1000.0 // Convert ms to seconds
@@ -2304,6 +2414,7 @@ fn setup_orbit_controls(
                                                 connection_type: Some("ethernet".to_string()),
                                                 bandwidth_mbps: Some(1000),
                                                 latency_ms: Some(1.0),
+                                                baseline_packet_loss_pct: Some(0.0), // Default 0% (no packet loss)
                                                 status: Some("active".to_string()),
                                                 color: None, // Use default color
                                                 metadata: None,
@@ -2722,6 +2833,70 @@ fn create_line_cylinder(
     cylinder.set_transformation(Mat4::from_translation(midpoint) * rotation * scale);
 
     Some(cylinder)
+}
+
+/// Create a solid line box with emissive red material (for error icons)
+#[cfg(feature = "hydrate")]
+fn create_emissive_line_cylinder(
+    context: &three_d::Context,
+    start: three_d::Vec3,
+    end: three_d::Vec3,
+    thickness: f32,
+    _cylinder_cpu_mesh: &three_d::CpuMesh, // Unused - kept for API compatibility
+) -> Option<three_d::Gm<three_d::Mesh, three_d::PhysicalMaterial>> {
+    use three_d::*;
+
+    let direction = end - start;
+    let length = direction.magnitude();
+
+    if length < 0.001 {
+        return None; // Skip zero-length lines
+    }
+
+    let midpoint = start + direction * 0.5;
+    let normalized_dir = direction.normalize();
+
+    // Create a solid box (cube) mesh instead of hollow cylinder
+    let box_mesh = CpuMesh::cube();
+
+    // Create solid red emissive material - will glow bright red regardless of lighting
+    let material = PhysicalMaterial::new_opaque(
+        context,
+        &CpuMaterial {
+            albedo: Srgba::new(255, 0, 0, 255),      // Bright red base color
+            emissive: Srgba::new(255, 0, 0, 255),    // Bright red emissive (makes it glow)
+            roughness: 1.0,                           // Fully rough (no reflections)
+            metallic: 0.0,                            // Not metallic
+            ..Default::default()
+        },
+    );
+
+    let mut box_bar = Gm::new(
+        Mesh::new(context, &box_mesh),
+        material,
+    );
+
+    // Calculate rotation to align box with line direction
+    let up = vec3(0.0, 1.0, 0.0);
+    let rotation = if (normalized_dir - up).magnitude() < 0.001 {
+        Mat4::identity()
+    } else if (normalized_dir + up).magnitude() < 0.001 {
+        Mat4::from_angle_x(radians(std::f32::consts::PI))
+    } else {
+        let axis = up.cross(normalized_dir).normalize();
+        let angle = up.dot(normalized_dir).acos();
+        Mat4::from_axis_angle(axis, radians(angle))
+    };
+
+    // Transform: translate to midpoint, rotate to align, then scale
+    // Box is scaled to: thickness × length × thickness (rectangular bar)
+    box_bar.set_transformation(
+        Mat4::from_translation(midpoint)
+            * rotation
+            * Mat4::from_nonuniform_scale(thickness, length, thickness),
+    );
+
+    Some(box_bar)
 }
 
 /// Map node type to color

@@ -1,8 +1,8 @@
 # Network Topology Builder - Claude Development Notes
 
 ## Project Status
-**Current Phase:** Phase 6.4.2 COMPLETE! ✅ (Particle Animation System)
-**Last Updated:** 2025-01-18
+**Current Phase:** Phase 6.4.2 COMPLETE! ✅ (Particle Animation System + Critical Fixes)
+**Last Updated:** 2025-01-19
 **Git Tags:** v0.1.0-phase6.4.2-complete (latest)
 **Architecture:** Regular Leptos Components (Islands removed - see notes below)
 **Database:** ntv.db (SQLite) - See "Database Configuration" section below
@@ -621,6 +621,117 @@ if let Ok(particles) = GLOBAL_PARTICLES.lock() {
 - ✅ Clean start/stop without memory leaks
 - ✅ Works on first load (no manual refresh needed)
 - ✅ Global state prevents stale data issues
+
+#### Phase 6.4.2 Critical Improvements (2025-01-19) ✅ COMPLETE
+
+51. ✅ **Particle Speed Bug Fix** - Constant speed regardless of settings changes
+   - **Problem:** Particles sped up on Generate Traffic double-click or settings changes
+   - **Root Cause:** Multiple animation loops running simultaneously
+   - **Solution:** Added ANIMATION_LOOP_ID counter to invalidate old loops
+   - Each loop checks if it's still current before continuing
+   - Old loops automatically stop when new loop starts
+   - Result: Only ONE animation loop runs at a time (topology_viewport.rs:66, 1897-1934)
+
+52. ✅ **Baseline Packet Loss Integration** - Full packet loss modeling
+   - Database migration: `20250119000002_add_baseline_packet_loss.sql`
+   - Added `baseline_packet_loss_pct` field (REAL, 0.0-10.0%, default 0.0%)
+   - Properties Panel input with 0.01% precision
+   - Updated Connection model and all SQL queries (6 locations)
+   - Integrated into throughput calculation with degradation penalties
+   - Tooltip displays total packet loss (baseline + congestion-based)
+
+53. ✅ **Latency Persistence Fix** - Latency values now save correctly
+   - **Problem:** Latency not persisting to database
+   - **Root Cause:** `.filter(|&v| v > 0.0)` excluded 0.0 latency
+   - **Solution:** Changed to `.filter(|&v| v >= 0.0)` to allow 0ms latency
+   - Result: All latency values including 0.0 now persist correctly
+
+54. ✅ **Realistic Utilization Calculation** - Degraded links show as unhealthy
+   - **Problem:** High latency/packet loss reduced throughput BUT also reduced utilization → link showed GREEN
+   - **New Logic:** Throughput still reduced (correct), but utilization calculation uses degradation penalties
+   - Throughput formula: `bandwidth × traffic_level × type_efficiency × rtt_factor × packet_loss_factor`
+   - Utilization formula: `base_utilization + latency_penalty + packet_loss_penalty`
+   - Latency penalty: Each 2ms over 50ms adds 1% utilization
+   - Packet loss penalty: Each 1% packet loss adds 10% utilization
+   - Result: 5% packet loss + 120ms latency = RED link (correctly shows as degraded)
+
+55. ✅ **Error Icon Improvements** - Solid red X for error status
+   - Changed from hollow cylinders to solid box meshes (CpuMesh::cube())
+   - Size reduced: 0.3 → 0.15 (50% smaller)
+   - Thickness optimized: 0.03 for clean appearance
+   - Emissive material with NO lighting (pure bright red glow)
+   - Perpendicular orientation to connection line (using cross products)
+   - Result: Clear, solid red X visible from all angles
+
+**Key Technical Solutions (2025-01-19):**
+
+```rust
+// 1. Animation Loop ID for preventing multiple loops (topology_viewport.rs:66, 1897-1934)
+static ANIMATION_LOOP_ID: Mutex<u32> = Mutex::new(0);
+
+let current_loop_id = if let Ok(mut loop_id) = ANIMATION_LOOP_ID.lock() {
+    *loop_id += 1;
+    *loop_id
+} else {
+    1
+};
+
+// In animation loop - check if still current
+let is_current_loop = if let Ok(loop_id) = ANIMATION_LOOP_ID.lock() {
+    *loop_id == current_loop_id
+} else {
+    false
+};
+
+if !is_current_loop {
+    return; // Stop this loop
+}
+
+// 2. Realistic utilization with degradation penalties (api.rs:1092-1124)
+// Throughput (tooltip): Reduced by latency and packet loss
+let throughput_mbps = bandwidth * traffic_level * type_efficiency * rtt_factor * packet_loss_factor;
+
+// Utilization (color): Increased by degradation
+let base_utilization = (ideal_throughput / bandwidth * 100.0).min(100.0);
+let latency_penalty = if latency > 50.0 { (latency - 50.0) / 2.0 } else { 0.0 };
+let packet_loss_penalty = baseline_packet_loss * 10.0;
+let utilization_pct = (base_utilization + latency_penalty + packet_loss_penalty).min(100.0);
+
+// 3. Solid error icon with emissive material (topology_viewport.rs:2838-2900)
+let box_mesh = CpuMesh::cube(); // Solid instead of hollow cylinder
+let material = PhysicalMaterial::new_opaque(&context, &CpuMaterial {
+    albedo: Srgba::new(255, 0, 0, 255),
+    emissive: Srgba::new(255, 0, 0, 255),
+    roughness: 1.0,
+    metallic: 0.0,
+    ..Default::default()
+});
+// Render with NO lights for pure emissive glow
+target.render(&camera, error_icon, &[]);
+```
+
+**Lessons Learned (Phase 6.4.2 Improvements - 2025-01-19):**
+
+1. **Multiple Animation Loops**
+   - Problem: requestAnimationFrame closures continue running even after new loop starts
+   - Solution: Global loop ID counter - each loop checks if it's still current
+   - Pattern: Increment ID when starting new loop, old loops exit when ID doesn't match
+
+2. **Throughput vs Utilization Semantics**
+   - Throughput: Actual data rate (should decrease with degradation)
+   - Utilization: Link health indicator (should increase with degradation)
+   - Key insight: High packet loss = low throughput BUT high utilization (link is stressed)
+   - Separate calculations for tooltip display vs color coding
+
+3. **Hollow vs Solid Meshes**
+   - Cylinders in three-d are hollow tubes (no end caps)
+   - Cubes are fully solid (all 6 faces rendered)
+   - For solid appearance: use CpuMesh::cube() scaled as rectangular bar
+
+4. **Emissive Material Rendering**
+   - Emissive color alone isn't enough if lights are applied
+   - For pure glow: Render with empty lights array `target.render(&camera, mesh, &[])`
+   - Result: Material shows true emissive color without lighting interference
 
 ### Phase 4.5 - UI/UX Polish COMPLETE! ✅ (2025-11-07)
 

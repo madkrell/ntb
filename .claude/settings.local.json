@@ -52,7 +52,8 @@
       "Bash(wait)",
       "Bash(cat:*)",
       "Bash(tee:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(cargo sqlx migrate run:*)"
     ],
     "deny": [],
     "ask": []

@@ -1438,6 +1438,7 @@ async fn import_topology_json(json_content: String) -> Result<ImportResult, Stri
             connection_type: Some(connection.connection_type.clone()),
             bandwidth_mbps: connection.bandwidth_mbps,
             latency_ms: connection.latency_ms,
+            baseline_packet_loss_pct: connection.baseline_packet_loss_pct,
             status: Some(connection.status.clone()),
             color: Some(connection.color.clone()),
             metadata: connection.metadata.clone(),
@@ -1695,15 +1696,18 @@ fn DevicePalette() -> impl IntoView {
 
                                 match generate_mock_traffic(topology_id, level).await {
                                     Ok(_count) => {
-                                        // Start particle animation BEFORE refetch (Phase 6.4.2)
-                                        // This sets the flag that will be read during viewport Effect
                                         #[cfg(feature = "hydrate")]
                                         {
-                                            use crate::islands::topology_viewport::start_particle_animation;
+                                            use crate::islands::topology_viewport::{start_particle_animation, spawn_traffic_particles};
+
+                                            // Start animation flag
                                             start_particle_animation();
+
+                                            // Spawn particles based on new traffic data
+                                            spawn_traffic_particles(topology_id).await;
                                         }
 
-                                        // Trigger viewport refresh to spawn particles and initialize animation
+                                        // Trigger viewport refresh to update connection colors (NOT to spawn particles)
                                         refetch.update(|v| *v += 1);
                                     }
                                     Err(_e) => {
@@ -2551,6 +2555,7 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
     let connection_type = RwSignal::new(String::new());
     let bandwidth_mbps = RwSignal::new(0i64);
     let latency_ms = RwSignal::new(0.0f64);
+    let baseline_packet_loss_pct = RwSignal::new(0.0f64); // Default 0% (no packet loss)
     let status = RwSignal::new(String::new());
     let color = RwSignal::new(String::from("128,128,128")); // Default gray
     let carries_traffic = RwSignal::new(true); // Default enabled for traffic animation
@@ -2562,6 +2567,7 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
             connection_type.set(connection.connection_type);
             bandwidth_mbps.set(connection.bandwidth_mbps.unwrap_or(0));
             latency_ms.set(connection.latency_ms.unwrap_or(0.0));
+            baseline_packet_loss_pct.set(connection.baseline_packet_loss_pct.unwrap_or(0.0));
             status.set(connection.status);
             color.set(connection.color);
             carries_traffic.set(connection.carries_traffic);
@@ -2574,7 +2580,8 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
         let update_data = UpdateConnection {
             connection_type: Some(connection_type.get_untracked()),
             bandwidth_mbps: Some(bandwidth_mbps.get_untracked()).filter(|&v| v > 0),
-            latency_ms: Some(latency_ms.get_untracked()).filter(|&v| v > 0.0),
+            latency_ms: Some(latency_ms.get_untracked()).filter(|&v| v >= 0.0),
+            baseline_packet_loss_pct: Some(baseline_packet_loss_pct.get_untracked()).filter(|&v| v >= 0.0),
             status: Some(status.get_untracked()),
             color: Some(color.get_untracked()),
             carries_traffic: Some(carries_traffic.get_untracked()),
@@ -2724,6 +2731,28 @@ fn ConnectionProperties(connection_id: i64) -> impl IntoView {
                                         on:input=move |ev| {
                                             if let Ok(val) = event_target_value(&ev).parse::<f64>() {
                                                 latency_ms.set(val);
+                                            }
+                                        }
+                                    />
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-400 mb-1">
+                                        "Packet Loss (%)"
+                                        <span class="text-gray-500 text-xs ml-1">"(0.0-10.0)"</span>
+                                    </label>
+                                    <input
+                                        type="number"
+                                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
+                                        placeholder="0.0"
+                                        step="0.01"
+                                        min="0"
+                                        max="10"
+                                        prop:value=move || baseline_packet_loss_pct.get()
+                                        on:input=move |ev| {
+                                            if let Ok(val) = event_target_value(&ev).parse::<f64>() {
+                                                // Clamp between 0.0 and 10.0
+                                                baseline_packet_loss_pct.set(val.max(0.0).min(10.0));
                                             }
                                         }
                                     />

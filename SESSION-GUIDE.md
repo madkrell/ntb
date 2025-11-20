@@ -12,7 +12,7 @@ Please read these files to understand the current state:
 1. CLAUDE.md - Complete architecture, all phases, all learnings
 2. This file (SESSION-GUIDE.md) - Quick context
 
-Current Status: Phase 6.4.2 COMPLETE! ✅ (Particle Animation System) - 60fps animated traffic flows!
+Current Status: Phase 6.4.2 COMPLETE! ✅ (Particle Animation System + Critical Fixes) - 60fps animated traffic flows with realistic degradation modeling!
 
 **✅ Phase 6.1-6.3 Complete (2025-01-15):**
 Traffic Monitoring with realistic network simulation:
@@ -29,16 +29,21 @@ Traffic Monitoring with realistic network simulation:
 - Manual color override capability maintained
 
 **✅ Phase 6.4.1 Complete (2025-01-18):**
-Traffic Flow Controls - User control over traffic animation:
+Traffic Flow Controls - User control over traffic animation
 
-**Traffic Flow Control Features:**
-- Database migration: carries_traffic (BOOLEAN) and flow_direction (TEXT) fields
-- Properties Panel checkbox: Enable/disable traffic animation per connection
-- Properties Panel radio buttons: Control flow direction (source→target, target→source, bidirectional)
-- Swap Source/Target button: Reverse connection direction with one click
-- TrafficParticle struct: Foundation for particle animation system
-- SQLite validation triggers: Enforce valid flow directions
-- All SQL queries updated: Include new traffic flow fields
+**✅ Phase 6.4.2 Complete (2025-01-19):**
+Particle Animation System + Critical Fixes
+
+**Phase 6.4.2 Features & Fixes:**
+- ✅ 60fps particle animation with constant speed (0.3 units/sec)
+- ✅ Particle speed bug fixed (no more speed increase on settings changes)
+- ✅ Baseline packet loss integration (0-10% with 0.01% precision)
+- ✅ Latency persistence fixed (0ms latency now saves correctly)
+- ✅ Realistic utilization calculation (degraded links show RED/ORANGE)
+- ✅ Solid red error icons (cube mesh with emissive material)
+- ✅ Perpendicular error X orientation (visible from all angles)
+- ✅ Multiple animation loop prevention (global loop ID counter)
+- ✅ Throughput vs utilization semantics (separate calculations for tooltip vs color)
 
 **Key Technical Implementation:**
 1. Server-side traffic generation (generate_mock_traffic server function)
