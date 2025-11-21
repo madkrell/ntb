@@ -475,9 +475,16 @@ pub fn TopologyEditor(
                 // Center: 3D Viewport (main focus, takes most space)
                 <div class="flex-1 bg-gray-800 border-l border-r border-gray-700">
                     {move || {
-                        let topology_id = current_topology_id.get();
-                        view! {
-                            <TopologyViewport topology_id=topology_id />
+                        if current_topology_id.get() > 0 {
+                            view! {
+                                <TopologyViewport topology_id=current_topology_id.get() />
+                            }.into_any()
+                        } else {
+                            view! {
+                                <div class="flex items-center justify-center h-full text-gray-400">
+                                    "Loading topology..."
+                                </div>
+                            }.into_any()
                         }
                     }}
                 </div>
@@ -1568,15 +1575,15 @@ fn DevicePalette() -> impl IntoView {
     let traffic_level_signal = RwSignal::new("low".to_string());
     let traffic_generating_signal = RwSignal::new(false);
 
-    // Device type configurations: (Display Name, Icon, type_id, name_prefix)
+    // Device type configurations: (Display Name, Icon Path, type_id, name_prefix)
     let device_types = vec![
-        ("Routers", "🔀", "router", "Router"),
-        ("Switches", "🔌", "switch", "Switch"),
-        ("Servers", "🖥️", "server", "Server"),
-        ("Firewalls", "🛡️", "firewall", "Firewall"),
-        ("Load Balancers", "⚖️", "load_balancer", "LoadBalancer"),
-        ("Clouds", "☁️", "cloud", "Cloud"),
-        ("Applications", "📱", "application", "Application"),
+        ("Routers", "/icons/vendors/router_white.png", "router", "Router"),
+        ("Switches", "/icons/vendors/switch_white.png", "switch", "Switch"),
+        ("Servers", "/icons/vendors/server_white.png", "server", "Server"),
+        ("Firewalls", "/icons/vendors/firewall_white.png", "firewall", "Firewall"),
+        ("Load Balancers", "/icons/vendors/loadbalancer_white.png", "load_balancer", "LoadBalancer"),
+        ("Clouds", "/icons/vendors/cloud_white.png", "cloud", "Cloud"),
+        ("Applications", "/icons/vendors/application_white.png", "application", "Application"),
     ];
 
     // Action to create a node
@@ -1663,7 +1670,7 @@ fn DevicePalette() -> impl IntoView {
                                     dropdown_open.update(|open| *open = !*open);
                                 }
                             >
-                                <span class="text-lg">{icon}</span>
+                                <img src={icon} alt={display_name} class="w-8 h-8" />
                                 <div class="flex-1">
                                     <div class="text-xs font-medium">{display_name}</div>
                                     <div class="text-[10px] text-gray-400">"Select vendor"</div>
