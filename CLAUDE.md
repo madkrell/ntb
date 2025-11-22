@@ -1,7 +1,7 @@
 # Network Topology Builder - Development Guide
 
 ## Project Status
-**Phase:** Native Blender Z-Up ✅ | **Updated:** 2025-01-22 | **Tag:** v0.1.0-blender-native
+**Phase:** Scene Objects Outliner ✅ | **Updated:** 2025-01-22 | **Tag:** v0.1.0-scene-objects
 **Architecture:** Leptos 0.8 (Regular Components) | **Database:** ntv.db (SQLite)
 **Coordinate System:** Native Blender Z-up (no Y↔Z swapping, no default rotations)
 
@@ -17,6 +17,7 @@
 - Multi-vendor device models (auto-discovery from filesystem)
 - **Auto-save** (all node & connection properties save automatically on change)
 - **Undo** (reverses last 5 changes to nodes/connections per topology)
+- **Scene Objects panel** (Blender-style outliner with visibility toggle, node selection)
 
 ## Optional Next Steps
 1. **Traffic Dashboard** (2-3h): Metrics panel, top-N connections, historical charts, CSV export
@@ -191,6 +192,34 @@ static ANIMATION_LOOP_ID: Mutex<u32> = Mutex::new(0);  // Prevents multiple loop
 - **UI**: Undo button in toolbar, disabled when no history available, triggers viewport refresh
 - **Scope**: Per-topology (undo only affects current topology)
 
+### Scene Objects Panel (2025-01-22)
+**Blender-style outliner** (topology_editor.rs:1734-1809):
+- **Location**: Left sidebar, above Traffic Monitoring section
+- **Features**:
+  - Lists all nodes in current topology
+  - Eye icon (👁) to show / filled circle (⚫) to hide nodes
+  - Click node name to select → highlights in viewport → shows properties panel
+  - Selected node highlighted in blue
+  - Scrollable list (max-h-48) for many nodes
+- **Visibility toggle** (topology_editor.rs:1776-1800):
+  - Persisted to database (`nodes.visible` column)
+  - Hidden nodes don't render in viewport
+  - Connections to/from hidden nodes auto-hide
+  - Uses `refetch_trigger.update()` for reactive UI updates
+- **Selection integration**:
+  - Sets `selected_item` signal when node clicked
+  - Viewport checks both `selected_node_id` and `selected_item` for highlighting
+  - Compatible with both outliner and viewport selection methods
+- **Database**: `visible BOOLEAN NOT NULL DEFAULT TRUE` (migrations/20250122000002_add_node_visibility.sql)
+- **Viewport filtering** (topology_viewport.rs:1258-1261):
+  ```rust
+  // Skip invisible nodes (Blender-style outliner)
+  if !node.visible {
+      continue;
+  }
+  ```
+- **Connection filtering**: Automatic via `node_positions` HashMap (only contains visible nodes)
+
 ## Database Configuration
 
 **Active Database:** `ntv.db` (SQLite) - AUTO-CREATED on first run
@@ -208,6 +237,7 @@ static ANIMATION_LOOP_ID: Mutex<u32> = Mutex::new(0);  // Prevents multiple loop
 - `20250119000002_add_baseline_packet_loss.sql` - baseline_packet_loss_pct
 - `20250120000001_add_undo_history.sql` - undo_history table with auto-trim trigger (last 5)
 - `20250122000001_fix_native_blender_coordinates.sql` - **CRITICAL** Native Z-up coordinates (swaps Y↔Z, removes 90° rotation)
+- `20250122000002_add_node_visibility.sql` - nodes.visible column for Scene Objects outliner
 
 **⚠️ Historical Note:** Database kept as `ntv.db` during "ntv→ntb" rename to preserve data.
 
@@ -313,3 +343,5 @@ struct CameraState {
 9. **Visual Controls Not Working** → Pass signals to render closure, read dynamically each frame
 10. **Grid/Axes Visibility** → Always create all meshes, control visibility at render time
 11. **HDR Environment Changes** → Trigger reinit when environment map changes (load new HDR)
+12. **Node Properties Y↔Z Swap** → Must use direct 1:1 mapping (no coordinate swapping in load/save)
+13. **Reactive Tracking in Async** → Use `.update()` instead of `.set(signal.get())` in spawn_local blocks

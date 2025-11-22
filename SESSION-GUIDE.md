@@ -8,9 +8,9 @@ I'm continuing work on the Network Topology Builder project at:
 
 Please read CLAUDE.md for complete architecture context.
 
-Current Status: Native Blender Z-Up ✅ (2025-01-22)
-All core features complete PLUS native Blender coordinate system implemented.
-Models exported from Blender appear identically in viewport (no transformations, native scale).
+Current Status: Scene Objects Outliner ✅ (2025-01-22)
+All core features complete PLUS native Blender coordinate system AND Scene Objects panel.
+Features: Blender-style outliner, visibility toggle, node selection from sidebar.
 
 Ready for: [Traffic Dashboard / WebSocket Streaming / UX Polish / your goal here]
 ```
@@ -24,8 +24,9 @@ Ready for: [Traffic Dashboard / WebSocket Streaming / UX Polish / your goal here
 **Current State:**
 - Native Blender Z-up coordinate system ✅
 - Native Blender scale (no 0.3x multiplier) ✅
-- Git tag: `v0.1.0-blender-native`
-- All core features working (see CLAUDE.md lines 8-19)
+- Scene Objects panel (Blender-style outliner) ✅
+- Git tag: `v0.1.0-scene-objects`
+- All core features working (see CLAUDE.md lines 8-20)
 - Direct Blender → Viewport workflow (no transformations, what you see is what you get)
 
 ## 🚀 Quick Start Examples
@@ -88,8 +89,9 @@ cargo leptos build --release
 - **Blender export**: UNCHECK "+Y Up" to preserve Z-up, Apply Transforms before export
 - **Model validation**: `./validate_models.py` for size/material checks
 - **Code structure**: See CLAUDE.md lines 30-69
-- **Critical patterns**: See CLAUDE.md lines 28-183
-- **Common issues**: See CLAUDE.md lines 293-306
+- **Critical patterns**: See CLAUDE.md lines 28-221
+- **Common issues**: See CLAUDE.md lines 333-348
+- **Scene Objects**: Outliner in left sidebar, visibility toggle with eye icon
 
 ## 🔗 References
 
