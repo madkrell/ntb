@@ -1392,8 +1392,10 @@ async fn initialize_threed_viewport(
                         let y_rotation = Mat4::from_angle_y(degrees(node.rotation_y as f32));
                         let z_rotation = Mat4::from_angle_z(degrees(node.rotation_z as f32));
 
+                        // For glTF models, use native scale (no 0.3 multiplier)
+                        // Models appear at their Blender size * user scale factor
                         let transform = Mat4::from_translation(position)
-                            * Mat4::from_scale(node_radius * node.scale as f32)
+                            * Mat4::from_scale(node.scale as f32)
                             * z_rotation
                             * y_rotation
                             * x_rotation

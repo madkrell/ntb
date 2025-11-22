@@ -38,9 +38,11 @@ class Colors:
     UNDERLINE = '\033[4m'
 
 # NTB application constants
-NTB_SELECTION_RADIUS = 0.6  # Fixed selection radius in topology_viewport.rs:1230
-NTB_IDEAL_SIZE = 1.0        # Ideal model size for good UX
-NTB_MAX_SIZE = 1.5          # Maximum recommended size
+# Note: Selection radius is now auto-calculated from model geometry (no fixed limit)
+# These are UX recommendations only
+NTB_IDEAL_SIZE = 1.0        # Ideal model size for good UX (sweet spot)
+NTB_MAX_RECOMMENDED = 2.0   # Models larger than this may look oversized
+NTB_MIN_SIZE = 0.3          # Models smaller than this may be hard to see
 
 class ModelIssue:
     """Represents a validation issue found in a model"""
@@ -184,18 +186,18 @@ def validate_model(file_path: str, show_gltf_transform: bool = True) -> ModelVal
 
         result.max_dimension = max_dim
 
-        # Check if model is too large for selection
-        if max_dim > NTB_SELECTION_RADIUS * 2:
-            scale_factor = (NTB_IDEAL_SIZE / max_dim) if max_dim > 0 else 1.0
-            result.add_issue('error', 'selection',
-                           f'Model too large ({max_dim:.2f} units) for selection radius ({NTB_SELECTION_RADIUS} units)',
-                           f'In Blender: Select All (A) → Scale (S) → type {scale_factor:.3f} → Apply Scale (Ctrl+A)')
-        elif max_dim > NTB_IDEAL_SIZE:
+        # Check model size for UX recommendations (selection radius is auto-calculated, so any size works)
+        if max_dim > NTB_MAX_RECOMMENDED:
             scale_factor = (NTB_IDEAL_SIZE / max_dim) if max_dim > 0 else 1.0
             result.add_issue('warning', 'scale',
-                           f'Model larger than ideal ({max_dim:.2f} units > {NTB_IDEAL_SIZE} units)',
-                           f'Recommended: Scale by {scale_factor:.3f} in Blender for better UX')
-        elif max_dim < 0.3:
+                           f'Model larger than recommended ({max_dim:.2f} units > {NTB_MAX_RECOMMENDED} units)',
+                           f'Recommended: Scale by {scale_factor:.3f} in Blender for better visual proportion')
+        elif max_dim > NTB_IDEAL_SIZE * 1.5:  # Between 1.5 and 2.0 units
+            scale_factor = (NTB_IDEAL_SIZE / max_dim) if max_dim > 0 else 1.0
+            result.add_issue('info', 'scale',
+                           f'Model slightly larger than ideal ({max_dim:.2f} units)',
+                           f'Optional: Scale by {scale_factor:.3f} in Blender for ideal size')
+        elif max_dim < NTB_MIN_SIZE:
             result.add_issue('warning', 'scale',
                            f'Model very small ({max_dim:.2f} units) - may be hard to see',
                            'Consider scaling up in Blender')
@@ -237,13 +239,13 @@ def print_validation_result(result: ModelValidationResult, verbose: bool = True)
 
         # Color-code the max dimension based on size
         max_dim = result.max_dimension
-        if max_dim > NTB_SELECTION_RADIUS * 2:
-            size_status = Colors.FAIL + "✗ TOO LARGE"
-            size_color = Colors.FAIL
-        elif max_dim > NTB_IDEAL_SIZE:
-            size_status = Colors.WARNING + "⚠ LARGER THAN IDEAL"
+        if max_dim > NTB_MAX_RECOMMENDED:
+            size_status = Colors.WARNING + "⚠ LARGER THAN RECOMMENDED"
             size_color = Colors.WARNING
-        elif max_dim < 0.3:
+        elif max_dim > NTB_IDEAL_SIZE * 1.5:
+            size_status = Colors.OKCYAN + "ℹ SLIGHTLY LARGE"
+            size_color = Colors.OKCYAN
+        elif max_dim < NTB_MIN_SIZE:
             size_status = Colors.WARNING + "⚠ VERY SMALL"
             size_color = Colors.WARNING
         else:
@@ -251,16 +253,19 @@ def print_validation_result(result: ModelValidationResult, verbose: bool = True)
             size_color = Colors.OKGREEN
 
         print(f"  Max Dimension: {size_color}{result.max_dimension:.3f} units{Colors.ENDC} {size_status}{Colors.ENDC}")
-        print(f"  Ideal Range: {Colors.OKGREEN}0.5 - {NTB_IDEAL_SIZE} units{Colors.ENDC}")
-        print(f"  Old Fixed Radius: {NTB_SELECTION_RADIUS} units (now auto-calculated from model)")
+        print(f"  Ideal Range: {Colors.OKGREEN}{NTB_MIN_SIZE} - {NTB_IDEAL_SIZE * 1.5} units{Colors.ENDC} (Sweet spot: {NTB_IDEAL_SIZE} units)")
+        print(f"  Selection: {Colors.OKGREEN}Auto-calculated from model geometry{Colors.ENDC} (any size works!)")
 
-        # Show scaling recommendation
-        if max_dim > NTB_IDEAL_SIZE:
+        # Show scaling recommendation (only for models outside ideal range)
+        if max_dim > NTB_MAX_RECOMMENDED:
             scale_factor = NTB_IDEAL_SIZE / max_dim
-            print(f"  {Colors.OKCYAN}💡 Recommended Scale: {scale_factor:.3f}x (will make it {NTB_IDEAL_SIZE:.1f} units){Colors.ENDC}")
-        elif max_dim < 0.3:
+            print(f"  {Colors.WARNING}💡 Recommended Scale: {scale_factor:.3f}x (will make it {NTB_IDEAL_SIZE:.1f} units){Colors.ENDC}")
+        elif max_dim > NTB_IDEAL_SIZE * 1.5:
+            scale_factor = NTB_IDEAL_SIZE / max_dim
+            print(f"  {Colors.OKCYAN}💡 Optional Scale: {scale_factor:.3f}x (will make it {NTB_IDEAL_SIZE:.1f} units){Colors.ENDC}")
+        elif max_dim < NTB_MIN_SIZE:
             scale_factor = 0.5 / max_dim
-            print(f"  {Colors.OKCYAN}💡 Recommended Scale: {scale_factor:.3f}x (will make it 0.5 units){Colors.ENDC}")
+            print(f"  {Colors.WARNING}💡 Recommended Scale: {scale_factor:.3f}x (will make it 0.5 units){Colors.ENDC}")
 
         if verbose and len(result.bounding_boxes) <= 5:
             print(f"\n  {Colors.BOLD}Detailed Geometry:{Colors.ENDC}")

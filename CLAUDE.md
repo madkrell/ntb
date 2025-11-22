@@ -31,6 +31,7 @@
 **Direct Blender-to-Viewport workflow** - No transformations, no confusion:
 - **Coordinate mapping**: Direct 1:1 mapping (X→X, Y→Y, Z→Z) - no Y↔Z swapping
 - **Default rotation**: None (0°, 0°, 0°) - models appear exactly as modeled in Blender
+- **Scale handling**: Native Blender scale (glTF models use user scale value directly, no 0.3x multiplier)
 - **World "up"**: Z-axis is vertical (matches Blender convention)
 - **Grid floor**: XY plane at Z=0 (horizontal floor)
 - **Blender export**: UNCHECK "+Y Up" to preserve native Z-up orientation
@@ -38,6 +39,7 @@
   - Models exported from Blender appear identically in viewport
   - Position values match visual positions (no mental math needed)
   - Rotation controls work intuitively (X=pitch, Y=yaw, Z=roll)
+  - Scale in viewport matches Blender scale (what you see is what you get)
   - Simplified workflow: Model → Export → Add → Works!
 
 **Database migration** (migrations/20250122000001_fix_native_blender_coordinates.sql):
@@ -48,6 +50,7 @@
 **Key files modified**:
 - `src/api.rs:271` - Removed 90° default rotation
 - `src/islands/topology_viewport.rs:1261-1263` - Removed Y↔Z coordinate swap
+- `src/islands/topology_viewport.rs:1398` - Native scale (removed 0.3x multiplier for glTF models)
 - `src/islands/topology_viewport.rs:1642,2847,2917` - Fixed connection "up" vectors to Z-up
 - `src/islands/topology_viewport.rs:2848-2860` - Fixed grid/axes cylinder rotation (use Y-axis primitive default, not world Z-up)
 - `src/islands/topology_editor.rs:1608-1611` - New nodes default to origin (0,0,0)
@@ -57,6 +60,13 @@
 - three-d cylinders/boxes default to Y-axis orientation
 - Grid/axes rotation uses primitive's native Y-axis, NOT world Z-up
 - This is independent of the world coordinate system
+
+**Model scale recommendations**:
+- **Ideal range**: 0.3-1.5 units (bounding box max dimension)
+- **Maximum recommended**: 2.0 units
+- **Selection**: Auto-calculated from model geometry (any size works!)
+- **Validation tool**: `./validate_models.py` checks materials, bounds, provides scaling recommendations
+- Models can be scaled in Blender (Apply Transforms before export) for optimal viewport appearance
 
 ### Material Rendering (Phase 5.6)
 **Two-path system** (topology_viewport.rs:940-975):
