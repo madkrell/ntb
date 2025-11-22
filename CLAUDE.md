@@ -1,8 +1,9 @@
 # Network Topology Builder - Development Guide
 
 ## Project Status
-**Phase:** 6.4.4 COMPLETE ✅ | **Updated:** 2025-01-20 | **Tag:** v0.1.0-phase6.4.4-complete
+**Phase:** Native Blender Z-Up ✅ | **Updated:** 2025-01-22 | **Tag:** v0.1.0-blender-native
 **Architecture:** Leptos 0.8 (Regular Components) | **Database:** ntv.db (SQLite)
+**Coordinate System:** Native Blender Z-up (no Y↔Z swapping, no default rotations)
 
 ## Core Features ✅
 - 3D visualization with glTF/GLB models (full PBR: textures, normals, emissive, alpha)
@@ -25,6 +26,37 @@
 5. **Documentation**: User guide, developer docs, Docker deployment
 
 ## Critical Architecture Patterns
+
+### Native Blender Z-Up Coordinate System (2025-01-22)
+**Direct Blender-to-Viewport workflow** - No transformations, no confusion:
+- **Coordinate mapping**: Direct 1:1 mapping (X→X, Y→Y, Z→Z) - no Y↔Z swapping
+- **Default rotation**: None (0°, 0°, 0°) - models appear exactly as modeled in Blender
+- **World "up"**: Z-axis is vertical (matches Blender convention)
+- **Grid floor**: XY plane at Z=0 (horizontal floor)
+- **Blender export**: UNCHECK "+Y Up" to preserve native Z-up orientation
+- **Benefits**:
+  - Models exported from Blender appear identically in viewport
+  - Position values match visual positions (no mental math needed)
+  - Rotation controls work intuitively (X=pitch, Y=yaw, Z=roll)
+  - Simplified workflow: Model → Export → Add → Works!
+
+**Database migration** (migrations/20250122000001_fix_native_blender_coordinates.sql):
+- Swapped existing Y↔Z coordinates for 30 nodes
+- Removed 90° default X-rotation from all nodes
+- Automatic on server startup
+
+**Key files modified**:
+- `src/api.rs:271` - Removed 90° default rotation
+- `src/islands/topology_viewport.rs:1261-1263` - Removed Y↔Z coordinate swap
+- `src/islands/topology_viewport.rs:1642,2847,2917` - Fixed connection "up" vectors to Z-up
+- `src/islands/topology_viewport.rs:2848-2860` - Fixed grid/axes cylinder rotation (use Y-axis primitive default, not world Z-up)
+- `src/islands/topology_editor.rs:1608-1611` - New nodes default to origin (0,0,0)
+- `src/islands/topology_editor.rs:2199-2201` - Removed Y↔Z swap in node updates
+
+**Primitive rotation vs world coordinates**:
+- three-d cylinders/boxes default to Y-axis orientation
+- Grid/axes rotation uses primitive's native Y-axis, NOT world Z-up
+- This is independent of the world coordinate system
 
 ### Material Rendering (Phase 5.6)
 **Two-path system** (topology_viewport.rs:940-975):
@@ -165,6 +197,7 @@ static ANIMATION_LOOP_ID: Mutex<u32> = Mutex::new(0);  // Prevents multiple loop
 - `20250118000001_add_traffic_flow_controls.sql` - carries_traffic, flow_direction
 - `20250119000002_add_baseline_packet_loss.sql` - baseline_packet_loss_pct
 - `20250120000001_add_undo_history.sql` - undo_history table with auto-trim trigger (last 5)
+- `20250122000001_fix_native_blender_coordinates.sql` - **CRITICAL** Native Z-up coordinates (swaps Y↔Z, removes 90° rotation)
 
 **⚠️ Historical Note:** Database kept as `ntv.db` during "ntv→ntb" rename to preserve data.
 
@@ -184,6 +217,27 @@ public/
 4. Refresh browser → Cisco appears in Routers dropdown
 
 **Server function:** `get_vendors_for_type()` scans filesystem, formats display names (blob-router → Blob Router)
+
+**Blender Export Settings (CRITICAL):**
+```
+Format: glTF Binary (.glb)
+
+Transform:
+  ☐ +Y Up  ← MUST BE UNCHECKED! (Preserves native Z-up)
+
+Geometry:
+  ☑ Apply Modifiers
+  ☑ UVs, Normals, Tangents
+
+Materials:
+  ☑ Materials
+  ☑ Images (if using textures)
+```
+
+**Before exporting:**
+1. Select All (A)
+2. Apply All Transforms (Ctrl+A → All Transforms) - **CRITICAL!**
+3. Export with +Y Up **UNCHECKED**
 
 ## Build Commands
 

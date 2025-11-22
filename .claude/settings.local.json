@@ -54,7 +54,13 @@
       "Bash(tee:*)",
       "Bash(git restore:*)",
       "Bash(cargo sqlx migrate run:*)",
-      "Bash(timeout 90 cargo leptos build:*)"
+      "Bash(timeout 90 cargo leptos build:*)",
+      "Bash(./validate_models.py:*)",
+      "Bash(conda env:*)",
+      "Bash(sudo rm:*)",
+      "Bash(defaults read:*)",
+      "Bash(defaults write:*)",
+      "Bash(env)"
     ],
     "deny": [],
     "ask": []

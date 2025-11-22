@@ -267,8 +267,8 @@ pub async fn create_node(data: CreateNode) -> Result<Node, ServerFnError> {
         let pos_x = data.position_x.unwrap_or(0.0);
         let pos_y = data.position_y.unwrap_or(0.0);
         let pos_z = data.position_z.unwrap_or(0.0);
-        // Default rotation X = 90° for Blender glTF models to sit flat on grid floor
-        let rot_x = data.rotation_x.unwrap_or(90.0);
+        // Native Blender Z-up coordinate system (no rotation needed)
+        let rot_x = data.rotation_x.unwrap_or(0.0);
         let rot_y = data.rotation_y.unwrap_or(0.0);
         let rot_z = data.rotation_z.unwrap_or(0.0);
         let scale = data.scale.unwrap_or(1.0);

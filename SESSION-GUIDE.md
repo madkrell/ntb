@@ -8,9 +8,9 @@ I'm continuing work on the Network Topology Builder project at:
 
 Please read CLAUDE.md for complete architecture context.
 
-Current Status: Phase 6.4.4 COMPLETE ✅ (2025-01-20)
-All core features implemented: 3D visualization, traffic monitoring, particle animation,
-simplified connection creation, auto-save, undo functionality.
+Current Status: Native Blender Z-Up ✅ (2025-01-22)
+All core features complete PLUS native Blender coordinate system implemented.
+Models exported from Blender appear identically in viewport (no transformations needed).
 
 Ready for: [Traffic Dashboard / WebSocket Streaming / UX Polish / your goal here]
 ```
@@ -22,26 +22,27 @@ Ready for: [Traffic Dashboard / WebSocket Streaming / UX Polish / your goal here
 2. **This file** - Quick reference only
 
 **Current State:**
-- Phase 6.4.4 complete ✅
-- Git tag: `v0.1.0-phase6.4.4-complete`
-- All core features working (see CLAUDE.md lines 7-18)
+- Native Blender Z-up coordinate system ✅
+- Git tag: `v0.1.0-blender-native`
+- All core features working (see CLAUDE.md lines 8-19)
+- Direct Blender → Viewport workflow (no coordinate swapping)
 
 ## 🚀 Quick Start Examples
 
 ### Traffic Dashboard (Recommended)
 ```
 Continuing NTB at /Users/mattearp/Documents/CodeProjects/ntb/
-Read CLAUDE.md for context. Phase 6.4.4 complete.
+Read CLAUDE.md for context. Native Blender Z-up complete.
 
 Goal: Implement traffic dashboard with metrics panel, top-N connections,
 historical charts, CSV export.
 
-See CLAUDE.md lines 20-21 for feature details.
+See CLAUDE.md lines 21-22 for feature details.
 ```
 
 ### WebSocket Streaming
 ```
-Continuing NTB. Phase 6.4.4 complete.
+Continuing NTB. Native Blender Z-up complete.
 Read CLAUDE.md for architecture.
 
 Goal: Add WebSocket streaming for real-time traffic updates using Leptos
@@ -50,7 +51,7 @@ WebSocket server functions.
 
 ### UX Polish
 ```
-Continuing NTB. Phase 6.4.4 complete.
+Continuing NTB. Native Blender Z-up complete.
 
 Goal: Add [multi-select / keyboard shortcuts / feature name]
 ```
@@ -58,7 +59,7 @@ Goal: Add [multi-select / keyboard shortcuts / feature name]
 ### Custom Feature
 ```
 Continuing NTB at /Users/mattearp/Documents/CodeProjects/ntb/
-Read CLAUDE.md for complete context. Phase 6.4.4 complete.
+Read CLAUDE.md for complete context. Native Blender Z-up complete.
 
 Goal: [Describe your specific feature or fix]
 ```
@@ -81,9 +82,11 @@ cargo leptos build --release
 ### Key Facts
 - **Database**: `ntv.db` (NOT ntb.db - preserved during rename)
 - **Architecture**: Leptos 0.8, SQLite, three-d WebGL2
-- **Code structure**: See CLAUDE.md lines 140-156
-- **Critical patterns**: See CLAUDE.md lines 25-76
-- **Common issues**: See CLAUDE.md lines 208-221
+- **Coordinates**: Native Blender Z-up (X→X, Y→Y, Z→Z, no swapping)
+- **Blender export**: UNCHECK "+Y Up" to preserve Z-up
+- **Code structure**: See CLAUDE.md lines 30-59
+- **Critical patterns**: See CLAUDE.md lines 28-175
+- **Common issues**: See CLAUDE.md lines 271-283
 
 ## 🔗 References
 

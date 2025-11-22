@@ -1605,13 +1605,10 @@ fn DevicePalette() -> impl IntoView {
                 // Generate unique name
                 let name = format!("{}-{}", name_prefix, count + 1);
 
-                // Calculate position in a grid to avoid overlap
-                // Grid: 5 columns, spacing of 3.0 units
-                let col = (count % 5) as f64;
-                let row = (count / 5) as f64;
-                let position_x = col * 3.0 - 6.0; // Center the grid around origin
-                let position_y = 0.0; // On the floor
-                let position_z = row * 3.0 - 3.0; // Rows going back
+                // Default position at origin (user can drag to desired location)
+                let position_x = 0.0;
+                let position_y = 0.0;
+                let position_z = 0.0;
 
                 // Create node data
                 let data = CreateNode {
@@ -2200,8 +2197,8 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
             model_name: Some(model_name.get_untracked()),
             ip_address: Some(ip_address.get_untracked()).filter(|s| !s.is_empty()),
             position_x: Some(position_x.get_untracked()),
-            position_y: Some(position_z.get_untracked()), // DB Y ← UI Z (vertical)
-            position_z: Some(position_y.get_untracked()), // DB Z ← UI Y (horizontal)
+            position_y: Some(position_y.get_untracked()),
+            position_z: Some(position_z.get_untracked()),
             rotation_x: Some(rotation_x.get_untracked()),
             rotation_y: Some(rotation_y.get_untracked()),
             rotation_z: Some(rotation_z.get_untracked()),

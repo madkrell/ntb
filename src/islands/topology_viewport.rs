@@ -1033,6 +1033,50 @@ fn ray_cylinder_intersection(
     None
 }
 
+// Calculate bounding box (AABB) radius from a loaded glTF model
+// Returns the radius of a sphere that encompasses the entire model
+#[cfg(feature = "hydrate")]
+fn calculate_model_bounding_radius(model: &three_d_asset::Model, scale: f32) -> f32 {
+    use three_d::*;
+
+    let mut min_x = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut min_y = f32::MAX;
+    let mut max_y = f32::MIN;
+    let mut min_z = f32::MAX;
+    let mut max_z = f32::MIN;
+
+    // Iterate through all geometries in the model
+    for primitive in model.geometries.iter() {
+        if let three_d_asset::geometry::Geometry::Triangles(tri_mesh) = &primitive.geometry {
+            // tri_mesh.positions is a PositionBuffer, which can be accessed as Vec3 positions
+            for position in tri_mesh.positions.to_f32().iter() {
+                // Apply primitive transformation to position
+                let transform_mat = &primitive.transformation;
+                let vec4 = transform_mat * vec4(position.x, position.y, position.z, 1.0);
+                let transformed_pos = vec3(vec4.x, vec4.y, vec4.z);
+
+                min_x = min_x.min(transformed_pos.x);
+                max_x = max_x.max(transformed_pos.x);
+                min_y = min_y.min(transformed_pos.y);
+                max_y = max_y.max(transformed_pos.y);
+                min_z = min_z.min(transformed_pos.z);
+                max_z = max_z.max(transformed_pos.z);
+            }
+        }
+    }
+
+    // Calculate the maximum dimension of the bounding box
+    let width = (max_x - min_x).abs();
+    let height = (max_y - min_y).abs();
+    let depth = (max_z - min_z).abs();
+    let max_dimension = width.max(height).max(depth);
+
+    // Return half of max dimension as radius, scaled by node's scale factor
+    // Multiply by 1.2 for slightly larger selection area (better UX)
+    (max_dimension / 2.0) * scale * 1.2
+}
+
 // Type alias for node mesh (sphere with material)
 #[cfg(feature = "hydrate")]
 type NodeMesh = three_d::Gm<three_d::Mesh, three_d::PhysicalMaterial>;
@@ -1211,28 +1255,37 @@ async fn initialize_threed_viewport(
     }
 
     for node in &topology_data.nodes {
-        // Map database coordinates to Blender convention (XY floor, Z up)
-        // DB: position_y was "up" → now render as Z (up in Blender)
-        // DB: position_z was "depth" → now render as Y (front-back)
+        // Native Blender Z-up coordinate system (direct mapping, no swapping)
+        // DB coordinates match viewport coordinates exactly
         let position = vec3(
-            node.position_x as f32,  // X stays X (left-right)
-            node.position_z as f32,  // Z becomes Y (front-back)
-            node.position_y as f32,  // Y becomes Z (up-down)
+            node.position_x as f32,  // X = X (left-right)
+            node.position_y as f32,  // Y = Y (front-back)
+            node.position_z as f32,  // Z = Z (up-down, vertical)
         );
         node_positions.insert(node.id, position);
 
-        // Store node data for selection and tooltip (use larger radius for easier clicking)
+        // Check if we have a loaded 3D model for this vendor/model combination
+        let model_cache_key = format!("{}:{}:{}", node.node_type, node.vendor, node.model_name);
+        let has_model = node_models.get(&model_cache_key).and_then(|opt| opt.as_ref()).is_some();
+
+        // Calculate selection radius based on whether we have a 3D model
+        let selection_radius = if has_model {
+            // Calculate actual bounding box from loaded model
+            let cpu_model = node_models.get(&model_cache_key).unwrap().as_ref().unwrap();
+            calculate_model_bounding_radius(cpu_model, node.scale as f32)
+        } else {
+            // Fallback to fixed radius for sphere primitives
+            node_radius * 2.0  // 2x visual radius for easier clicking
+        };
+
+        // Store node data for selection and tooltip
         nodes_data.push(NodeData {
             id: node.id,
             name: node.name.clone(),
             node_type: node.node_type.clone(),
             position,
-            radius: node_radius * 2.0,  // 2x visual radius for easier clicking
+            radius: selection_radius,
         });
-
-        // Check if we have a loaded 3D model for this vendor/model combination
-        let model_cache_key = format!("{}:{}:{}", node.node_type, node.vendor, node.model_name);
-        let has_model = node_models.get(&model_cache_key).and_then(|opt| opt.as_ref()).is_some();
 
         if has_model {
             // Render node with loaded 3D model
@@ -1585,8 +1638,8 @@ async fn initialize_threed_viewport(
                 let conn_dir = (end_pos - start_pos).normalize();
 
                 // Create two perpendicular vectors to the connection direction
-                // Use world up (0,1,0) as reference, unless connection is vertical
-                let world_up = vec3(0.0, 1.0, 0.0);
+                // Use world up (0,0,1) as reference (Z-up), unless connection is vertical
+                let world_up = vec3(0.0, 0.0, 1.0);
                 let right = if conn_dir.cross(world_up).magnitude() > 0.01 {
                     conn_dir.cross(world_up).normalize()
                 } else {
@@ -2791,16 +2844,19 @@ fn create_line_cylinder(
 
     let midpoint = start + direction * 0.5;
     let normalized_dir = direction.normalize();
-    let up = vec3(0.0, 1.0, 0.0);
+
+    // Cylinder primitive is oriented along Y-axis by default in three-d
+    // We need to rotate from Y-axis to our desired line direction
+    let cylinder_default_dir = vec3(0.0, 1.0, 0.0);
 
     // Calculate rotation to align cylinder with line direction
-    let rotation = if (normalized_dir - up).magnitude() < 0.001 {
+    let rotation = if (normalized_dir - cylinder_default_dir).magnitude() < 0.001 {
         Mat4::identity()
-    } else if (normalized_dir + up).magnitude() < 0.001 {
+    } else if (normalized_dir + cylinder_default_dir).magnitude() < 0.001 {
         Mat4::from_angle_x(radians(std::f32::consts::PI))
     } else {
-        let axis = up.cross(normalized_dir).normalize();
-        let angle = up.dot(normalized_dir).acos();
+        let axis = cylinder_default_dir.cross(normalized_dir).normalize();
+        let angle = cylinder_default_dir.dot(normalized_dir).acos();
         Mat4::from_axis_angle(axis, radians(angle))
     };
 
@@ -2861,14 +2917,16 @@ fn create_emissive_line_cylinder(
     );
 
     // Calculate rotation to align box with line direction
-    let up = vec3(0.0, 1.0, 0.0);
-    let rotation = if (normalized_dir - up).magnitude() < 0.001 {
+    // Cube has no inherent orientation, but we'll align along Y-axis by default
+    // (This makes the box extend along the Y axis when identity matrix is used)
+    let box_default_dir = vec3(0.0, 1.0, 0.0);
+    let rotation = if (normalized_dir - box_default_dir).magnitude() < 0.001 {
         Mat4::identity()
-    } else if (normalized_dir + up).magnitude() < 0.001 {
+    } else if (normalized_dir + box_default_dir).magnitude() < 0.001 {
         Mat4::from_angle_x(radians(std::f32::consts::PI))
     } else {
-        let axis = up.cross(normalized_dir).normalize();
-        let angle = up.dot(normalized_dir).acos();
+        let axis = box_default_dir.cross(normalized_dir).normalize();
+        let angle = box_default_dir.dot(normalized_dir).acos();
         Mat4::from_axis_angle(axis, radians(angle))
     };
 
