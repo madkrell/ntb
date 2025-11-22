@@ -1494,6 +1494,7 @@ async fn import_topology_json(json_content: String) -> Result<ImportResult, Stri
             rotation_z: Some(node.rotation_z),
             scale: Some(node.scale),
             color: Some(node.color.clone()),
+            visible: Some(node.visible), // Preserve visibility when importing
             vendor: Some(node.vendor.clone()),
             model_name: Some(node.model_name.clone()),
             metadata: node.metadata.clone(),
@@ -1575,6 +1576,17 @@ fn DevicePalette() -> impl IntoView {
     let traffic_level_signal = RwSignal::new("low".to_string());
     let traffic_generating_signal = RwSignal::new(false);
 
+    // Fetch topology data for Scene Objects panel
+    let topology_data = Resource::new(
+        move || (current_topology_id.get(), refetch_trigger.get()),
+        |(tid, _)| async move {
+            get_topology_full(tid).await.ok()
+        },
+    );
+
+    // Get selected node context
+    let selected_item = use_context::<RwSignal<Option<SelectedItem>>>().expect("selected_item context");
+
     // Device type configurations: (Display Name, Icon Path, type_id, name_prefix)
     let device_types = vec![
         ("Routers", "/icons/vendors/router_white.png", "router", "Router"),
@@ -1621,11 +1633,12 @@ fn DevicePalette() -> impl IntoView {
                     position_x: Some(position_x),
                     position_y: Some(position_y),
                     position_z: Some(position_z),
-                    rotation_x: None, // Will use default 90°
+                    rotation_x: None, // Will use default 0°
                     rotation_y: None, // Will use default 0°
                     rotation_z: None, // Will use default 0°
                     scale: None,      // Will use default 1.0
                     color: None,      // Will use default blue
+                    visible: None,    // Will use default true
                     metadata: None,
                 };
 
@@ -1718,6 +1731,83 @@ fn DevicePalette() -> impl IntoView {
                         }
                     })
                 }}
+            </div>
+
+            // Scene Objects Panel (Blender-style outliner)
+            <div class="p-2 border-t border-gray-700">
+                <div class="text-xs font-semibold text-gray-300 mb-2">"Scene Objects"</div>
+                <div class="max-h-48 overflow-y-auto space-y-1">
+                    <Suspense fallback=|| view! { <div class="text-xs text-gray-400">"Loading..."</div> }>
+                        {move || {
+                            topology_data.get().and_then(|data_opt| {
+                                data_opt.map(|data| {
+                                    data.nodes.iter().map(|node| {
+                                        let node_id = node.id;
+                                        let node_name = node.name.clone();
+                                        let node_visible = node.visible;
+
+                                        // Check if this node is selected
+                                        let is_selected = move || {
+                                            if let Some(SelectedItem::Node(id)) = selected_item.get() {
+                                                id == node_id
+                                            } else {
+                                                false
+                                            }
+                                        };
+
+                                        view! {
+                                            <div class=move || {
+                                                let base = "flex items-center justify-between px-2 py-1 rounded text-xs";
+                                                if is_selected() {
+                                                    format!("{} bg-blue-600 text-white", base)
+                                                } else {
+                                                    format!("{} hover:bg-gray-700 text-gray-300", base)
+                                                }
+                                            }>
+                                                <button
+                                                    class="flex-1 text-left truncate"
+                                                    on:click=move |_| {
+                                                        selected_item.set(Some(SelectedItem::Node(node_id)));
+                                                    }
+                                                >
+                                                    {node_name.clone()}
+                                                </button>
+                                                <button
+                                                    class="ml-2 px-1 hover:bg-gray-600 rounded"
+                                                    title=move || if node_visible { "Hide" } else { "Show" }
+                                                    on:click=move |_| {
+                                                        let new_visibility = !node_visible;
+                                                        spawn_local(async move {
+                                                            use crate::api::update_node;
+                                                            use crate::models::UpdateNode;
+
+                                                            let update_data = UpdateNode {
+                                                                visible: Some(new_visibility),
+                                                                ..Default::default()
+                                                            };
+
+                                                            match update_node(node_id, update_data).await {
+                                                                Ok(_) => {
+                                                                    // Trigger refetch to update UI
+                                                                    refetch_trigger.update(|val| *val += 1);
+                                                                }
+                                                                Err(e) => {
+                                                                    leptos::logging::log!("Failed to toggle visibility: {}", e);
+                                                                }
+                                                            }
+                                                        });
+                                                    }
+                                                >
+                                                    {move || if node_visible { "👁" } else { "⚫" }}
+                                                </button>
+                                            </div>
+                                        }
+                                    }).collect_view()
+                                })
+                            })
+                        }}
+                    </Suspense>
+                </div>
             </div>
 
             // Traffic Monitoring Section (Phase 6.2)
@@ -2162,9 +2252,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
     let node_loaded = RwSignal::new(false);
 
     // Populate signals when data loads
-    // NOTE: Swap Y and Z to match Blender convention in UI
-    // Database stores: position_y (vertical in DB), position_z (depth in DB)
-    // UI shows: Position Y (horizontal green), Position Z (vertical blue)
+    // Native Blender Z-up: Direct 1:1 mapping, no coordinate swapping
     Effect::new(move || {
         if let Some(Some(node)) = node_data.get() {
             name.set(node.name);
@@ -2173,8 +2261,8 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
             model_name.set(node.model_name);
             ip_address.set(node.ip_address.unwrap_or_default());
             position_x.set(node.position_x);
-            position_y.set(node.position_z); // UI Y ← DB Z (horizontal)
-            position_z.set(node.position_y); // UI Z ← DB Y (vertical)
+            position_y.set(node.position_y); // Direct mapping (no swap)
+            position_z.set(node.position_z); // Direct mapping (no swap)
             rotation_x.set(node.rotation_x);
             rotation_y.set(node.rotation_y);
             rotation_z.set(node.rotation_z);
@@ -2186,9 +2274,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
     });
 
     // Save action
-    // NOTE: Swap Y and Z back when saving to database
-    // UI Position Y (green, horizontal) → DB position_z
-    // UI Position Z (blue, vertical) → DB position_y
+    // Native Blender Z-up: Direct 1:1 mapping, no coordinate swapping
     let save_action = Action::new(move |_: &()| {
         let update_data = UpdateNode {
             name: Some(name.get_untracked()),
@@ -2204,6 +2290,7 @@ fn NodeProperties(node_id: i64) -> impl IntoView {
             rotation_z: Some(rotation_z.get_untracked()),
             scale: Some(scale.get_untracked()),
             color: Some(color.get_untracked()),
+            visible: None, // Don't update visibility from properties panel
             metadata: None,
         };
 

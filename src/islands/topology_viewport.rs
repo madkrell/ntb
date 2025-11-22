@@ -1255,6 +1255,11 @@ async fn initialize_threed_viewport(
     }
 
     for node in &topology_data.nodes {
+        // Skip invisible nodes (Blender-style outliner)
+        if !node.visible {
+            continue;
+        }
+
         // Native Blender Z-up coordinate system (direct mapping, no swapping)
         // DB coordinates match viewport coordinates exactly
         let position = vec3(
@@ -1492,6 +1497,8 @@ async fn initialize_threed_viewport(
 
     // Build connection position map for particle interpolation
     // Maps connection_id -> (source_pos, target_pos)
+    // Note: Connections to invisible nodes are automatically filtered out
+    // (node_positions only contains visible nodes)
     let mut connection_positions: HashMap<i64, (Vec3, Vec3)> = HashMap::new();
     for conn in &topology_data.connections {
         if let (Some(&source_pos), Some(&target_pos)) = (
@@ -1507,6 +1514,7 @@ async fn initialize_threed_viewport(
     let particle_sphere_cpu = Rc::new(CpuMesh::sphere(8));
 
     // Create connection meshes (lines between nodes) - both normal and selected versions
+    // Connections to invisible nodes are automatically filtered out (node_positions only has visible nodes)
     let mut connection_meshes = Vec::new();
     let mut connections_data = Vec::new();
 
@@ -1875,11 +1883,14 @@ async fn initialize_threed_viewport(
             }
 
             // Get currently selected node ID (untracked - we handle reactivity via Effect)
+            // Check both old selected_node_id and new selected_item for compatibility
             let selected_id = selected_node_id_signal.get_untracked();
+            let selected_item_value = selected_item_signal.get_untracked();
 
             // Render nodes (use selected material if node is selected)
             for (node_id, normal_mesh, selected_mesh) in node_meshes.borrow().iter() {
-                let is_selected = Some(*node_id) == selected_id;
+                let is_selected = Some(*node_id) == selected_id
+                    || matches!(selected_item_value, Some(crate::islands::topology_editor::SelectedItem::Node(id)) if id == *node_id);
                 let mesh_to_render = if is_selected {
                     selected_mesh
                 } else {

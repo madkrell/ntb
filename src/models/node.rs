@@ -22,6 +22,7 @@ pub struct Node {
     pub rotation_z: f64,
     pub scale: f64,
     pub color: String, // RGB format: "R,G,B"
+    pub visible: bool,  // Whether node is visible in viewport (Blender-style outliner)
     pub metadata: Option<String>, // JSON string
     pub created_at: i64,
     pub updated_at: i64,
@@ -44,11 +45,12 @@ pub struct CreateNode {
     pub rotation_z: Option<f64>,
     pub scale: Option<f64>,
     pub color: Option<String>,
+    pub visible: Option<bool>,
     pub metadata: Option<String>,
 }
 
 /// Data transfer object for updating a node
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UpdateNode {
     pub name: Option<String>,
     pub node_type: Option<String>,
@@ -63,6 +65,7 @@ pub struct UpdateNode {
     pub rotation_z: Option<f64>,
     pub scale: Option<f64>,
     pub color: Option<String>,
+    pub visible: Option<bool>,
     pub metadata: Option<String>,
 }
 

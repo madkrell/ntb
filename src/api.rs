@@ -186,7 +186,7 @@ pub async fn get_topology_full(id: i64) -> Result<TopologyFull, ServerFnError> {
 
         // Fetch all nodes for this topology
         let nodes = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, visible, metadata, created_at, updated_at
              FROM nodes WHERE topology_id = ? ORDER BY created_at"
         )
         .bind(id)
@@ -234,7 +234,7 @@ pub async fn get_node(id: i64) -> Result<Node, ServerFnError> {
             .map_err(|e| ServerFnError::new(format!("Failed to extract database pool: {}", e)))?;
 
         let node = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, visible, metadata, created_at, updated_at
              FROM nodes WHERE id = ?"
         )
         .bind(id)
@@ -273,14 +273,15 @@ pub async fn create_node(data: CreateNode) -> Result<Node, ServerFnError> {
         let rot_z = data.rotation_z.unwrap_or(0.0);
         let scale = data.scale.unwrap_or(1.0);
         let color = data.color.unwrap_or_else(|| "100,150,255".to_string()); // Default blue
+        let visible = data.visible.unwrap_or(true); // Default to visible
         let vendor = data.vendor.unwrap_or_else(|| "generic".to_string());
         let model_name = data
             .model_name
             .unwrap_or_else(|| format!("blob-{}", data.node_type));
 
         let result = sqlx::query(
-            "INSERT INTO nodes (topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO nodes (topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, visible, metadata)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(data.topology_id)
         .bind(&data.name)
@@ -296,6 +297,7 @@ pub async fn create_node(data: CreateNode) -> Result<Node, ServerFnError> {
         .bind(rot_z)
         .bind(scale)
         .bind(&color)
+        .bind(visible)
         .bind(&data.metadata)
         .execute(&pool)
         .await
@@ -305,7 +307,7 @@ pub async fn create_node(data: CreateNode) -> Result<Node, ServerFnError> {
 
         // Fetch the created node
         let node = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, visible, metadata, created_at, updated_at
              FROM nodes WHERE id = ?"
         )
         .bind(id)
@@ -368,7 +370,7 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
             }
         }
 
-        if updates.is_empty() && data.ip_address.is_none() && data.metadata.is_none() {
+        if updates.is_empty() && data.ip_address.is_none() && data.visible.is_none() && data.metadata.is_none() {
             return Err(ServerFnError::new("No fields to update"));
         }
 
@@ -413,6 +415,9 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
         }
         if data.color.is_some() {
             query_str.push_str(", color = ?");
+        }
+        if data.visible.is_some() {
+            query_str.push_str(", visible = ?");
         }
         if data.metadata.is_some() {
             query_str.push_str(", metadata = ?");
@@ -462,6 +467,9 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
         if let Some(ref color) = data.color {
             query = query.bind(color);
         }
+        if let Some(visible) = data.visible {
+            query = query.bind(visible);
+        }
         if let Some(ref metadata) = data.metadata {
             query = query.bind(metadata);
         }
@@ -475,7 +483,7 @@ pub async fn update_node(id: i64, data: UpdateNode) -> Result<Node, ServerFnErro
 
         // Fetch the updated node
         let node = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, visible, metadata, created_at, updated_at
              FROM nodes WHERE id = ?"
         )
         .bind(id)
@@ -1584,7 +1592,7 @@ async fn save_node_undo_history(
 ) -> Result<(), sqlx::Error> {
     // Get current state of the node before update
     let node = sqlx::query_as::<_, Node>(
-        "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata, created_at, updated_at
+        "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, visible, metadata, created_at, updated_at
          FROM nodes WHERE id = ?"
     )
     .bind(node_id)
