@@ -521,7 +521,7 @@ pub async fn delete_node(id: i64) -> Result<(), ServerFnError> {
 
         // Get the node before deletion
         let node = sqlx::query_as::<_, Node>(
-            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, metadata, created_at, updated_at
+            "SELECT id, topology_id, name, node_type, vendor, model_name, ip_address, position_x, position_y, position_z, rotation_x, rotation_y, rotation_z, scale, color, visible, metadata, created_at, updated_at
              FROM nodes WHERE id = ?"
         )
         .bind(id)
