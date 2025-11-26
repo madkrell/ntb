@@ -5,4 +5,4 @@
 ALTER TABLE nodes ADD COLUMN visible BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- Create index for efficient visibility filtering
-CREATE INDEX idx_nodes_visible ON nodes(visible);
+CREATE INDEX IF NOT EXISTS idx_nodes_visible ON nodes(visible);
