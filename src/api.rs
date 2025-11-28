@@ -1005,15 +1005,22 @@ pub async fn update_ui_settings(data: UpdateUISettings) -> Result<UISettings, Se
 }
 
 /// Get available vendors and models for a specific node type
-/// Scans the public/models/{node_type}/ directory for vendor folders
+/// Scans the {site_root}/models/{node_type}/ directory for vendor folders
 #[server(GetVendorsForType, "/api")]
 pub async fn get_vendors_for_type(node_type: String) -> Result<VendorListResponse, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
+        use leptos::prelude::get_configuration;
         use std::fs;
         use std::path::Path;
 
-        let models_path = format!("public/models/{}", node_type);
+        // Get site_root from Leptos configuration (idiomatic for deployment)
+        let conf = get_configuration(None).map_err(|e| {
+            ServerFnError::new(format!("Failed to get Leptos configuration: {}", e))
+        })?;
+        let site_root = &conf.leptos_options.site_root;
+
+        let models_path = format!("{}/models/{}", site_root, node_type);
         let models_dir = Path::new(&models_path);
 
         if !models_dir.exists() {
@@ -1071,7 +1078,7 @@ pub async fn get_vendors_for_type(node_type: String) -> Result<VendorListRespons
                 }
 
                 // Check if vendor icon exists
-                let icon_path = format!("public/icons/vendors/{}.svg", vendor_name);
+                let icon_path = format!("{}/icons/vendors/{}.svg", site_root, vendor_name);
                 let has_icon = Path::new(&icon_path).exists();
 
                 let display_name =

@@ -24,3 +24,8 @@ Cargo.lock
 
 # Tailwind CSS standalone CLI binary (download locally)
 tailwindcss
+
+# Claude Code local files (not needed in repo)
+.claude/
+CLAUDE.md
+SESSION-GUIDE.md
